@@ -127,3 +127,13 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# hydra and wandb output
+outputs/
+wandb/
+videos/
+.vscode/
+*.out
+
+# collected data
+*.pt

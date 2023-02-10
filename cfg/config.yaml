@@ -1,0 +1,7 @@
+headless: false
+
+wandb:
+
+defaults:
+  - task: test
+  - _self_

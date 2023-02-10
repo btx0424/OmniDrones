@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="isaac_drones",
+    name="omni_drones",
     author="btx0424@SUSTech",
     keywords=["robotics", "rl"],
     packages=find_packages("."),

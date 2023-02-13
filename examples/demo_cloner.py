@@ -4,26 +4,33 @@ import os
 
 from typing import Dict
 from omegaconf import OmegaConf
-from omni.isaac.kit import SimulationApp
 from omni_drones import CONFIG_PATH, init_simulation_app
 
 @hydra.main(version_base=None, config_path=CONFIG_PATH, config_name="config")
 def main(cfg):
     OmegaConf.resolve(cfg)
+    OmegaConf.set_struct(cfg, False)
     simulation_app = init_simulation_app(cfg)
     print(OmegaConf.to_yaml(cfg))
 
     from omni.isaac.core.simulation_context import SimulationContext
+    from omni.isaac.cloner import GridCloner
+    from omni.isaac.core.prims import GeometryPrim, RigidPrim
+    from omni.isaac.core.objects import DynamicSphere, FixedSphere, VisualSphere
     import omni.isaac.core.utils.prims as prim_utils
     import omni.isaac.orbit.utils.kit as kit_utils
+
     from omni_drones.robots import drone, RobotBase
 
     sim = SimulationContext(
         stage_units_in_meters=1.0, 
         physics_dt=0.005, rendering_dt=0.005, 
-        backend="torch", device="cuda"
+        backend="torch", device="cuda:0"
     )
-    
+    cloner = GridCloner(spacing=1.)
+    cloner.define_base_env("/World/envs")
+    prim_utils.define_prim("/World/envs/env_0")
+
     drones: Dict[str, RobotBase] = {}
     n = 2
     for i, model in enumerate([
@@ -57,18 +64,46 @@ def main(cfg):
         translation=(-4.5, 3.5, 10.0),
         attributes={"radius": 2.5, "intensity": 600.0, "color": (1.0, 1.0, 1.0)},
     )
+
+    prim_utils.create_prim(
+        "/World/envs/env_0/target",
+        "Sphere", attributes={"radius": 0.1, "primvars:displayColor": [(.5, 0.5, 0.5)]},
+        translation=(0., 0., 0.5)
+    )
+
+    VisualSphere("/World/envs/env_0/visual_sphere", radius=0.2, color=torch.tensor([0., 0., 1.]))
+    FixedSphere("/World/envs/env_0/fixed_sphere", radius=0.1, color=torch.tensor([0., 1., 0.]))
+    DynamicSphere("/World/envs/env_0/dynamic_sphere", radius=0.1, color=torch.tensor([1., 0., 0.]))
+    
+    # How to clone environments and make them independent by filtering out collisions.
+    global_prim_paths = ["/World/defaultGroundPlane"]
+    envs_prim_paths= cloner.generate_paths("/World/envs/env", cfg.env.num_envs)
+    envs_positions = cloner.clone(
+        source_prim_path="/World/envs/env_0",
+        prim_paths=envs_prim_paths,
+        replicate_physics=False,
+    )
+    envs_positions = torch.tensor(envs_positions, device=sim.device)
+    physics_scene_path = sim.get_physics_context().prim_path
+    cloner.filter_collisions(
+        physics_scene_path, "/World/collisions", prim_paths=envs_prim_paths, global_paths=global_prim_paths
+    )
+    
+    RobotBase._envs_positions = envs_positions.unsqueeze(1)
     sim.reset()
 
     for _drone in drones.values():
         _drone.initialize()
-
+        pos, rot = _drone.get_world_poses()
+        _drone.set_env_poses(pos, rot)
+        
     while simulation_app.is_running():
         if sim.is_stopped():
             break
         if sim.is_playing():
             sim.step()
         for _drone in drones.values():
-            actions = _drone.action_spec.rand((_drone._count,))
+            actions = _drone.action_spec.rand((cfg.env.num_envs, _drone._count,))
             _drone.apply_action(actions)
 
     simulation_app.close()

@@ -12,7 +12,7 @@ class Crazyflie(RobotBase):
 
     usd_path: str = get_assets_root_path() + "/Isaac/Robots/Crazyflie/cf2x.usd"
     mass = 0.028
-    thrust_to_weight = 1.9
+    thrust_to_weight = 2.25
 
     def __init__(self, name: str="Crazyflie", cfg=None) -> None:
         super().__init__(name, cfg)

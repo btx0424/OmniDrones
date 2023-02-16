@@ -22,6 +22,8 @@ TEMPLATE_PRIM_PATH = "/World/envs/env_0"
 class RobotBase(abc.ABC):
 
     usd_path: str
+    prim_type: str = "Xform"
+    prim_attributes: dict = None
     state_spec: TensorSpec
     action_spec: TensorSpec
 
@@ -62,10 +64,12 @@ class RobotBase(abc.ABC):
                 raise RuntimeError(
                     f"Duplicate prim at {prim_path}."
                 )
-            prim = prim_utils.create_prim(
+            prim_utils.create_prim(
                 prim_path,
+                prim_type=self.prim_type,
                 usd_path=self.usd_path,
                 translation=translation[i],
+                attributes=self.prim_attributes,
             )
             # apply rigid body properties
             kit_utils.set_nested_rigid_body_properties(
@@ -75,6 +79,7 @@ class RobotBase(abc.ABC):
                 max_linear_velocity=self.rigid_props.max_linear_velocity,
                 max_angular_velocity=self.rigid_props.max_angular_velocity,
                 max_depenetration_velocity=self.rigid_props.max_depenetration_velocity,
+                enable_gyroscopic_forces=True,
                 disable_gravity=self.rigid_props.disable_gravity,
                 retain_accelerations=self.rigid_props.retain_accelerations,
             )
@@ -131,7 +136,7 @@ class RobotBase(abc.ABC):
             poses = torch.unflatten(self._physics_view.get_root_transforms(), 0, self.shape)
             if clone:
                 poses = poses.clone()
-        return poses[..., :3], poses[..., 3:7]
+        return poses[..., :3], poses[..., [6, 3, 4 ,5]]
 
     def get_env_poses(self, clone=True):
         with self._disable_warnings():
@@ -139,7 +144,7 @@ class RobotBase(abc.ABC):
             if clone:
                 poses = poses.clone()
         poses[..., :3] -= self._envs_positions
-        return poses[..., :3], poses[..., 3:7]
+        return poses[..., :3], poses[..., [6, 3, 4, 5]]
         
     def set_env_poses(self, 
         positions: torch.Tensor, 
@@ -148,7 +153,7 @@ class RobotBase(abc.ABC):
     ):
         with self._disable_warnings():
             positions = (positions + self._envs_positions[indices]).flatten(0, -2)
-            orientations = orientations.flatten(0, -2)
+            orientations = orientations.reshape(-1, 4)[:, [1, 2, 3, 0]]
             old_pose = self._physics_view.get_root_transforms().clone()
             indices = self._resolve_indices(indices)
             if positions is None:

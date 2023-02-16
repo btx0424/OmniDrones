@@ -26,8 +26,12 @@ def main(cfg):
     policy = MAPPOPolicy(cfg.algo, env.agent_spec["drone"], device="cuda")
     
     collector = SyncDataCollector(
-        env, policy, device="cuda", split_trajs=False,
-        frames_per_batch=env.num_envs * 8
+        env, 
+        policy, 
+        split_trajs=False,
+        frames_per_batch=env.num_envs * 8,
+        device="cuda", 
+        return_same_td=True,
     )
 
     episode_stats = []
@@ -47,7 +51,7 @@ def main(cfg):
     
     pbar = tqdm(collector)
     for i, data in enumerate(pbar):
-        policy.train_op(data.clone())
+        info = policy.train_op(data.clone())
         pbar.set_postfix({
             "rollout_fps": collector._fps,
             "frames": collector._frames

@@ -26,8 +26,8 @@ class ThrustGenerator(Actuator):
         self.thrust[..., 2] += self.dt * self.thrust_action_speed_scale * actions
         self.thrust[..., 2] = torch.clamp(
             self.thrust[..., 2],
-            self.thrust_lower_limits, 
-            self.thrust_upper_limits
+            self.thrust_lower_limits,
+            self.thrust_upper_limits,
         )
-        self.rigid_view.apply_forces(self.thrust.flatten(0, -2), is_global=False)
+        self.rigid_view.apply_forces(self.thrust.reshape(-1, 3), is_global=False)
 

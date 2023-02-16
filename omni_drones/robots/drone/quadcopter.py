@@ -29,7 +29,7 @@ class Quadcopter(RobotBase):
         self.tg = ThrustGenerator(
             {
                 "max_thrust": 2.0,
-                "thrust_action_speed_scale" : 100
+                "thrust_action_speed_scale" : 200
             },
             self.articulations, 
             self.rotors,
@@ -41,12 +41,19 @@ class Quadcopter(RobotBase):
         dof_limits = self.articulations.get_dof_limits()
         self.dof_lower_limits = torch.as_tensor(dof_limits[0][:, 0], device=self.device)
         self.dof_upper_limits = torch.as_tensor(dof_limits[0][:, 1], device=self.device)
+        self.num_dof = self.articulations.num_dof
         
+        stiffnesses = 1000 * torch.ones_like(self._physics_view._dof_stiffnesses)
+        indices = torch.arange(self.articulations.count)
+        self._physics_view.set_dof_stiffnesses(stiffnesses, indices)
+
     def apply_action(self, actions: torch.Tensor):
         dof_action_speed_scale = 8 * torch.pi
         self.dof_position_targets += self.dt * dof_action_speed_scale * actions[..., 0:8]
-        self.dof_position_targets.clamp_(self.dof_lower_limits, self.dof_upper_limits)
-        self.articulations.set_joint_position_targets(self.dof_position_targets.flatten(0, -2))
+        self.dof_position_targets[:] = torch.clamp(
+            self.dof_position_targets, self.dof_lower_limits, self.dof_upper_limits)
+        self.articulations.set_joint_position_targets(
+            self.dof_position_targets.reshape(-1, self.num_dof))
         
         self.tg.apply_action(actions[..., 8:12])
         return torch.square(actions).sum(-1)
@@ -57,8 +64,9 @@ class Quadcopter(RobotBase):
 
         dof_vel = self.get_joint_velocities()
         dof_vel[env_ids] = 0
-        self.articulations.set_joint_velocities(dof_vel.flatten(0, -2))
+        self.articulations.set_joint_velocities(dof_vel.reshape(-1, self.num_dof))
         dof_pos = self.get_joint_positions()
         dof_pos[env_ids] = 0
-        self.articulations.set_joint_positions(dof_pos.flatten(0, -2))
+        self.articulations.set_joint_positions(dof_pos.reshape(-1, self.num_dof))
+        self.articulations.set_joint_position_targets(dof_pos.reshape(-1, self.num_dof))
 

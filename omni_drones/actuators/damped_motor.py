@@ -48,7 +48,6 @@ class NoisyDampedMotor(Actuator):
         # filtering the thruster and adding noise
         motor_tau = self.motor_tau_up * torch.ones(*self.shape, device=self.device)
         motor_tau[thrust_cmds < self.thrust_cmds_damp] = self.motor_tau_down
-        motor_tau[motor_tau > 1.0] = 1.0
 
         # Since NN commands thrusts we need to convert to rot vel and back
         thrust_rot = thrust_cmds ** 0.5
@@ -62,5 +61,5 @@ class NoisyDampedMotor(Actuator):
         dof_vel = prop_rot * self.prop_rot_direction
 
         self.articulation_view.set_joint_velocities(dof_vel.reshape(-1, self.articulation_view.num_dof))
-        self.rigid_view.apply_forces(self.thrusts.flatten(0, -2))
+        self.rigid_view.apply_forces(self.thrusts.flatten(0, -2), is_global=False)
         

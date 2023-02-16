@@ -66,11 +66,11 @@ def main(cfg):
         attributes={"radius": 2.5, "intensity": 600.0, "color": (1.0, 1.0, 1.0)},
     )
 
-    # prim_utils.create_prim(
-    #     "/World/envs/env_0/target",
-    #     "Sphere", attributes={"radius": 0.1, "primvars:displayColor": [(.5, 0.5, 0.5)]},
-    #     translation=(0., 0., 0.5)
-    # )
+    prim_utils.create_prim(
+        "/World/envs/env_0/target",
+        "Sphere", attributes={"radius": 0.1, "primvars:displayColor": [(.5, 0.5, 0.5)]},
+        translation=(0., 0., 0.5)
+    )
 
     # VisualSphere("/World/envs/env_0/visual_sphere", radius=0.2, color=torch.tensor([0., 0., 1.]))
     # FixedSphere("/World/envs/env_0/fixed_sphere", radius=0.1, color=torch.tensor([0., 1., 0.]))

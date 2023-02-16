@@ -136,11 +136,13 @@ class IsaacEnv(EnvBase):
     
     def _reset(self, tensordict: TensorDictBase, **kwargs) -> TensorDictBase:
         if tensordict is not None:
-            _reset = tensordict.get("_reset").squeeze()
+            env_mask = tensordict.get("_reset").squeeze()
         else:
-            _reset = torch.ones(self.num_envs, dtype=bool, device=self.device)
-        self._reset_idx(_reset)
-        self._tensordict.masked_fill_(_reset, 0)
+            env_mask = torch.ones(self.num_envs, dtype=bool, device=self.device)
+        env_ids = env_mask.nonzero().squeeze(-1)
+        self._reset_idx(env_ids)
+        self.sim.step(render=False)
+        self._tensordict.masked_fill_(env_mask, 0)
         return self._compute_state_and_obs()
 
     @abc.abstractmethod
@@ -216,7 +218,6 @@ class _AgentSpecView(Dict[str, AgentSpec]):
         if isinstance(__value, AgentSpec):
             if __key in self:
                 raise ValueError(f"Can not set agent_spec with duplicated name {__key}.")
-            super().__setitem__(__key, __value)
             name = __value.name
             def expand(spec: TensorSpec) -> TensorSpec:
                 return spec.expand(*self.env.batch_size, __value.n, *spec.shape)
@@ -224,6 +225,8 @@ class _AgentSpecView(Dict[str, AgentSpec]):
             self.env.action_spec[f"{name}.action"] = expand(__value.action_spec)
             self.env.reward_spec[f"{name}.reward"] = expand(__value.reward_spec)
             self.env._tensordict[f"{name}.return"] = self.env.reward_spec[f"{name}.reward"].zero()
+            super().__setitem__(__key, __value)
+            self.env._agent_spec[__key] = __value
         else:
             raise TypeError
 

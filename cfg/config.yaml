@@ -7,7 +7,7 @@ env:
   max_episode_length: 500
 
 sim:
-  dt: 0.016
+  dt: 0.01
   substeps: 1
   gravity: [0, 0, -9.81]
   replicate_physics: false
@@ -32,7 +32,19 @@ viewer:
   lookat: [0., 0., 0.]
 
 wandb:
+  group: ${oc.select:..task.name}
+  run_name: ${oc.select:..task.name,test}
+  job_type: train
+  entity: marl-drones
+  project: gpu-onpolicy
+  mode: online # set to 'disabled' when debugging locally
+  run_id: 
+  run_path:
+  monitor_gym: True
+  log_code: True
+  tags: 
 
 defaults:
   - task: test
+  - algo: mappo
   - _self_

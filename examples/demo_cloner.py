@@ -25,6 +25,7 @@ def main(cfg):
     sim = SimulationContext(
         stage_units_in_meters=1.0, 
         physics_dt=0.005, rendering_dt=0.005, 
+        sim_params=cfg.sim,
         backend="torch", device="cuda:0"
     )
     cloner = GridCloner(spacing=1.)
@@ -34,7 +35,7 @@ def main(cfg):
     drones: Dict[str, RobotBase] = {}
     n = 2
     for i, model in enumerate([
-        "Crazyflie", # "Firefly", # "Hummingbird", "Neo11", "Omav"
+        "Quadcopter", # "Firefly", # "Hummingbird", "Neo11", "Omav"
     ]):
         drones[model] = getattr(drone, model)()
         translation = torch.zeros(n, 3)
@@ -65,15 +66,15 @@ def main(cfg):
         attributes={"radius": 2.5, "intensity": 600.0, "color": (1.0, 1.0, 1.0)},
     )
 
-    prim_utils.create_prim(
-        "/World/envs/env_0/target",
-        "Sphere", attributes={"radius": 0.1, "primvars:displayColor": [(.5, 0.5, 0.5)]},
-        translation=(0., 0., 0.5)
-    )
+    # prim_utils.create_prim(
+    #     "/World/envs/env_0/target",
+    #     "Sphere", attributes={"radius": 0.1, "primvars:displayColor": [(.5, 0.5, 0.5)]},
+    #     translation=(0., 0., 0.5)
+    # )
 
-    VisualSphere("/World/envs/env_0/visual_sphere", radius=0.2, color=torch.tensor([0., 0., 1.]))
-    FixedSphere("/World/envs/env_0/fixed_sphere", radius=0.1, color=torch.tensor([0., 1., 0.]))
-    DynamicSphere("/World/envs/env_0/dynamic_sphere", radius=0.1, color=torch.tensor([1., 0., 0.]))
+    # VisualSphere("/World/envs/env_0/visual_sphere", radius=0.2, color=torch.tensor([0., 0., 1.]))
+    # FixedSphere("/World/envs/env_0/fixed_sphere", radius=0.1, color=torch.tensor([0., 1., 0.]))
+    # DynamicSphere("/World/envs/env_0/dynamic_sphere", radius=0.1, color=torch.tensor([1., 0., 0.]))
     
     # How to clone environments and make them independent by filtering out collisions.
     global_prim_paths = ["/World/defaultGroundPlane"]
@@ -83,7 +84,7 @@ def main(cfg):
         prim_paths=envs_prim_paths,
         replicate_physics=False,
     )
-    envs_positions = torch.tensor(envs_positions, device=sim.device)
+    envs_positions = torch.tensor(envs_positions, dtype=torch.float32, device=sim.device)
     physics_scene_path = sim.get_physics_context().prim_path
     cloner.filter_collisions(
         physics_scene_path, "/World/collisions", prim_paths=envs_prim_paths, global_paths=global_prim_paths

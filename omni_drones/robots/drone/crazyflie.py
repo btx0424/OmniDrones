@@ -41,3 +41,7 @@ class Crazyflie(RobotBase):
         self.tg.apply_action(actions)
         return torch.square(actions).sum(-1)
 
+    def _reset_idx(self, env_ids: torch.Tensor):
+        self.tg.thrust_cmds_damp[env_ids] = 0
+        self.tg.thrust_rot_damp[env_ids] = 0
+

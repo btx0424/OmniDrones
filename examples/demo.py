@@ -69,6 +69,7 @@ def main(cfg):
             sim.step()
         for _drone in drones.values():
             actions = _drone.action_spec.rand((_drone._count,))
+            actions.fill_(1.)
             _drone.apply_action(actions)
 
     simulation_app.close()

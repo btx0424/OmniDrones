@@ -1,0 +1,51 @@
+name: mappo
+
+# ppo
+train_every: 16
+num_minibatches: 4
+ppo_epochs: 5
+clip_param: 0.2
+entropy_coef: 0.01
+gae_lambda: 0.95
+gamma: 0.995
+max_grad_norm: 10.0
+normalize_advantages: True
+
+reward_weights: null # null means all 1.0
+share_actor: true
+critic_input: obs # `obs` or `state`
+value_learning: combined # `combined` or `seperate`, in case of num_rewards > 1
+
+actor:
+  lr: 0.0005
+  lr_scheduler: 
+  lr_scheduler_kwargs: 
+  
+  hidden_units: [128, 128]
+  weight_decay: 0.0
+  gain: 0.01
+
+  use_attn: false
+  attn_encoder: PartialAttentionEncoder
+  use_orthogonal: true
+
+critic:
+  num_critics: 1
+  value_norm:
+    class: ValueNorm1
+    kwargs: {}
+
+  lr: 0.0005
+  lr_scheduler: 
+  lr_scheduler_kwargs: 
+
+  hidden_units: [128, 128]
+  weight_decay: 0.0
+  gain: 0.01
+  use_huber_loss: true
+  huber_delta: 10
+
+  use_attn: false
+  attn_encoder: PartialAttentionEncoder
+  use_feature_normalization: true
+  use_orthogonal: true

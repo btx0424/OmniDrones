@@ -18,7 +18,7 @@ def main(cfg):
     from omni.isaac.core.prims import GeometryPrim, RigidPrim
     from omni.isaac.core.objects import DynamicSphere, FixedSphere, VisualSphere
     import omni.isaac.core.utils.prims as prim_utils
-    import omni.isaac.orbit.utils.kit as kit_utils
+    import omni_drones.utils.kit as kit_utils
 
     from omni_drones.robots import drone, RobotBase
 

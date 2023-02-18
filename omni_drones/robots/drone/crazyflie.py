@@ -17,7 +17,7 @@ class Crazyflie(RobotBase):
     def __init__(self, name: str="Crazyflie", cfg=None) -> None:
         super().__init__(name, cfg)
         self.action_spec = BoundedTensorSpec(-1, 1, (4,), device=self.device)
-        self.state_spec = UnboundedContinuousTensorSpec(13, device=self.device)
+        self.state_spec = UnboundedContinuousTensorSpec(13 + 4, device=self.device)
 
     def initialize(self):
         super().initialize()
@@ -40,6 +40,12 @@ class Crazyflie(RobotBase):
     def apply_action(self, actions: torch.Tensor):
         self.tg.apply_action(actions)
         return torch.square(actions).sum(-1)
+
+    def get_state(self):
+        pos, rot = self.get_env_poses(False)
+        vel = self.get_velocities(False)
+        thr = self.tg.thrust_cmds_damp
+        return torch.cat([pos, rot, vel, thr], dim=-1)
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.tg.thrust_cmds_damp[env_ids] = 0

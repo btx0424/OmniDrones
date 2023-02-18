@@ -2,14 +2,17 @@ import torch
 import functorch
 from torchrl.data import UnboundedContinuousTensorSpec
 from tensordict.tensordict import TensorDict, TensorDictBase
-from omni_drones.envs.isaac_env import IsaacEnv, AgentSpec
-from omni_drones.robots.config import RobotCfg
-from omni_drones.robots.drone.crazyflie import Crazyflie
-from omni_drones.robots.drone.quadcopter import Quadcopter
 
-import omni.isaac.orbit.utils.kit as kit_utils
 import omni.isaac.core.utils.torch as torch_utils
 from omni.isaac.core.objects import VisualSphere
+
+from omni_drones.envs.isaac_env import IsaacEnv, AgentSpec
+from omni_drones.robots.config import RobotCfg
+from omni_drones.robots.drone import (
+    Crazyflie, Firefly, Neo11, Hummingbird
+)
+import omni_drones.utils.kit as kit_utils
+
 
 class Hover(IsaacEnv):
     
@@ -31,9 +34,8 @@ class Hover(IsaacEnv):
         config.articulation_props.enable_self_collisions = True
         config.articulation_props.solver_position_iteration_count = 4
         config.articulation_props.solver_velocity_iteration_count = 0
-        self.drone = Crazyflie(cfg=config)
-        # self.drone = Quadcopter(cfg=config)
-        # self.drone = Ball()
+        # self.drone = Crazyflie(cfg=config)
+        self.drone = Firefly()
 
         self.target_pos = torch.tensor([0., 0., 1.5], device=self.device)
         self.target = VisualSphere(
@@ -69,21 +71,19 @@ class Hover(IsaacEnv):
         self.effort = self.drone.apply_action(actions)
     
     def _compute_state_and_obs(self):
-        self.pos, self.rot = self.drone.get_env_poses(True)
-        self.vels = self.drone.get_velocities(False)
-        pos = self.target_pos - self.pos
-        # dof_pos = self.drone.get_joint_positions()
-        obs = torch.cat([pos, self.rot, self.vels], dim=-1)
+        obs = self.drone.get_state()
+        obs[..., :3] = self.target_pos - obs[..., :3]
         return TensorDict({
             "drone.obs": obs
         }, self.batch_size)
     
     def _compute_reward_and_done(self):
+        pos, rot = self.drone.get_env_poses(False)
         # pos reward        
-        target_dist = torch.norm(self.pos-self.target_pos, dim=-1)
+        target_dist = torch.norm(pos-self.target_pos, dim=-1)
         pos_reward = 1.0 / (1.0 + torch.square(target_dist))
         # uprightness
-        ups = functorch.vmap(torch_utils.rotations.quat_axis)(self.rot, axis=2)
+        ups = functorch.vmap(torch_utils.quat_axis)(rot, axis=2)
         tiltage = torch.abs(1 - ups[..., 2])
         up_reward = 1.0 / (1.0 + torch.square(tiltage))
         # effort
@@ -96,7 +96,7 @@ class Hover(IsaacEnv):
         self._tensordict["drone.return"] += reward.unsqueeze(-1)
         done  = (
             (self.progress_buf >= self.max_eposode_length).unsqueeze(-1)
-            | (self.pos[..., 2] < 0.1)
+            | (pos[..., 2] < 0.1)
             | (target_dist > 3)
         )
         return TensorDict({

@@ -121,14 +121,13 @@ class RobotBase(abc.ABC):
 
         print(self.articulations._dof_names)
         print(self.articulations._dof_types)
-        print(self.articulations._dofs_infos)
 
     @abc.abstractmethod
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
 
     @abc.abstractmethod
-    def _reset_idx(self, mask: torch.Tensor):
+    def _reset_idx(self, env_ids: torch.Tensor):
         raise NotImplementedError
 
     def get_world_poses(self, clone=True):
@@ -204,6 +203,9 @@ class RobotBase(abc.ABC):
     def set_joint_velocities(self, ):
         with self._disable_warnings():
             ...
+
+    def get_state(self):
+        raise NotImplementedError
 
     def _resolve_indices(self, indices: torch.Tensor=None):
         all_indices = torch.arange(self.articulations.count, device=self.device).reshape(self.shape)

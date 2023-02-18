@@ -46,8 +46,11 @@ class NoisyDampedMotor(Actuator):
         # scale to [0.0, 1.0]
         thrust_cmds = (thrust_cmds + 1.0) / 2.0
         # filtering the thruster and adding noise
-        motor_tau = self.motor_tau_up * torch.ones(*self.shape, device=self.device)
-        motor_tau[thrust_cmds < self.thrust_cmds_damp] = self.motor_tau_down
+        motor_tau = torch.where(
+            thrust_cmds > self.thrust_cmds_damp,
+            self.motor_tau_up,
+            self.motor_tau_down
+        )
 
         # Since NN commands thrusts we need to convert to rot vel and back
         thrust_rot = thrust_cmds ** 0.5

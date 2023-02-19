@@ -1,53 +1,41 @@
 import torch
 from torchrl.data import BoundedTensorSpec, UnboundedContinuousTensorSpec
 
-from omni_drones.robots.robot import RobotBase
-from omni_drones.actuators.damped_motor import NoisyDampedMotor
-
-from omni.isaac.core.simulation_context import SimulationContext
 from omni.isaac.core.prims import RigidPrimView
 from omni.isaac.core.utils.nucleus import get_assets_root_path
+from omni_drones.robots.drone.multirotor import MultirotorBase
+from omni_drones.robots.robot import ASSET_PATH
+from omni_drones.actuators.damped_motor import NoisyDampedMotor
 
-class Crazyflie(RobotBase):
+class Crazyflie(MultirotorBase):
 
     usd_path: str = get_assets_root_path() + "/Isaac/Robots/Crazyflie/cf2x.usd"
+    
     mass = 0.028
     thrust_to_weight = 2.25
-
-    def __init__(self, name: str="Crazyflie", cfg=None) -> None:
-        super().__init__(name, cfg)
-        self.action_spec = BoundedTensorSpec(-1, 1, (4,), device=self.device)
-        self.state_spec = UnboundedContinuousTensorSpec(13 + 4, device=self.device)
+    num_rotors = 4
+    max_rot_vel = 433.3
 
     def initialize(self):
-        super().initialize()
+        super(MultirotorBase, self).initialize()
+        self.base_link = RigidPrimView(
+            prim_paths_expr=f"/World/envs/.*/{self.name}_*/body",
+            name="base_link"
+        )
+        self.base_link.initialize()
         self.rotors = RigidPrimView(
-            prim_paths_expr="/World/envs/.*/Crazyflie_*/m[1-4]_prop",
+            prim_paths_expr=f"/World/envs/.*/{self.name}_*/m[1-4]_prop",
             name="rotors"
         )
         self.rotors.initialize()
-        self.rotors.post_reset()
         self.tg = NoisyDampedMotor(
             {
-                "thrust_max": 9.81 * self.mass * self.thrust_to_weight / 4, 
-                "prop_max_rot": 433.3
+                "max_thrust": 9.81 * self.mass * self.thrust_to_weight / self.num_rotors,
+                "max_rot_vel": self.max_rot_vel,
+                "rot_directions": self.rot_directions,
             },
-            self.articulations, 
+            self.base_link,
+            self.articulations,
             self.rotors,
-            shape=[-1, self._count, 4]
+            shape=[-1, self._count, self.num_rotors]
         )
-
-    def apply_action(self, actions: torch.Tensor):
-        self.tg.apply_action(actions)
-        return torch.square(actions).sum(-1)
-
-    def get_state(self):
-        pos, rot = self.get_env_poses(False)
-        vel = self.get_velocities(False)
-        thr = self.tg.thrust_cmds_damp
-        return torch.cat([pos, rot, vel, thr], dim=-1)
-
-    def _reset_idx(self, env_ids: torch.Tensor):
-        self.tg.thrust_cmds_damp[env_ids] = 0
-        self.tg.thrust_rot_damp[env_ids] = 0
-

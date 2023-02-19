@@ -14,6 +14,7 @@ class ThrustGenerator(Actuator):
         rigid_view: RigidPrimView,
         shape: torch.Size,
     ):
+        raise RuntimeError("Not for use")
         super().__init__(cfg, articulation_view, rigid_view, shape)
 
         max_thrust = cfg["max_thrust"]

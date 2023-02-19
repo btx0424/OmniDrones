@@ -9,17 +9,19 @@ class Actuator(abc.ABC):
     def __init__(
         self, 
         cfg,
-        articulation_view: ArticulationView,
-        rigid_view: RigidPrimView,
+        base_link: RigidPrimView,
+        joints: ArticulationView,
+        bodies: RigidPrimView,
         shape: torch.Size,
     ):
         self.cfg = cfg
 
         shape = torch.Size(shape)
-        self.shape = torch.arange(rigid_view.count).reshape(shape).shape
+        self.shape = torch.arange(bodies.count).reshape(shape).shape
         
-        self.rigid_view = rigid_view
-        self.articulation_view = articulation_view
+        self.base_link = base_link
+        self.bodies = bodies
+        self.joints = joints
 
         self.dt = SimulationContext._instance.get_physics_dt()
         self.device = SimulationContext._instance._device

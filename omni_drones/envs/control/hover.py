@@ -28,14 +28,14 @@ class Hover(IsaacEnv):
             UnboundedContinuousTensorSpec(1).to(self.device),
         )
         self.vels = self.drone.get_velocities()
+        self.init_pos_scale = torch.tensor([2., 2., 0.6], device=self.device) 
+        self.init_pos_offset = torch.tensor([0., 0., 0.3], device=self.device)
 
     def _design_scene(self):
-        config = RobotCfg()
-        config.articulation_props.enable_self_collisions = True
-        config.articulation_props.solver_position_iteration_count = 4
-        config.articulation_props.solver_velocity_iteration_count = 0
-        # self.drone = Crazyflie(cfg=config)
-        self.drone = Firefly()
+        cfg = RobotCfg()
+        # self.drone = Firefly(cfg=cfg)
+        # self.drone = Hummingbird(cfg=cfg)
+        self.drone = Neo11(cfg=cfg)
 
         self.target_pos = torch.tensor([0., 0., 1.5], device=self.device)
         self.target = VisualSphere(
@@ -55,14 +55,9 @@ class Hover(IsaacEnv):
         return ["/World/defaultGroundPlane"]
     
     def _reset_idx(self, env_ids: torch.Tensor):
-        pos, rot = self.init_poses
+        _, rot = self.init_poses
         self.drone._reset_idx(env_ids)
-        pos = pos[env_ids]
-        pos = pos + (
-            torch.rand_like(pos) 
-            *  torch.tensor([1., 1., 0.6], device=pos.device) 
-            - torch.tensor([0.5, 0.5, 0.3], device=pos.device)
-        )
+        pos = torch.rand(len(env_ids), 1, 3, device=self.device) * self.init_pos_scale + self.init_pos_offset
         self.drone.set_env_poses(pos, rot[env_ids], env_ids)
         self.drone.set_velocities(torch.zeros_like(self.vels[env_ids]), env_ids)
 
@@ -92,6 +87,7 @@ class Hover(IsaacEnv):
         spin = torch.square(self.vels[..., -1])
         spin_reward = 1.0 / (1.0 + torch.square(spin))
 
+        assert pos_reward.shape == up_reward.shape == spin_reward.shape
         reward = pos_reward + pos_reward * (up_reward + spin_reward) # + effort_reward
         self._tensordict["drone.return"] += reward.unsqueeze(-1)
         done  = (

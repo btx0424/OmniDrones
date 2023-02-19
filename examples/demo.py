@@ -15,7 +15,7 @@ def main(cfg):
     from omni.isaac.core.simulation_context import SimulationContext
     import omni.isaac.core.utils.prims as prim_utils
     import omni_drones.utils.kit as kit_utils
-    from omni_drones.robots import drone, RobotBase
+    from omni_drones.robots import drone, RobotBase, RobotCfg
 
     sim = SimulationContext(
         stage_units_in_meters=1.0, 
@@ -25,15 +25,16 @@ def main(cfg):
     )
     
     drones: Dict[str, RobotBase] = {}
-    n = 2
+    n = 3
     for i, model in enumerate([
         "Crazyflie", 
         "Firefly", 
-        "Neo11", 
         "Hummingbird",
+        # "Neo11", 
         # "Omav"
     ]):
-        drones[model] = getattr(drone, model)()
+        cfg = RobotCfg()
+        drones[model] = getattr(drone, model)(cfg=cfg)
         translation = torch.zeros(n, 3)
         translation[:, 0] = i 
         translation[:, 1] = torch.arange(n)
@@ -69,12 +70,14 @@ def main(cfg):
     while simulation_app.is_running():
         if sim.is_stopped():
             break
-        if sim.is_playing():
-            sim.step()
+        if not sim.is_playing():
+            sim.step(render=not cfg.headless)
+            continue
         for _drone in drones.values():
             actions = _drone.action_spec.zero((_drone._count,))
-            actions.fill_(-0.9)
+            actions.fill_(0.)
             _drone.apply_action(actions)
+        sim.step()
 
     simulation_app.close()
 

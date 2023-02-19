@@ -6,9 +6,9 @@ from typing import Optional
 class RigidBodyPropertiesCfg:
     """Properties to apply to all rigid bodies in the articulation."""
 
-    linear_damping: Optional[float] = None
+    linear_damping: Optional[float] = 0.2
     """Linear damping coefficient."""
-    angular_damping: Optional[float] = None
+    angular_damping: Optional[float] = 0.2
     """Angular damping coefficient."""
     max_linear_velocity: Optional[float] = 1000.0
     """Maximum linear velocity for rigid bodies. Defaults to 1000.0."""

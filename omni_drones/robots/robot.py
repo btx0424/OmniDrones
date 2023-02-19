@@ -31,6 +31,8 @@ class RobotBase(abc.ABC):
     _envs_positions: torch.Tensor
 
     def __init__(self, name: str, cfg: RobotCfg=None) -> None:
+        if name is None:
+            name = self.__class__.__name__
         if name in RobotBase._robots:
             raise RuntimeError
         RobotBase._robots[name] = self
@@ -64,7 +66,7 @@ class RobotBase(abc.ABC):
                 raise RuntimeError(
                     f"Duplicate prim at {prim_path}."
                 )
-            prim_utils.create_prim(
+            prim = prim_utils.create_prim(
                 prim_path,
                 prim_type=self.prim_type,
                 usd_path=self.usd_path,
@@ -121,6 +123,12 @@ class RobotBase(abc.ABC):
 
         print(self.articulations._dof_names)
         print(self.articulations._dof_types)
+
+        # so that joint rotations do not produce torques
+        dof_dampings = self._physics_view.get_dof_dampings().clone()
+        self.articulations.set_gains(
+            kds=torch.zeros_like(dof_dampings)
+        )
 
     @abc.abstractmethod
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:

@@ -4,7 +4,7 @@ def quaternion_to_rotation_matrix(
     quaternion: torch.Tensor
 ) -> torch.Tensor:
 
-    w, x, y, z = torch.unbind(quaternion)
+    w, x, y, z = torch.unbind(quaternion, dim=-1)
     tx = 2.0 * x
     ty = 2.0 * y
     tz = 2.0 * z
@@ -28,8 +28,8 @@ def quaternion_to_rotation_matrix(
         txz - twy,
         tyz + twx,
         1 - (txx + tyy),
-    ])
-    matrix = matrix.reshape(3, 3)
+    ], dim=-1)
+    matrix = matrix.unflatten(matrix.dim()-1, (3, 3))
     return matrix
 
 
@@ -37,7 +37,7 @@ def quaternion_to_euler(
     quaternion: torch.Tensor
 ) -> torch.Tensor:
 
-    x, y, z, w = torch.unbind(quaternion, dim=quaternion.dim()-1)
+    w, x, y, z = torch.unbind(quaternion, dim=quaternion.dim()-1)
 
     euler_angles: torch.Tensor = torch.stack(
         (
@@ -49,4 +49,7 @@ def quaternion_to_euler(
     )
 
     return euler_angles
+
+def normalize(x: torch.Tensor, eps: float=1e-6):
+    return x / (torch.norm(x, dim=-1, keepdim=True) + eps)
 

@@ -6,6 +6,7 @@ from torchrl.data import TensorSpec
 
 import omni.timeline
 import omni.isaac.core.utils.prims as prim_utils
+import omni.isaac.core.utils.torch as torch_utils
 import omni_drones.utils.kit as kit_utils
 from omni.isaac.core.simulation_context import SimulationContext
 from omni.isaac.core.articulations import ArticulationView
@@ -28,7 +29,7 @@ class RobotBase(abc.ABC):
     action_spec: TensorSpec
 
     _robots = {}
-    _envs_positions: torch.Tensor
+    _envs_positions: torch.Tensor = None
 
     def __init__(self, name: str, cfg: RobotCfg=None) -> None:
         if name is None:
@@ -117,7 +118,7 @@ class RobotBase(abc.ABC):
         self._physics_view = self.articulations._physics_view
         self._physics_sim_view = self.articulations._physics_sim_view
         
-        if hasattr(self, "_envs_positions"):
+        if self._envs_positions is not None:
             pos, rot = self.get_world_poses()
             self.set_env_poses(pos, rot)
 
@@ -150,7 +151,8 @@ class RobotBase(abc.ABC):
             poses = torch.unflatten(self._physics_view.get_root_transforms(), 0, self.shape)
             if clone:
                 poses = poses.clone()
-        poses[..., :3] -= self._envs_positions
+        if self._envs_positions is not None:
+            poses[..., :3] -= self._envs_positions
         return poses[..., :3], poses[..., [6, 3, 4, 5]]
         
     def set_env_poses(self, 
@@ -159,7 +161,10 @@ class RobotBase(abc.ABC):
         indices: torch.Tensor=None,
     ):
         with self._disable_warnings():
-            positions = (positions + self._envs_positions[indices]).flatten(0, -2)
+            if self._envs_positions is not None:
+                positions = (positions + self._envs_positions[indices]).reshape(-1, 3)
+            else:
+                positions = positions.reshape(-1, 3)
             orientations = orientations.reshape(-1, 4)[:, [1, 2, 3, 0]]
             old_pose = self._physics_view.get_root_transforms().clone()
             indices = self._resolve_indices(indices)

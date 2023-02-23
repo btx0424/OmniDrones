@@ -28,8 +28,8 @@ def main(cfg):
     n = 3
     for i, model in enumerate([
         "Crazyflie", 
-        "Firefly", 
-        "Hummingbird",
+        # "Firefly", 
+        # "Hummingbird",
         # "Neo11", 
         # "Omav"
     ]):

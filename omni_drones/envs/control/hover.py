@@ -34,9 +34,9 @@ class Hover(IsaacEnv):
     def _design_scene(self):
         cfg = RobotCfg()
         # self.drone = Crazyflie(cfg=cfg)
-        # self.drone = Firefly(cfg=cfg)
+        self.drone = Firefly(cfg=cfg)
         # self.drone = Hummingbird(cfg=cfg)
-        self.drone = Neo11(cfg=cfg)
+        # self.drone = Neo11(cfg=cfg)
 
         self.target_pos = torch.tensor([0., 0., 1.5], device=self.device)
         self.target = VisualSphere(
@@ -52,7 +52,7 @@ class Hover(IsaacEnv):
             dynamic_friction=1.0,
             restitution=0.0,
         )
-        self.drone.spawn(translation=(0., 0., 1.5))
+        self.drone.spawn(translation=(0., 0., 1.))
         return ["/World/defaultGroundPlane"]
     
     def _reset_idx(self, env_ids: torch.Tensor):

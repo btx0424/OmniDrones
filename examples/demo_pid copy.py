@@ -19,7 +19,6 @@ def main(cfg):
     from omni_drones.robots.drone import MultirotorBase, Crazyflie, Firefly, Hummingbird
     from omni_drones.robots import RobotCfg
     from omni_drones.controllers.cf2x_pid import PIDController, DSLPIDControl
-    from omni_drones.controllers.position_controller import PositionController
 
     sim = SimulationContext(
         stage_units_in_meters=1.0, 
@@ -32,13 +31,11 @@ def main(cfg):
     cfg = RobotCfg()
     drones = []
     cf2x = Crazyflie(cfg=cfg)
-    # firefly = Firefly(cfg=cfg)
 
     translation = torch.zeros(n, 3)
     translation[:, 1] = torch.arange(n)
     translation[:, 2] = 0.5
     cf2x.spawn(n, translation=translation)
-    # firefly.spawn(n, translation=translation)
 
     kit_utils.create_ground_plane(
         "/World/defaultGroundPlane",
@@ -63,7 +60,6 @@ def main(cfg):
     )
     sim.reset()
     cf2x.initialize()
-    # firefly.initialize()
     init_poses = cf2x.get_env_poses()
     init_vels = cf2x.get_velocities()
     controller = PIDController(

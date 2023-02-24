@@ -17,10 +17,10 @@ def main(cfg):
     print(OmegaConf.to_yaml(cfg))
 
     from omni_drones.envs import Hover
-    from omni_drones.controllers.position_controller import PositionController
+    from omni_drones.controllers import LeePositionController
 
     env = Hover(cfg, headless=cfg.headless)
-    controller = PositionController(9.81, env.drone.params).to(env.device)
+    controller = LeePositionController(9.81, env.drone.params).to(env.device)
 
     def policy(tensordict):
         state = tensordict["drone.obs"]

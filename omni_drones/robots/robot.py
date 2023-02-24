@@ -25,8 +25,6 @@ class RobotBase(abc.ABC):
     usd_path: str
     prim_type: str = "Xform"
     prim_attributes: dict = None
-    state_spec: TensorSpec
-    action_spec: TensorSpec
 
     _robots = {}
     _envs_positions: torch.Tensor = None
@@ -50,6 +48,8 @@ class RobotBase(abc.ABC):
 
         self.device = SimulationContext._instance._device
         self.dt = SimulationContext._instance.get_physics_dt()
+        self.state_spec: TensorSpec
+        self.action_spec: TensorSpec
 
     def spawn(
         self, n: int=1, translation=(0., 0., 0.5)

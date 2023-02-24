@@ -1,14 +1,12 @@
 import torch
 import torch.nn as nn
 from tensordict import TensorDict
-import omni.isaac.core.utils.torch as torch_utils
 from .utils import (
-    quaternion_to_euler,
     quaternion_to_rotation_matrix, 
     normalize
 )
 
-class PositionController(nn.Module):
+class LeePositionController(nn.Module):
     def __init__(self,
         g: float, uav_params
     ) -> None:
@@ -42,8 +40,8 @@ class PositionController(nn.Module):
         self.attitute_gain = nn.Parameter(torch.tensor([3, 3, 0.15]) @ I[:3, :3].inverse())
         self.ang_rate_gain = nn.Parameter(torch.tensor([0.52, 0.52, 0.18]) @ I[:3, :3].inverse())
         
-        print(A)
-        print(self.mixer)
+        # print(A)
+        # print(self.mixer)
         for p in self.parameters():
             p.requires_grad_(False)
 

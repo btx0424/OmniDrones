@@ -35,7 +35,7 @@ def main(cfg):
     drones: Dict[str, RobotBase] = {}
     n = 2
     for i, model in enumerate([
-        "Quadcopter", # "Firefly", # "Hummingbird", "Neo11", "Omav"
+        "Firefly", # "Hummingbird", "Neo11", "Omav"
     ]):
         drones[model] = getattr(drone, model)()
         translation = torch.zeros(n, 3)

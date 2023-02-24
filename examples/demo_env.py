@@ -17,14 +17,15 @@ def main(cfg):
     print(OmegaConf.to_yaml(cfg))
 
     from omni_drones.envs import Hover
-    from omni_drones.controllers import LeePositionController
 
     env = Hover(cfg, headless=cfg.headless)
-    controller = LeePositionController(9.81, env.drone.params).to(env.device)
+    controller = env.drone.default_controller(
+        env.drone.dt, 9.81, env.drone.params
+    ).to(env.device)
 
-    def policy(tensordict):
+    def policy(tensordict: TensorDict):
         state = tensordict["drone.obs"]
-        controller_state = tensordict.get("controller_state", {})
+        controller_state = tensordict.get("controller_state", TensorDict({}, state.shape[:2]))
         relative_state = state[..., :13].clone()
         target_pos, quat, linvel, angvel = torch.split(relative_state, [3, 4, 3, 3], dim=-1)
         control_target = torch.cat([
@@ -32,6 +33,7 @@ def main(cfg):
         relative_state[..., :3] = 0.
         cmds, controller_state = vmap(vmap(controller))(relative_state, control_target, controller_state)
         tensordict["drone.action"] = cmds
+        tensordict["controller_state"] = controller_state
         return tensordict
     
     collector = SyncDataCollector(

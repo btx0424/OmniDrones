@@ -28,9 +28,9 @@ def main(cfg):
     n = 3
     for i, model in enumerate([
         "Crazyflie", 
-        # "Firefly", 
-        # "Hummingbird",
-        # "Neo11", 
+        "Firefly", 
+        "Hummingbird",
+        "Neo11", 
         # "Omav"
     ]):
         cfg = RobotCfg()

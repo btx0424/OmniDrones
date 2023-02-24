@@ -1,2 +1,2 @@
-from .robot import RobotBase
+from .robot import RobotBase, ASSET_PATH
 from .config import RobotCfg

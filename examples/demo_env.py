@@ -4,6 +4,7 @@ import os
 import time
 from tensordict import TensorDict
 from tqdm import tqdm
+from functorch import vmap
 from omegaconf import OmegaConf
 from omni_drones import CONFIG_PATH, init_simulation_app
 from omni_drones.learning.collectors import SyncDataCollector
@@ -16,13 +17,21 @@ def main(cfg):
     print(OmegaConf.to_yaml(cfg))
 
     from omni_drones.envs import Hover
+    from omni_drones.controllers import LeePositionController
 
     env = Hover(cfg, headless=cfg.headless)
+    controller = LeePositionController(9.81, env.drone.params).to(env.device)
+
     def policy(tensordict):
-        actions: TensorDict = env.action_spec.rand()
-        # for k, v in actions.items():
-        #     v[:] = 0.1
-        tensordict.update(actions)
+        state = tensordict["drone.obs"]
+        controller_state = tensordict.get("controller_state", {})
+        relative_state = state[..., :13].clone()
+        target_pos, quat, linvel, angvel = torch.split(relative_state, [3, 4, 3, 3], dim=-1)
+        control_target = torch.cat([
+            target_pos, torch.zeros_like(linvel), torch.zeros_like(target_pos[..., [0]])], dim=-1)
+        relative_state[..., :3] = 0.
+        cmds, controller_state = vmap(vmap(controller))(relative_state, control_target, controller_state)
+        tensordict["drone.action"] = cmds
         return tensordict
     
     collector = SyncDataCollector(

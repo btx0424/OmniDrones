@@ -1,9 +1,13 @@
-from omni_drones.robots.robot import RobotBase, ASSET_PATH
+import torch
+from torchrl.data import BoundedTensorSpec, UnboundedContinuousTensorSpec
 
-class Neo11(RobotBase):
+from omni.isaac.core.prims import RigidPrimView
+
+from omni_drones.robots.drone.multirotor import MultirotorBase
+from omni_drones.robots.robot import ASSET_PATH
+
+class Neo11(MultirotorBase):
 
     usd_path: str = ASSET_PATH + "/usd/neo11.usd"
-
-    def __init__(self, name: str="Neo11", cfg=None) -> None:
-        super().__init__(name, cfg)
+    param_path: str = ASSET_PATH + "/usd/neo11.yaml"
 

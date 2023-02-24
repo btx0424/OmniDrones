@@ -74,7 +74,7 @@ printenv > .vscode/.python.env
 And edit `.vscode/settings.json`:
 ```json
 {
-    ...
+    // ...
     "python.envFile": "${workspaceFolder}/.vscode/.python.env",
 }
 ```

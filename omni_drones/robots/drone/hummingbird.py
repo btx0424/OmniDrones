@@ -1,9 +1,13 @@
-from omni_drones.robots.robot import RobotBase, ASSET_PATH
+import torch
+from torchrl.data import BoundedTensorSpec, UnboundedContinuousTensorSpec
 
-class Hummingbird(RobotBase):
+from omni.isaac.core.prims import RigidPrimView
+
+from omni_drones.robots.drone.multirotor import MultirotorBase
+from omni_drones.robots.robot import ASSET_PATH
+
+class Hummingbird(MultirotorBase):
 
     usd_path: str = ASSET_PATH + "/usd/hummingbird.usd"
-
-    def __init__(self, name: str="Hummingbird", cfg=None) -> None:
-        super().__init__(name, cfg)
+    param_path: str = ASSET_PATH + "/usd/hummingbird.yaml"
 

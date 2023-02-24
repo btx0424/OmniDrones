@@ -6,6 +6,7 @@ from torchrl.data import TensorSpec
 
 import omni.timeline
 import omni.isaac.core.utils.prims as prim_utils
+import omni.isaac.core.utils.torch as torch_utils
 import omni_drones.utils.kit as kit_utils
 from omni.isaac.core.simulation_context import SimulationContext
 from omni.isaac.core.articulations import ArticulationView
@@ -22,13 +23,15 @@ TEMPLATE_PRIM_PATH = "/World/envs/env_0"
 class RobotBase(abc.ABC):
 
     usd_path: str
-    state_spec: TensorSpec
-    action_spec: TensorSpec
+    prim_type: str = "Xform"
+    prim_attributes: dict = None
 
     _robots = {}
-    _envs_positions: torch.Tensor
+    _envs_positions: torch.Tensor = None
 
     def __init__(self, name: str, cfg: RobotCfg=None) -> None:
+        if name is None:
+            name = self.__class__.__name__
         if name in RobotBase._robots:
             raise RuntimeError
         RobotBase._robots[name] = self
@@ -45,6 +48,8 @@ class RobotBase(abc.ABC):
 
         self.device = SimulationContext._instance._device
         self.dt = SimulationContext._instance.get_physics_dt()
+        self.state_spec: TensorSpec
+        self.action_spec: TensorSpec
 
     def spawn(
         self, n: int=1, translation=(0., 0., 0.5)
@@ -64,8 +69,10 @@ class RobotBase(abc.ABC):
                 )
             prim = prim_utils.create_prim(
                 prim_path,
+                prim_type=self.prim_type,
                 usd_path=self.usd_path,
                 translation=translation[i],
+                attributes=self.prim_attributes,
             )
             # apply rigid body properties
             kit_utils.set_nested_rigid_body_properties(
@@ -75,6 +82,7 @@ class RobotBase(abc.ABC):
                 max_linear_velocity=self.rigid_props.max_linear_velocity,
                 max_angular_velocity=self.rigid_props.max_angular_velocity,
                 max_depenetration_velocity=self.rigid_props.max_depenetration_velocity,
+                enable_gyroscopic_forces=True,
                 disable_gravity=self.rigid_props.disable_gravity,
                 retain_accelerations=self.rigid_props.retain_accelerations,
             )
@@ -110,20 +118,25 @@ class RobotBase(abc.ABC):
         self._physics_view = self.articulations._physics_view
         self._physics_sim_view = self.articulations._physics_sim_view
         
-        if hasattr(self, "_envs_positions"):
+        if self._envs_positions is not None:
             pos, rot = self.get_world_poses()
             self.set_env_poses(pos, rot)
 
         print(self.articulations._dof_names)
         print(self.articulations._dof_types)
-        print(self.articulations._dofs_infos)
+
+        # so that joint rotations do not produce torques
+        dof_dampings = self._physics_view.get_dof_dampings().clone()
+        self.articulations.set_gains(
+            kds=torch.zeros_like(dof_dampings)
+        )
 
     @abc.abstractmethod
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
 
     @abc.abstractmethod
-    def _reset_idx(self, mask: torch.Tensor):
+    def _reset_idx(self, env_ids: torch.Tensor):
         raise NotImplementedError
 
     def get_world_poses(self, clone=True):
@@ -131,15 +144,16 @@ class RobotBase(abc.ABC):
             poses = torch.unflatten(self._physics_view.get_root_transforms(), 0, self.shape)
             if clone:
                 poses = poses.clone()
-        return poses[..., :3], poses[..., 3:7]
+        return poses[..., :3], poses[..., [6, 3, 4 ,5]]
 
     def get_env_poses(self, clone=True):
         with self._disable_warnings():
             poses = torch.unflatten(self._physics_view.get_root_transforms(), 0, self.shape)
             if clone:
                 poses = poses.clone()
-        poses[..., :3] -= self._envs_positions
-        return poses[..., :3], poses[..., 3:7]
+        if self._envs_positions is not None:
+            poses[..., :3] -= self._envs_positions
+        return poses[..., :3], poses[..., [6, 3, 4, 5]]
         
     def set_env_poses(self, 
         positions: torch.Tensor, 
@@ -147,8 +161,11 @@ class RobotBase(abc.ABC):
         indices: torch.Tensor=None,
     ):
         with self._disable_warnings():
-            positions = (positions + self._envs_positions[indices]).flatten(0, -2)
-            orientations = orientations.flatten(0, -2)
+            if self._envs_positions is not None:
+                positions = (positions + self._envs_positions[indices]).reshape(-1, 3)
+            else:
+                positions = positions.reshape(-1, 3)
+            orientations = orientations.reshape(-1, 4)[:, [1, 2, 3, 0]]
             old_pose = self._physics_view.get_root_transforms().clone()
             indices = self._resolve_indices(indices)
             if positions is None:
@@ -199,6 +216,9 @@ class RobotBase(abc.ABC):
     def set_joint_velocities(self, ):
         with self._disable_warnings():
             ...
+
+    def get_state(self):
+        raise NotImplementedError
 
     def _resolve_indices(self, indices: torch.Tensor=None):
         all_indices = torch.arange(self.articulations.count, device=self.device).reshape(self.shape)

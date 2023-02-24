@@ -1,9 +1,10 @@
-from omni_drones.robots.robot import RobotBase, ASSET_PATH
+import torch
 
-class Firefly(RobotBase):
+from omni_drones.robots.drone.multirotor import MultirotorBase
+from omni_drones.robots.robot import ASSET_PATH
+
+class Firefly(MultirotorBase):
 
     usd_path: str = ASSET_PATH + "/usd/firefly.usd"
-
-    def __init__(self, name: str="Firefly", cfg=None) -> None:
-        super().__init__(name, cfg)
+    param_path: str = ASSET_PATH + "/usd/firefly.yaml"
 

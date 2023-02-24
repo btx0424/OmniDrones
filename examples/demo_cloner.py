@@ -18,7 +18,7 @@ def main(cfg):
     from omni.isaac.core.prims import GeometryPrim, RigidPrim
     from omni.isaac.core.objects import DynamicSphere, FixedSphere, VisualSphere
     import omni.isaac.core.utils.prims as prim_utils
-    import omni.isaac.orbit.utils.kit as kit_utils
+    import omni_drones.utils.kit as kit_utils
 
     from omni_drones.robots import drone, RobotBase
 
@@ -66,11 +66,11 @@ def main(cfg):
         attributes={"radius": 2.5, "intensity": 600.0, "color": (1.0, 1.0, 1.0)},
     )
 
-    # prim_utils.create_prim(
-    #     "/World/envs/env_0/target",
-    #     "Sphere", attributes={"radius": 0.1, "primvars:displayColor": [(.5, 0.5, 0.5)]},
-    #     translation=(0., 0., 0.5)
-    # )
+    prim_utils.create_prim(
+        "/World/envs/env_0/target",
+        "Sphere", attributes={"radius": 0.1, "primvars:displayColor": [(.5, 0.5, 0.5)]},
+        translation=(0., 0., 0.5)
+    )
 
     # VisualSphere("/World/envs/env_0/visual_sphere", radius=0.2, color=torch.tensor([0., 0., 1.]))
     # FixedSphere("/World/envs/env_0/fixed_sphere", radius=0.1, color=torch.tensor([0., 1., 0.]))

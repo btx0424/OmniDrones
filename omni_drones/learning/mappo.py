@@ -217,10 +217,7 @@ class MAPPOPolicy(ActorCriticPolicy):
                 in_keys=self.critic_in_keys, 
                 out_keys=self.critic_out_keys
             ).to(self.device)
-            self.value_func = with_extended_batch_size(
-                functorch.vmap(self.critic, in_dims=1, out_dims=1),
-                batch_size=self.num_agents
-            )
+            self.value_func = functorch.vmap(self.critic, in_dims=1, out_dims=1)
         else:
             raise ValueError(self.cfg.critic_input)
 
@@ -247,26 +244,21 @@ class MAPPOPolicy(ActorCriticPolicy):
         
     def policy_op(self, tensordict: TensorDict, training: bool):
         fmodel, params, buffers = self.actor_func_module
-        # TODO@btx0424 improve this behavior
-        # set the right batch size at a proper place
         actor_input = tensordict.select(*self.actor_in_keys, strict=False)
         actor_input.batch_size = [*actor_input.batch_size, self.num_agents]
         tensordict = self.actor_func(params, buffers, actor_input, deterministic=(not training))
         return tensordict
 
-    def value_op(self, tensordict: TensorDict, training: bool) -> TensorDict:
+    def value_op(self, tensordict: TensorDict) -> TensorDict:
         critic_input = tensordict.select(*self.critic_in_keys)
+        critic_input.batch_size = [*critic_input.batch_size, self.num_agents]
         tensordict = self.value_func(critic_input)
         return tensordict
 
     def __call__(self, tensordict: TensorDict):
-        
-        actor_input = tensordict.select(*self.in_keys)
-        tensordict.update(self.policy_op(actor_input, True))
-
-        critic_input = tensordict.select(*self.in_keys)
-        tensordict.update(self.value_func(critic_input))
-
+        input_td = tensordict.select(*self.in_keys)
+        tensordict.update(self.policy_op(input_td, True))
+        tensordict.update(self.value_op(input_td))
         return tensordict
 
     def update_actor(self, batch: TensorDict) -> Dict[str, Any]:
@@ -296,7 +288,7 @@ class MAPPOPolicy(ActorCriticPolicy):
 
     def update_critic(self, batch: TensorDict) -> Dict[str, Any]:
         critic_input = batch.select(*self.critic_in_keys)
-        values = self.value_func(critic_input)["state_value"]
+        values = self.value_op(critic_input)["state_value"]
         b_values = batch["state_value"]
         b_returns = batch["returns"]
         assert values.shape == b_values.shape == b_returns.shape
@@ -329,7 +321,7 @@ class MAPPOPolicy(ActorCriticPolicy):
         tensordict = tensordict.select(*self.train_in_keys, strict=False)
         next_tensordict = tensordict["next"][:, -1]
         with torch.no_grad():
-            value_output = self.value_func(next_tensordict)
+            value_output = self.value_op(next_tensordict)
         
         rewards = tensordict[("reward", f"{self.agent_name}.reward")]
         if self.value_learning == "combined":

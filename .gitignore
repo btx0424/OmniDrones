@@ -137,3 +137,4 @@ videos/
 
 # collected data
 *.pt
+urdf/

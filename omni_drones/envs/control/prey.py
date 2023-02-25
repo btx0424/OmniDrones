@@ -4,24 +4,25 @@ from torchrl.data import UnboundedContinuousTensorSpec
 from tensordict.tensordict import TensorDict, TensorDictBase
 
 import omni.isaac.core.utils.torch as torch_utils
-from omni.isaac.core.objects import VisualSphere
-
+from omni.isaac.core.objects import VisualSphere, DynamicSphere
+from omni.isaac.core.prims import RigidPrimView
 from omni_drones.envs.isaac_env import IsaacEnv, AgentSpec
 from omni_drones.robots.config import RobotCfg
-from omni_drones.robots.drone import (
-    Crazyflie, Firefly, Neo11, Hummingbird
-)
+from omni_drones.robots.drone import MultirotorBase
 import omni_drones.utils.kit as kit_utils
-
 
 class Prey(IsaacEnv):
     
     def __init__(self, cfg, headless):
         super().__init__(cfg, headless)
-        self.num_agents = 3
         self.drone.initialize()
+        self.target = RigidPrimView(prim_paths_expr="/World/envs/.*/target")
         self.target.initialize()
+        self.target_init_vel = self.target.get_velocities(clone=True)
+        self.target_init_vel[..., 0] = 1.0
+
         self.init_poses = self.drone.get_env_poses(clone=True)
+        
         self.agent_spec["drone"] = AgentSpec(
             "drone", self.num_agents, 
             self.drone.state_spec.to(self.device),
@@ -35,20 +36,22 @@ class Prey(IsaacEnv):
     def _design_scene(self):
         self.num_agents = 3
         cfg = RobotCfg()
-        # self.drone = Crazyflie(cfg=cfg)
-        self.drone = Firefly(cfg=cfg)
-        # self.drone = Hummingbird(cfg=cfg)
-        # self.drone = Neo11(cfg=cfg)
+        self.drone: MultirotorBase = MultirotorBase.REGISTRY["Crazyflie"](cfg=cfg)
 
         self.target_pos = torch.tensor([[0., 0., 1.5]], device=self.device)
-        self.target = VisualSphere(
+
+        DynamicSphere(
             prim_path="/World/envs/env_0/target",
             name="target",
             translation=self.target_pos,
             radius=0.05, 
-            color=torch.tensor([1., 0., 0.])
+            color=torch.tensor([1., 0., 0.]),
         )
 
+        kit_utils.set_rigid_body_properties(
+            prim_path="/World/envs/env_0/target",
+            disable_gravity=True
+        )        
         kit_utils.create_ground_plane(
             "/World/defaultGroundPlane",
             static_friction=1.0,
@@ -71,10 +74,14 @@ class Prey(IsaacEnv):
         pos = torch.rand(len(env_ids), n, 3, device=self.device) * self.init_pos_scale + self.init_pos_offset
         self.drone.set_env_poses(pos, rot[env_ids], env_ids)
         self.drone.set_velocities(torch.zeros_like(self.vels[env_ids]), env_ids)
+        
+        self.target.set_world_poses((self.envs_positions + self.target_pos)[env_ids], indices=env_ids)
+        self.target.set_velocities(self.target_init_vel[env_ids], indices=env_ids)
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
-        actions = tensordict["drone.action"]
+        actions = tensordict["drone.action.rotor_cmds"]
         self.effort = self.drone.apply_action(actions)
+        # self.target.apply_forces()
     
     def _compute_state_and_obs(self):
         obs = self.drone.get_state()
@@ -84,7 +91,9 @@ class Prey(IsaacEnv):
         }, self.batch_size)
     
     def _compute_reward_and_done(self):
-        pos, rot = self.drone.get_env_poses(False)   
+        pos, rot = self.drone.get_env_poses(False)
+        # pos2 = 1.0*pos[..., :] - self.target_pos
+        target_dist = torch.norm(pos-self.target_pos, dim=-1)
         # uprightness
         ups = functorch.vmap(torch_utils.quat_axis)(rot, axis=2)
         tiltage = torch.abs(1 - ups[..., 2])
@@ -106,3 +115,4 @@ class Prey(IsaacEnv):
             "done": done.all(-1)
         }, self.batch_size)
 
+        

@@ -8,9 +8,7 @@ from omni.isaac.core.objects import VisualSphere
 
 from omni_drones.envs.isaac_env import IsaacEnv, AgentSpec
 from omni_drones.robots.config import RobotCfg
-from omni_drones.robots.drone import (
-    Crazyflie, Firefly, Neo11, Hummingbird
-)
+from omni_drones.robots.drone import MultirotorBase
 import omni_drones.utils.kit as kit_utils
 
 
@@ -33,10 +31,7 @@ class Hover(IsaacEnv):
 
     def _design_scene(self):
         cfg = RobotCfg()
-        self.drone = Crazyflie(cfg=cfg)
-        # self.drone = Firefly(cfg=cfg)
-        # self.drone = Hummingbird(cfg=cfg)
-        # self.drone = Neo11(cfg=cfg)
+        self.drone: MultirotorBase = MultirotorBase.REGISTRY["Crazyflie"](cfg=cfg)
 
         self.target_pos = torch.tensor([[0., 0., 1.5]], device=self.device)
         self.target = VisualSphere(

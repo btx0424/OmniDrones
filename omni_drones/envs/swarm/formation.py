@@ -1,15 +1,14 @@
 import torch
 import functorch
-from torchrl.data import UnboundedContinuousTensorSpec
+from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec
 from tensordict.tensordict import TensorDict, TensorDictBase
 
 import omni.isaac.core.utils.torch as torch_utils
 
 from omni_drones.envs.isaac_env import IsaacEnv, AgentSpec, Optional, List
+from omni_drones.envs.utils.helpers import off_diag, cpos
 from omni_drones.robots.config import RobotCfg
-from omni_drones.robots.drone import (
-    Crazyflie, Firefly, Neo11, Hummingbird
-)
+from omni_drones.robots.drone import MultirotorBase
 import omni_drones.utils.kit as kit_utils
 
 REGULAR_HEXAGON = [
@@ -41,17 +40,24 @@ class Formation(IsaacEnv):
         super().__init__(cfg, headless)
         self.drone.initialize()
         self.init_poses = self.drone.get_env_poses(clone=True)
-        observaton_spec = ...
+
+        observation_spec = CompositeSpec({
+            "self": self.drone.state_spec.expand(
+                1, *self.drone.state_spec.shape).to(self.device),
+            "others": UnboundedContinuousTensorSpec(
+                (4, 3+3+1)).to(self.device)
+        }, device=self.device)
+
         self.agent_spec["drone"] = AgentSpec(
             "drone", 5,
-            self.drone.state_spec,
-            self.drone.action_spec,
+            observation_spec,
+            self.drone.action_spec.to(self.device),
             UnboundedContinuousTensorSpec(3).to(self.device)
         )
 
     def _design_scene(self) -> Optional[List[str]]:
         cfg = RobotCfg()
-        self.drone = Firefly(cfg=cfg)
+        self.drone: MultirotorBase = MultirotorBase.REGISTRY["Crazyflie"](cfg=cfg)
         kit_utils.create_ground_plane(
             "/World/defaultGroundPlane",
             static_friction=1.0,
@@ -77,7 +83,21 @@ class Formation(IsaacEnv):
         self.effort = self.drone.apply_action(actions)
     
     def _compute_state_and_obs(self):
-        obs = self.drone.get_state()
+        states = self.drone.get_state()
+        pos, vel = states[..., :3], states[..., 7:10]
+
+        relative_pos = functorch.vmap(cpos)(pos, pos)
+        relative_pos = functorch.vmap(off_diag)(relative_pos)
+        relative_vel = functorch.vmap(cpos)(vel, vel)
+        relative_vel = functorch.vmap(off_diag)(relative_vel)
+        pdist = functorch.vmap(off_diag)(torch.norm(relative_pos, dim=-1))
+
+        # states[..., :3] = pos.mean(dim=-2, keepdim=True) - pos
+
+        obs = TensorDict({
+            "self": states,
+            "others": torch.cat([relative_pos, relative_vel, pdist], dim=-1)
+        })
         return TensorDict({
             "drone.obs": obs,
         }, self.batch_size)

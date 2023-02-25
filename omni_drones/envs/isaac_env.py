@@ -23,6 +23,8 @@ class IsaacEnv(EnvBase):
     env_ns = "/World/envs"
     template_env_ns = "/World/envs/env_0"
 
+    REGISTRY: Dict[str, "IsaacEnv"] = {}
+
     def __init__(self, cfg, headless):
         super().__init__(
             device=cfg.sim_device,
@@ -100,6 +102,13 @@ class IsaacEnv(EnvBase):
         self.action_spec = CompositeSpec(shape=self.batch_size)
         self.reward_spec = CompositeSpec(shape=self.batch_size)
     
+    @classmethod
+    def __init_subclass__(cls, **kwargs):
+        if cls.__name__ in IsaacEnv.REGISTRY:
+            raise ValueError
+        super().__init_subclass__(**kwargs)
+        IsaacEnv.REGISTRY[cls.__name__] = cls
+
     @property
     def agent_spec(self):
         if not hasattr(self, "_agent_spec"):

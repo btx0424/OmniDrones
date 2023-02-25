@@ -2,6 +2,7 @@ import torch
 import abc
 import os.path as osp
 from contextlib import contextmanager
+from typing import Dict, Type
 from torchrl.data import TensorSpec
 
 import omni.timeline
@@ -29,6 +30,8 @@ class RobotBase(abc.ABC):
     _robots = {}
     _envs_positions: torch.Tensor = None
 
+    REGISTRY: Dict[str, Type["RobotBase"]] = {}
+
     def __init__(self, name: str, cfg: RobotCfg=None) -> None:
         if name is None:
             name = self.__class__.__name__
@@ -50,6 +53,13 @@ class RobotBase(abc.ABC):
         self.dt = SimulationContext._instance.get_physics_dt()
         self.state_spec: TensorSpec
         self.action_spec: TensorSpec
+
+    @classmethod
+    def __init_subclass__(cls, **kwargs):
+        if cls.__name__ in RobotBase.REGISTRY:
+            raise ValueError
+        super().__init_subclass__(**kwargs)
+        RobotBase.REGISTRY[cls.__name__] = cls
 
     def spawn(
         self, n: int=1, translation=(0., 0., 0.5)

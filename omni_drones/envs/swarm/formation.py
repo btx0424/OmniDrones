@@ -43,17 +43,33 @@ class Formation(IsaacEnv):
 
         observation_spec = CompositeSpec({
             "self": self.drone.state_spec.expand(
-                1, *self.drone.state_spec.shape).to(self.device),
+                1, *self.drone.state_spec.shape
+            ).to(self.device),
             "others": UnboundedContinuousTensorSpec(
-                (4, 3+3+1)).to(self.device)
-        }, device=self.device)
+                (4, 3+3+1)
+            ).to(self.device)
+        })
+
+        state_spec = CompositeSpec({
+            "drones": self.drone.state_spec.expand(
+                self.drone._count, *self.drone.state_spec.shape
+            ),
+        })
 
         self.agent_spec["drone"] = AgentSpec(
             "drone", 5,
             observation_spec,
             self.drone.action_spec.to(self.device),
-            UnboundedContinuousTensorSpec(3).to(self.device)
+            UnboundedContinuousTensorSpec(3).to(self.device),
+            state_spec.to(self.device)
         )
+        self.ep_return = self._tensordict["drone.return"]
+        self._tensordict["drone.return.cost_l"] = self.ep_return[..., 0]
+        self._tensordict["drone.return.cost_h"] = self.ep_return[..., 1]
+        self._tensordict["drone.return.height"] = self.ep_return[..., 2]
+
+        self.last_cost_l = torch.zeros(self.num_envs, 1, device=self.device)
+        self.last_cost_h = torch.zeros(self.num_envs, 1, device=self.device)
 
     def _design_scene(self) -> Optional[List[str]]:
         cfg = RobotCfg()
@@ -73,10 +89,13 @@ class Formation(IsaacEnv):
     def _reset_idx(self, env_ids: torch.Tensor):
         _, rot = self.init_poses
         self.drone._reset_idx(env_ids)
-        pos = torch.rand(len(env_ids), 1, 3, device=self.device)
-        vel = torch.zeros(len(env_ids), 1, 6, device=self.device)
+        pos = torch.rand(len(env_ids), self.drone._count, 3, device=self.device)
+        vel = torch.zeros(len(env_ids), self.drone._count, 6, device=self.device)
         self.drone.set_env_poses(pos, rot[env_ids], env_ids)
         self.drone.set_velocities(vel, env_ids)
+
+        self.last_cost_h[env_ids] = functorch.vmap(cost_formation_laplacian)(pos, desired_L=self.formation_L)
+        self.last_cost_l[env_ids] = functorch.vmap(cost_formation_hausdorff)(pos, desired_p=self.formation)
     
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict["drone.action"]
@@ -87,33 +106,43 @@ class Formation(IsaacEnv):
         pos, vel = states[..., :3], states[..., 7:10]
 
         relative_pos = functorch.vmap(cpos)(pos, pos)
-        relative_pos = functorch.vmap(off_diag)(relative_pos)
         relative_vel = functorch.vmap(cpos)(vel, vel)
+        pdist = functorch.vmap(off_diag)(torch.norm(relative_pos, dim=-1, keepdim=True))
+        relative_pos = functorch.vmap(off_diag)(relative_pos)
         relative_vel = functorch.vmap(off_diag)(relative_vel)
-        pdist = functorch.vmap(off_diag)(torch.norm(relative_pos, dim=-1))
-
-        # states[..., :3] = pos.mean(dim=-2, keepdim=True) - pos
 
         obs = TensorDict({
-            "self": states,
+            "self": states.unsqueeze(2),
             "others": torch.cat([relative_pos, relative_vel, pdist], dim=-1)
-        })
+        }, [self.num_envs, self.drone._count])
+
+        center = pos.mean(-2, keepdim=True)
+        states[..., :3] -= center
+        state = TensorDict({
+            "drones": states
+        }, self.batch_size)
+        
         return TensorDict({
             "drone.obs": obs,
+            "drone.state": state
         }, self.batch_size)
     
     def _compute_reward_and_done(self):
         pos, rot = self.drone.get_env_poses()
 
-        reward = torch.zeros(self.num_envs, self.drone._count, 3)
-        cost_f1 = cost_formation_laplacian(pos, self.formation_L)
-        cost_f2 = cost_formation_hausdorff(pos, self.formation)
+        reward = torch.zeros(self.num_envs, self.drone._count, 3, device=self.device)
+        cost_l = functorch.vmap(cost_formation_laplacian)(pos, desired_L=self.formation_L)
+        cost_h = functorch.vmap(cost_formation_hausdorff)(pos, desired_p=self.formation)
         cost_height = torch.square(pos[..., 2] - self.target_height)
 
-        reward[..., 0] = - cost_f1
-        reward[..., 1] = - cost_f2
+        reward[..., 0] = self.last_cost_l - cost_l
+        reward[..., 1] = self.last_cost_h - cost_h
         reward[..., 2] = - cost_height
 
+        self.last_cost_l[:] = cost_l
+        self.last_cost_h[:] = cost_h
+
+        self._tensordict["drone.return"] += reward
         done = (self.progress_buf >= self.max_eposode_length).unsqueeze(-1)
         return TensorDict({
             "reward": {

@@ -7,6 +7,7 @@ import time
 from torch.optim import lr_scheduler
 from tensordict import TensorDict
 from tensordict.nn import TensorDictModule
+from torchrl.data import CompositeSpec
 from typing import Any, Dict, List, Tuple, Union, Optional
 
 from omni_drones.envs.isaac_env import AgentSpec
@@ -42,26 +43,14 @@ def with_extended_batch_size(func, batch_size):
     return func_with_extended_batch_size
 
 class MAPPOPolicy(ActorCriticPolicy):
-    """
-    TODO: document the expected behaviors
     
-    Args:
-    
-        critic_input: str, `'obs'` or `'state'`
-            `'obs'`: critic output (R,)
-            `'state'`: critic output (num_agents, R)
-            where R is decided by `value_learning`
-
-        value_learning: str, `'combined'`| `'separate'`
-            `'combined'`: fit values.sum(-1) to returns.sum(-1)
-            `'separate'`: fit values to returns
-    """
     def __init__(self, 
         cfg,
-        agent_type: AgentSpec,
+        agent_spec: AgentSpec,
+        act_name: str = None,
         device="cuda"
     ) -> None:
-        super().__init__(cfg, agent_type, device)
+        super().__init__(cfg, agent_spec, act_name, device)
 
         self.clip_param = cfg.clip_param
         self.ppo_epoch = int(cfg.ppo_epochs)
@@ -72,32 +61,18 @@ class MAPPOPolicy(ActorCriticPolicy):
         self.gae_gamma = cfg.gamma
         self.gae_lambda = cfg.gae_lambda
 
-        self.act_dim = agent_type.action_spec.shape.numel()
+        self.act_dim = agent_spec.action_spec.shape.numel()
 
         if cfg.reward_weights is not None:
-            from omegaconf.listconfig import ListConfig
-            if isinstance(cfg.reward_weights, ListConfig):
-                if not len(cfg.reward_weights) == self.agent_type.num_rewards:
-                    raise RuntimeError(
-                        f'AgentType(name="{agent_type.name}") has {agent_type.num_rewards} rewards'
-                        f'but the given reward weights are {reward_weights}.'
-                    )
-                reward_weights = lambda step: torch.tensor(cfg.reward_weights, device=self.device).float() 
-            elif isinstance(cfg.reward_weights, str):
-                _reward_weights = eval(cfg.reward_weights)
-                assert callable(_reward_weights)
-                reward_weights = lambda step: torch.as_tensor(_reward_weights(step), device=self.device)
-            else:
-                raise ValueError(
-                    f"{cfg.reward_weights} is of type {type(cfg.reward_weights)}"
-                )
+            self.reward_weights = torch.as_tensor(cfg.reward_weights, device=device)
         else:
-            reward_weights = lambda step: torch.ones(self.agent_type.reward_spec.shape.numel(), device=self.device)
-        self.reward_weights = reward_weights
+            self.reward_weights = torch.ones(self.agent_spec.reward_spec.shape, device=device)
         
         self.train_in_keys = [
             self.obs_name,
+            self.states_name,
             ("next", self.obs_name),
+            ("next", self.states_name),
             self.act_name,
             self.act_logps_name,
             ("reward", f"{self.agent_name}.reward"),
@@ -106,7 +81,7 @@ class MAPPOPolicy(ActorCriticPolicy):
             "state_value",
         ]
 
-        self.in_keys = [self.obs_name]
+        self.in_keys = [self.obs_name, self.states_name]
         self.n_updates = 0
 
     @property
@@ -146,7 +121,7 @@ class MAPPOPolicy(ActorCriticPolicy):
         self.share_actor = self.cfg.share_actor
         if self.share_actor:
             self.actor = TensorDictModule(
-                make_ppo_actor(cfg, self.agent_type.observation_spec, self.agent_type.action_spec),
+                make_ppo_actor(cfg, self.agent_spec.observation_spec, self.agent_spec.action_spec),
                 in_keys=self.actor_in_keys, out_keys=self.actor_out_keys
             ).to(self.device)
             self.actor_func_module = (fmodel, params, buffers) = functorch.make_functional_with_buffers(self.actor)
@@ -158,7 +133,7 @@ class MAPPOPolicy(ActorCriticPolicy):
         else:
             self.actor = nn.ModuleList([
                 TensorDictModule(
-                    make_ppo_actor(cfg, self.agent_type.observation_spec, self.agent_type.action_spec),
+                    make_ppo_actor(cfg, self.agent_spec.observation_spec, self.agent_spec.action_spec),
                     in_keys=self.actor_in_keys, out_keys=self.actor_out_keys
                 ) for _ in range(self.num_agents)
             ]).to(self.device)
@@ -183,12 +158,12 @@ class MAPPOPolicy(ActorCriticPolicy):
             self.critic_loss_fn = nn.MSELoss(reduction="none")
         
         self.critic_output_shape = (
-            self.agent_type.n if self.cfg.critic_input == "state" else 1,
-            self.agent_type.num_rewards if self.value_learning == "separate" else 1,
+            self.agent_spec.n if self.cfg.critic_input == "state" else 1,
+            self.agent_spec.num_rewards if self.value_learning == "separate" else 1,
         )
         
         if self.cfg.critic_input == "state":
-            if self.agent_type.state_spec is None:
+            if self.agent_spec.state_spec is None:
                 raise ValueError
             self.critic_in_keys = [f"{self.agent_name}.state"]
             self.critic_out_keys = ["state_value"]
@@ -196,9 +171,9 @@ class MAPPOPolicy(ActorCriticPolicy):
             self.critic = TensorDictModule(
                 CentralizedCritic(
                     cfg,
-                    entity_ids=torch.arange(self.agent_type.n, device=self.device),
-                    state_space=self.agent_type.state_space,
-                    num_rewards=self.agent_type.num_rewards if self.value_learning == "separate" else 1,
+                    entity_ids=torch.arange(self.agent_spec.n, device=self.device),
+                    state_spec=self.agent_spec.state_spec,
+                    num_rewards=self.agent_spec.num_rewards if self.value_learning == "separate" else 1,
                 ),
                 in_keys=self.critic_in_keys,
                 out_keys=self.critic_out_keys
@@ -211,8 +186,8 @@ class MAPPOPolicy(ActorCriticPolicy):
             self.critic = TensorDictModule(
                 SharedCritic(
                     cfg,
-                    self.agent_type.observation_spec,
-                    self.agent_type.num_rewards if self.value_learning == "separate" else 1,
+                    self.agent_spec.observation_spec,
+                    self.agent_spec.num_rewards if self.value_learning == "separate" else 1,
                 ),
                 in_keys=self.critic_in_keys, 
                 out_keys=self.critic_out_keys
@@ -237,7 +212,7 @@ class MAPPOPolicy(ActorCriticPolicy):
             self.value_normalizer: valuenorm.Normalizer = cls(
                 input_shape=(
                     self.num_agents, 
-                    self.agent_type.num_rewards if self.value_learning == "separate" else 1,
+                    self.agent_spec.num_rewards if self.value_learning == "separate" else 1,
                 ),
                 **cfg.value_norm["kwargs"]
             ).to(self.device)
@@ -256,7 +231,7 @@ class MAPPOPolicy(ActorCriticPolicy):
         return tensordict
 
     def __call__(self, tensordict: TensorDict):
-        input_td = tensordict.select(*self.in_keys)
+        input_td = tensordict.select(*self.in_keys, strict=False)
         tensordict.update(self.policy_op(input_td, True))
         tensordict.update(self.value_op(input_td))
         return tensordict
@@ -588,6 +563,7 @@ class CentralizedCritic(nn.Module):
         
     """
     def __init__(self,
+        cfg,
         entity_ids: INDEX_TYPE,
         state_spec: CompositeSpec, 
         num_rewards: int,

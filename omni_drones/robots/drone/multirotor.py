@@ -27,9 +27,7 @@ class MultirotorBase(RobotBase):
         self.mass = self.params["mass"]
         self.num_rotors = self.params["rotor_configuration"]["num_rotors"]
 
-        self.action_spec = CompositeSpec(
-            rotor_cmds=BoundedTensorSpec(-1, 1, self.num_rotors, device=self.device)
-        )
+        self.action_spec = BoundedTensorSpec(-1, 1, self.num_rotors, device=self.device)
         self.state_spec = UnboundedContinuousTensorSpec(19 + self.num_rotors, device=self.device)
         self.prim_paths_expr = f"/World/envs/.*/{self.name}_*"
         

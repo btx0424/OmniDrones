@@ -1,6 +1,6 @@
 import torch
 import functorch
-from torchrl.data import UnboundedContinuousTensorSpec
+from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec
 from tensordict.tensordict import TensorDict, TensorDictBase
 
 import omni.isaac.core.utils.torch as torch_utils
@@ -29,6 +29,7 @@ class Prey(IsaacEnv):
             self.drone.action_spec.to(self.device),
             UnboundedContinuousTensorSpec(1).to(self.device),
         )
+        
         self.vels = self.drone.get_velocities()
         self.init_pos_scale = torch.tensor([2., 2., 0.6], device=self.device) 
         self.init_pos_offset = torch.tensor([-1., -1., 0.3], device=self.device)
@@ -79,7 +80,7 @@ class Prey(IsaacEnv):
         self.target.set_velocities(self.target_init_vel[env_ids], indices=env_ids)
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
-        actions = tensordict["drone.action.rotor_cmds"]
+        actions = tensordict["drone.action"]
         self.effort = self.drone.apply_action(actions)
         # self.target.apply_forces()
     

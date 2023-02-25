@@ -216,6 +216,7 @@ class AgentSpec:
     observation_spec: TensorSpec
     action_spec: TensorSpec
     reward_spec: TensorSpec
+    state_spec: TensorSpec = None
 
 
 class _AgentSpecView(Dict[str, AgentSpec]):
@@ -231,6 +232,9 @@ class _AgentSpecView(Dict[str, AgentSpec]):
             def expand(spec: TensorSpec) -> TensorSpec:
                 return spec.expand(*self.env.batch_size, __value.n, *spec.shape)
             self.env.observation_spec[f"{name}.obs"] = expand(__value.observation_spec)
+            if __value.state_spec is not None:
+                shape = (*self.env.batch_size, *__value.state_spec.shape)
+                self.env.observation_spec[f"{name}.state"] = __value.state_spec.expand(*shape)
             self.env.action_spec[f"{name}.action"] = expand(__value.action_spec)
             self.env.reward_spec[f"{name}.reward"] = expand(__value.reward_spec)
             self.env._tensordict[f"{name}.return"] = self.env.reward_spec[f"{name}.reward"].zero()

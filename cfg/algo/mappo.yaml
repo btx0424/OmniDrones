@@ -1,9 +1,9 @@
 name: mappo
 
 # ppo
-train_every: 16
-num_minibatches: 8
-ppo_epochs: 5
+train_every: 32
+num_minibatches: 4
+ppo_epochs: 4
 clip_param: 0.2
 entropy_coef: 0.01
 gae_lambda: 0.95
@@ -33,7 +33,8 @@ critic:
   num_critics: 1
   value_norm:
     class: ValueNorm1
-    kwargs: {}
+    kwargs: 
+      beta: 0.995
 
   lr: 0.0005
   lr_scheduler: 

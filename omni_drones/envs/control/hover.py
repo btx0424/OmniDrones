@@ -27,7 +27,7 @@ class Hover(IsaacEnv):
         )
         self.vels = self.drone.get_velocities()
         self.init_pos_scale = torch.tensor([2., 2., 0.6], device=self.device) 
-        self.init_pos_offset = torch.tensor([-1., -1., 0.3], device=self.device)
+        self.init_pos_offset = torch.tensor([-1., -1., 0.4], device=self.device)
 
     def _design_scene(self):
         cfg = RobotCfg()

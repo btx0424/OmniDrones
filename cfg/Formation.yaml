@@ -50,7 +50,6 @@ algo:
     use_feature_normalization: true
     use_orthogonal: true
 headless: true
-sim_device: cuda
 env:
   num_envs: 1024
   env_spacing: 2.5

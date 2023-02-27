@@ -6,7 +6,7 @@ import torchopt
 import time
 from torch.optim import lr_scheduler
 from tensordict import TensorDict
-from tensordict.nn import TensorDictModule
+from tensordict.nn import TensorDictModule, make_functional
 from torchrl.data import CompositeSpec
 from typing import Any, Dict, List, Tuple, Union, Optional
 
@@ -19,31 +19,8 @@ from .common import ActorCriticPolicy
 
 LR_SCHEDULER = lr_scheduler._LRScheduler
 
-def linear_schedule(start_factor, end_factor, total_iters):
-    start_factor = torch.as_tensor(start_factor)
-    end_factor = torch.as_tensor(end_factor)
-    total_iters = torch.as_tensor(total_iters)
-    assert len(start_factor) == len(end_factor)
-    assert (total_iters > 0).all()
-    def get_weights(iter_):
-        return torch.min(
-            (end_factor-start_factor)/total_iters * iter_ + start_factor,
-            end_factor
-        )
-    return get_weights
-
-import functools
-def with_extended_batch_size(func, batch_size):
-    if isinstance(batch_size, int):
-        batch_size = [batch_size]
-    @functools.wraps(func)
-    def func_with_extended_batch_size(tensordict: TensorDict, **kwargs):
-        tensordict.batch_size = [*tensordict.batch_size, *batch_size]
-        return func(tensordict, **kwargs)
-    return func_with_extended_batch_size
-
 class MAPPOPolicy(ActorCriticPolicy):
-    
+
     def __init__(self, 
         cfg,
         agent_spec: AgentSpec,
@@ -71,8 +48,9 @@ class MAPPOPolicy(ActorCriticPolicy):
         self.train_in_keys = [
             self.obs_name,
             self.states_name,
-            ("next", self.obs_name),
-            ("next", self.states_name),
+            "next",
+            # ("next", self.obs_name),
+            # ("next", self.states_name),
             self.act_name,
             self.act_logps_name,
             ("reward", f"{self.agent_name}.reward"),
@@ -300,7 +278,7 @@ class MAPPOPolicy(ActorCriticPolicy):
         
         rewards = tensordict[("reward", f"{self.agent_name}.reward")]
         if self.value_learning == "combined":
-            rewards = (rewards * self.reward_weights(self.n_updates)).sum(-1, keepdim=True)
+            rewards = (rewards * self.reward_weights).sum(-1, keepdim=True)
         values = tensordict["state_value"]
         next_value = value_output["state_value"].squeeze(0)
 
@@ -343,62 +321,6 @@ class MAPPOPolicy(ActorCriticPolicy):
         if hasattr(self, "value_normalizer"):
             train_info["value_running_mean"] = self.value_normalizer.running_mean.mean()
         self.n_updates += 1
-        return {f"{self.agent_name}/{k}": v for k, v in train_info.items()}
-
-    def train_on_batch(self, batch: TensorDict, next_tensordict: TensorDict):
-        start = time.perf_counter()
-        with torch.no_grad():
-            value_output = self.value_op(next_tensordict, training=False)
-
-        rewards = batch[("reward", f"{self.agent_name}.reward")]
-        if self.value_learning == "combined":
-            rewards = (rewards * self.reward_weights(self.n_updates)).sum(-1, keepdim=True)
-        values = batch["state_value"]
-        next_value = value_output["state_value"].squeeze(0)
-
-        if hasattr(self, "value_normalizer"):
-            values = self.value_normalizer.denormalize(values)
-            next_value = self.value_normalizer.denormalize(next_value)
-        
-        dones = self._get_dones(batch)
-
-        batch["advantages"], batch["returns"] = compute_gae_(
-            reward=rewards,
-            done=dones,
-            value=values,
-            next_value=next_value,
-            gamma=self.gae_gamma,
-            lmbda=self.gae_lambda,
-        )
-        if self.value_learning == "separate":
-            batch["advantages"] = (batch["advantages"] * self.reward_weights(self.n_updates)).sum(-1, keepdim=True)
-
-        advantages_mean = batch["advantages"].mean()
-        advantages_std = batch["advantages"].std()
-        if self.normalize_advantages:
-            batch["advantages"] = (batch["advantages"] - advantages_mean) / (advantages_std + 1e-8)
-        
-        if hasattr(self, "value_normalizer"):
-            self.value_normalizer.update(batch["returns"])
-            batch["returns"] = self.value_normalizer.normalize(batch["returns"])
-        
-        train_info = []
-        for ppo_epoch in range(self.ppo_epoch):
-            for minibatch in self.make_dataset(batch):
-                train_info.append(TensorDict({
-                    **self.update_actor(minibatch), 
-                    **self.update_critic(minibatch)
-                }, batch_size=[]))
-
-        train_info: TensorDict = torch.stack(train_info)
-        train_info = train_info.apply(lambda x: x.mean(0), batch_size=[])
-        train_info["advantages_mean"] = advantages_mean
-        train_info["advantages_std"] = advantages_std
-        train_info["action_norm"] = batch[self.act_name].float().norm(dim=-1).mean()
-        if hasattr(self, "value_normalizer"):
-            train_info["value_running_mean"] = self.value_normalizer.running_mean.mean()
-        self.n_updates += 1
-        # print(f"training takes {time.perf_counter() - start} s")
         return {f"{self.agent_name}/{k}": v for k, v in train_info.items()}
 
 
@@ -518,6 +440,14 @@ class StochasticActor(nn.Module):
             dist_entropy = action_dist.entropy().unsqueeze(-1)
             return action, action_log_probs, dist_entropy
 
+    def evaluate(self,
+        obs: Union[torch.Tensor, TensorDict], 
+        action: torch.Tensor=None,
+        done=None, 
+        rnn_state=None, 
+        deterministic=False,
+    ):
+        ...
 
 import math
 class SharedCritic(nn.Module):

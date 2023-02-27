@@ -1,8 +1,7 @@
 headless: false
-sim_device: cuda
 
 env:
-  num_envs: 4096
+  num_envs: 10
   env_spacing: 2.5
   max_episode_length: 500
 
@@ -13,7 +12,7 @@ sim:
   replicate_physics: false
   use_flatcache: true
   use_gpu_pipeline: true
-  device: "cuda:0"
+  device: "cuda"
 
   # GPU buffers
   gpu_max_rigid_contact_count: 524288

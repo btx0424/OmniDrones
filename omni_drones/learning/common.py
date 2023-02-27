@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torchinfo
 
-from typing import Any, Dict
+from typing import Optional, Sequence, Union, Type
 from tensordict import TensorDict
 
 from omni_drones.envs.isaac_env import AgentSpec
@@ -62,5 +62,3 @@ class ActorCriticPolicy:
             return self._act_name
         else:
             return self.agent_spec.name + ".action"
-
-        

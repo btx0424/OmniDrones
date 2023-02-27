@@ -41,7 +41,7 @@ def main(cfg):
         control_target = torch.cat([
             relative_state[..., :3], target_vel, torch.zeros_like(target_vel[..., [0]])], dim=-1)
         controller_state = tensordict.get("controller_state", TensorDict({}, relative_state.shape[:2]))
-                
+        
         cmds, controller_state = vmap(vmap(controller))(relative_state, control_target, controller_state)
         torch.nan_to_num_(cmds, 0.)
         assert not torch.isnan(cmds).any()
@@ -54,7 +54,7 @@ def main(cfg):
         policy, 
         split_trajs=False,
         frames_per_batch=env.num_envs * cfg.algo.train_every,
-        device="cuda", 
+        device=cfg.sim.device, 
         return_same_td=True,
     )
 

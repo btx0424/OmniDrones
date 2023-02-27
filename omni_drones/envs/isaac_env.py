@@ -27,7 +27,7 @@ class IsaacEnv(EnvBase):
 
     def __init__(self, cfg, headless):
         super().__init__(
-            device=cfg.sim_device,
+            device=cfg.sim.device,
             batch_size=[cfg.env.num_envs],
             run_type_checks=False
         )

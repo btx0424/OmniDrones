@@ -1,1 +1,2 @@
-class Flocking
+class Flocking:
+    ...

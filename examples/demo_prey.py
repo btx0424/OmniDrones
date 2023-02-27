@@ -33,6 +33,7 @@ def main(cfg):
     ).to(env.device)
 
     def policy(tensordict: TensorDict):
+        state = tensordict["drone.obs"]
         tensordict = ppo(tensordict)
         relative_state = tensordict["drone.obs"][..., :13]
         relative_state[..., :3] = 0.

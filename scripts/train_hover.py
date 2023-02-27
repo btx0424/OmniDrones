@@ -54,7 +54,7 @@ def main(cfg):
         policy, 
         split_trajs=False,
         frames_per_batch=env.num_envs * cfg.algo.train_every,
-        device="cuda", 
+        device=cfg.sim.device, 
         return_same_td=True,
     )
 

@@ -93,16 +93,13 @@ class Prey(IsaacEnv):
     
     def _compute_reward_and_done(self):
         pos, rot = self.drone.get_env_poses(False)
-        # pos2 = 1.0*pos[..., :] - self.target_pos
-        target_dist = torch.norm(pos-self.target_pos, dim=-1)
-        # uprightness
-        ups = functorch.vmap(torch_utils.quat_axis)(rot, axis=2)
-        tiltage = torch.abs(1 - ups[..., 2])
-        up_reward = 1.0 / (1.0 + torch.square(tiltage))
-        # spin reward
-        spin = torch.square(self.vels[..., -1])
-        spin_reward = 1.0 / (1.0 + torch.square(spin))
-        reward = (up_reward + spin_reward) # + effort_reward
+        prey_state = self.target.get_current_dynamic_state()
+        prey_pos = prey_state.positions.unsqueeze(1).expand(-1,3,-1)
+
+        pos2 = pos.clone()
+        target_dist = torch.norm(pos-prey_pos, dim=-1)
+        catch_reward = target_dist < self.target.get_radius()       
+        reward = catch_reward
         self._tensordict["drone.return"] += reward.unsqueeze(-1)
         done  = (
             (self.progress_buf >= self.max_eposode_length).unsqueeze(-1)

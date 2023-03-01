@@ -46,12 +46,14 @@ class MultirotorBase(RobotBase):
         self.rotors = RotorGroup(self.params["rotor_configuration"], dt=self.dt).to(self.device)
         self.rotor_params_and_states = make_functional(self.rotors).expand(self.shape).clone()
         
-        self.max_forces = self.rotor_params_and_states["max_forces"]
-        self.throttle = self.rotor_params_and_states["throttle"]
+        self.MAX_ROT_VEL = self.rotors.MAX_ROT_VEL
         self.KF = self.rotor_params_and_states["KF"]
         self.KM = self.rotor_params_and_states["KM"]
+
+        self.max_forces = self.rotor_params_and_states["max_forces"]
+        self.throttle = self.rotor_params_and_states["throttle"]
         self.directions = self.rotor_params_and_states["directions"]
-        
+
         self.forces = torch.zeros(*self.shape, self.num_rotors, 3, device=self.device)
         self.torques = torch.zeros(*self.shape, 3, device=self.device)
 
@@ -60,6 +62,8 @@ class MultirotorBase(RobotBase):
         thrusts, moments = vmap(vmap(self.rotors))(rotor_cmds, self.rotor_params_and_states)
         self.forces[..., 2] = thrusts
         self.torques[..., 2] = moments.sum(-1)
+        self.articulations.set_joint_velocities(
+            self.throttle * self.directions * self.MAX_ROT_VEL)
         self.rotors_view.apply_forces(self.forces.reshape(-1, 3), is_global=False)
         self.base_link.apply_forces_and_torques_at_pos(
             None, self.torques.reshape(-1, 3), is_global=False)

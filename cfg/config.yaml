@@ -1,7 +1,7 @@
 headless: false
 
 env:
-  num_envs: 10
+  num_envs: 4096
   env_spacing: 2.5
   max_episode_length: 500
 

@@ -63,7 +63,7 @@ def main(cfg):
     init_poses = firefly.get_env_poses()
     init_vels = firefly.get_velocities()
     controller = LeePositionController(
-        g=9.81, uav_params=firefly.params
+        dt=sim.get_physics_dt(), g=9.81, uav_params=firefly.params
     ).to(sim.device)
 
     controller_state = TensorDict({}, n, device=sim.device)

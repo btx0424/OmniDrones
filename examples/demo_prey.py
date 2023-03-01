@@ -26,7 +26,8 @@ def main(cfg):
 
     env = Prey(cfg, headless=cfg.headless)
     agent_spec = env.agent_spec["drone"]
-    agent_spec.action_spec = UnboundedContinuousTensorSpec(7, device=env.device)
+    
+
     ppo = MAPPOPolicy(cfg.algo, agent_spec, act_name="drone.control_target", device="cuda")
     controller = env.drone.default_controller(
         env.drone.dt, 9.81, env.drone.params
@@ -36,12 +37,13 @@ def main(cfg):
         state = tensordict["drone.obs"]
         tensordict = ppo(tensordict)
         relative_state = tensordict["drone.obs"][..., :13]
-        relative_state[..., :3] = 0.
         control_target = tensordict["drone.control_target"]
         controller_state = tensordict.get("controller_state", TensorDict({}, state.shape[:2]))
-                
-        # len(control target)=7
-        cmds, controller_state = vmap(vmap(controller))(relative_state, control_target, controller_state)
+        _pos, _vel = env._get_dummy_policy_drone()
+        control_target[... ,:3] = _pos
+        control_target[... ,3:6] = _vel
+        control_target[... ,6] = 0    
+        cmds, controller_state = vmap(vmap(controller))(relative_state, control_target, controller_state)     # len(control target)=7
         torch.nan_to_num_(cmds, 0.)
         assert not torch.isnan(cmds).any()
         tensordict["drone.action"] = cmds #command for motor

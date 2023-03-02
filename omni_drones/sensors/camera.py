@@ -19,12 +19,24 @@ class Camera:
     """
     def __init__(
         self,
-        cfg: Union[PinholeCameraCfg, FisheyeCameraCfg],
-        parent_prim_path: str,
+        cfg: Union[PinholeCameraCfg, FisheyeCameraCfg]=None,
+        parent_prim_path: str="/World",
         translation = None,
         orientation = None,
         target = None
     ) -> None:
+        if cfg is None:
+            cfg = PinholeCameraCfg(
+                sensor_tick=0,
+                resolution=(640, 480),
+                data_types=["rgb"],
+                usd_params=PinholeCameraCfg.UsdCameraCfg(
+                    focal_length=24.0, 
+                    focus_distance=400.0, 
+                    horizontal_aperture=20.955, 
+                    clipping_range=(0.1, 1.0e5)
+                )
+            )
         self.cfg = cfg
         self.resolution = cfg.resolution
         self.shape = (self.resolution[1], self.resolution[0])

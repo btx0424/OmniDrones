@@ -14,6 +14,17 @@ from omni_drones import CONFIG_PATH, init_simulation_app
 from omni_drones.learning.collectors import SyncDataCollector
 from omni_drones.utils.wandb import init_wandb
 
+class Every:
+    def __init__(self, func, k=1) -> None:
+        self.func = func
+        self.k = k
+        self.count = 0
+    
+    def __call__(self, *args, **kwds):
+        if self.count % self.k == 0:
+            self.func(*args, **kwds)
+        self.count = (self.count + 1) % self.k
+
 @hydra.main(version_base=None, config_path=CONFIG_PATH, config_name="config")
 def main(cfg):
     OmegaConf.resolve(cfg)
@@ -25,6 +36,7 @@ def main(cfg):
 
     from omni_drones.envs import Hover
     from omni_drones.learning.mappo import MAPPOPolicy
+    from omni_drones.sensors.camera import Camera
 
     env = Hover(cfg, headless=cfg.headless)
     agent_spec = env.agent_spec["drone"]
@@ -71,12 +83,27 @@ def main(cfg):
             run.log(stats)
             episode_stats.clear()
     collector.on_reset(record_and_log_stats)
-    
+    logger = Every(lambda info: run.log(info), 10)
+
+    frames = []
+    camera = Camera(translation=(1., 1., 1.), target=(0., 0., 0.5))
+    def record_video(env, tensordict):
+        frames.append(camera().clone())
+    def eval_op():
+        eval_rollout = env.rollout(
+            policy,
+            max_steps=500,
+            callback=record_video,
+            break_when_any_done=False
+        )
+        videos = torch.stack(frames)
+    evaluator = Every(eval_op, 100)
+
     pbar = tqdm(collector)
     for i, data in enumerate(pbar):
         info = ppo.train_op(data.clone())
-        if i % 10 == 0:
-            run.log(info)
+        logger(info)
+        evaluator()
         pbar.set_postfix({
             "rollout_fps": collector._fps,
             "frames": collector._frames,

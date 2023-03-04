@@ -8,7 +8,8 @@ class RotorGroup(nn.Module):
         self.num_rotors = rotor_config["num_rotors"]
         self.KF = nn.Parameter(torch.as_tensor(rotor_config["force_constants"]))
         self.KM = nn.Parameter(torch.as_tensor(rotor_config["moment_constants"]))
-        self.MAX_ROT_VEL = torch.as_tensor(rotor_config["max_rotation_velocities"])
+        self.MAX_ROT_VEL = nn.Parameter(
+            torch.as_tensor(rotor_config["max_rotation_velocities"], dtype=torch.float32))
         self.dt = dt
         self.time_up = 0.15
         self.time_down = 0.15

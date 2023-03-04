@@ -87,7 +87,7 @@ def main(cfg):
             firefly.apply_action(action)
             sim.step()
 
-            if step % 2 == 0:
+            if step % 2 == 0 and len(frames) < 1000:
                 frame = camera().clone()
                 frames.append(frame)
                 print(step, frame)

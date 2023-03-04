@@ -5,26 +5,32 @@ from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec
 from tensordict.tensordict import TensorDict, TensorDictBase
 
 import omni.isaac.core.utils.torch as torch_utils
-from omni.isaac.core.objects import VisualSphere, DynamicSphere, FixedCuboid
-from omni.isaac.core.prims import RigidPrimView
+from omni.isaac.core.objects import VisualSphere, DynamicSphere, FixedCuboid, FixedCylinder
+from omni.isaac.core.prims import RigidPrimView, GeometryPrimView
 from omni_drones.envs.isaac_env import IsaacEnv, AgentSpec
 from omni_drones.robots.config import RobotCfg
 from omni_drones.robots.drone import MultirotorBase
 import omni_drones.utils.kit as kit_utils
+
+# drones on land by default
+# only cubes are available as walls
+# clip state as walls
 
 class Prey(IsaacEnv):
     
     def __init__(self, cfg, headless):
         super().__init__(cfg, headless)
         self.drone.initialize()
-        self.obstacle = RigidPrimView(prim_paths_expr="/World/envs/.*/obstacle")
+        self.obstacle = GeometryPrimView(prim_paths_expr="/World/envs/.*/obstacle")
         self.target = RigidPrimView(prim_paths_expr="/World/envs/.*/target")
-        # self.obstacle.initialize()
+        self.obstacle.initialize()
         self.target.initialize()
         self.target.post_reset()
         self.target_init_vel = self.target.get_velocities(clone=True)
         self.target_init_vel[..., 0] = 1.0
-
+        self.env_ids = torch.from_numpy(np.arange(0,cfg.env.num_envs))
+        self.env_width = cfg.env.env_spacing/2.0
+        
         self.init_poses = self.drone.get_env_poses(clone=True)
         
         self.agent_spec["drone"] = AgentSpec(
@@ -41,11 +47,12 @@ class Prey(IsaacEnv):
     def _design_scene(self):
         self.num_agents = 1
         cfg = RobotCfg()
+        cfg.rigid_props.max_linear_velocity = 1.0
         self.drone: MultirotorBase = MultirotorBase.REGISTRY["Crazyflie"](cfg=cfg)
         # self.drone: MultirotorBase = MultirotorBase.REGISTRY["Firefly"](cfg=cfg)
 
         self.target_pos = torch.tensor([[0., 0., 1.5]], device=self.device)
-        self.wall_pos = torch.tensor([[1.0, 0., 0]], device=self.device)
+        self.obstacle_pos = torch.tensor([[1.0, 0.5, 0]], device=self.device)
         DynamicSphere(
             prim_path="/World/envs/env_0/target",
             name="target",
@@ -54,14 +61,17 @@ class Prey(IsaacEnv):
             color=torch.tensor([1., 0., 0.]),
         )
         
-        FixedCuboid(
+        FixedCylinder(
             prim_path="/World/envs/env_0/obstacle",
             name="obstacle",
-            translation=self.wall_pos,
-            # orientation=torch.tensor([1., 0., 0.]),
-            color=torch.tensor([1., 0., 0.]),
+            translation=self.obstacle_pos,
+            # orientation=torch.tensor([1., 0., 0., 0.]),
+            color=torch.tensor([0.1, 0., 0.]),
+            radius = 0.3,
+            height = 5
         )
 
+        
         kit_utils.set_nested_rigid_body_properties(
             prim_path="/World/envs/env_0/target",
             max_linear_velocity=0.7,
@@ -101,8 +111,16 @@ class Prey(IsaacEnv):
         actions = tensordict["drone.action"]
         self.effort = self.drone.apply_action(actions)
         # self.drone.apply_action(self._get_dummy_policy_drone())
-
         self.target.apply_forces(self._get_dummy_policy_prey())
+
+        # restriction on (x,y)
+        agent_pos, agent_rot = self.drone.get_env_poses()
+        target_pos, target_rot = self.target.get_world_poses()
+        target_pos -= self.envs_positions
+        agent_pos[...,:2] = agent_pos[...,:2].clamp(-self.env_width, self.env_width)
+        target_pos[...,:2] = target_pos[...,:2].clamp(-self.env_width, self.env_width)
+        self.drone.set_env_poses(agent_pos, agent_rot, self.env_ids)
+        self.target.set_world_poses(target_pos + self.envs_positions, target_rot, self.env_ids)
     
     def _compute_state_and_obs(self):
         drone_state = self.drone.get_state()

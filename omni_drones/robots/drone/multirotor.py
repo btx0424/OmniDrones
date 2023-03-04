@@ -46,7 +46,7 @@ class MultirotorBase(RobotBase):
         self.rotors = RotorGroup(self.params["rotor_configuration"], dt=self.dt).to(self.device)
         self.rotor_params_and_states = make_functional(self.rotors).expand(self.shape).clone()
         
-        self.MAX_ROT_VEL = self.rotors.MAX_ROT_VEL
+        self.MAX_ROT_VEL = self.rotor_params_and_states["MAX_ROT_VEL"]
         self.KF = self.rotor_params_and_states["KF"]
         self.KM = self.rotor_params_and_states["KM"]
 

@@ -24,8 +24,6 @@ TEMPLATE_PRIM_PATH = "/World/envs/env_0"
 class RobotBase(abc.ABC):
 
     usd_path: str
-    prim_type: str = "Xform"
-    prim_attributes: dict = None
 
     _robots = {}
     _envs_positions: torch.Tensor = None
@@ -62,7 +60,8 @@ class RobotBase(abc.ABC):
         RobotBase.REGISTRY[cls.__name__] = cls
 
     def spawn(
-        self, n: int=1, translation=(0., 0., 0.5)
+        self, n: int=1, translation=(0., 0., 0.5),
+        parent_prim_path: str = TEMPLATE_PRIM_PATH
     ):
         if SimulationContext._instance._physics_sim_view is not None:
             raise RuntimeError(
@@ -72,17 +71,15 @@ class RobotBase(abc.ABC):
         if n != len(translation):
             raise ValueError
         for i in range(self._count, self._count + n):
-            prim_path = f"{TEMPLATE_PRIM_PATH}/{self.name}_{i}"
+            prim_path = f"{parent_prim_path}/{self.name}_{i}"
             if prim_utils.is_prim_path_valid(prim_path):
                 raise RuntimeError(
                     f"Duplicate prim at {prim_path}."
                 )
             prim = prim_utils.create_prim(
                 prim_path,
-                prim_type=self.prim_type,
                 usd_path=self.usd_path,
                 translation=translation[i],
-                attributes=self.prim_attributes,
             )
             # apply rigid body properties
             kit_utils.set_nested_rigid_body_properties(

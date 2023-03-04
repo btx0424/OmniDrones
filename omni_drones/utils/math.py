@@ -50,6 +50,26 @@ def quaternion_to_euler(
 
     return euler_angles
 
+
+def euler_to_quaternion(euler: torch.Tensor) -> torch.Tensor:
+    r, p, y = torch.unbind(euler, dim=-1)
+    cy = torch.cos(y * 0.5)
+    sy = torch.sin(y * 0.5)
+    cp = torch.cos(p * 0.5)
+    sp = torch.sin(p * 0.5)
+    cr = torch.cos(r * 0.5) # 1
+    sr = torch.sin(r * 0.5) # 0
+
+    qw = cr * cp * cy + sr * sp * sy
+    qx = sr * cp * cy - cr * sp * sy
+    qy = cr * sp * cy + sr * cp * sy
+    qz = cr * cp * sy - sr * sp * cy
+
+    quaternion = torch.stack([qw, qx, qy, qz], dim=-1)
+
+    return quaternion
+
+
 def normalize(x: torch.Tensor, eps: float=1e-6):
     return x / (torch.norm(x, dim=-1, keepdim=True) + eps)
 

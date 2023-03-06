@@ -26,16 +26,17 @@ def main(cfg):
         stage_units_in_meters=1.0, 
         physics_dt=0.01, rendering_dt=0.01, 
         sim_params=cfg.sim,
-        backend="torch", device="cuda"
+        backend="torch", 
+        device=cfg.sim.device
     )
     n = 3
 
     firefly = Firefly(cfg=RobotCfg())
 
-    translation = torch.zeros(n, 3)
-    translation[:, 1] = torch.arange(n)
-    translation[:, 2] = 0.5
-    firefly.spawn(n, translation=translation)
+    translations = torch.zeros(n, 3)
+    translations[:, 1] = torch.arange(n)
+    translations[:, 2] = 0.5
+    firefly.spawn(n, translations=translations)
 
     design_scene()
 
@@ -87,10 +88,10 @@ def main(cfg):
             firefly.apply_action(action)
             sim.step()
 
-            if step % 2 == 0 and len(frames) < 1000:
-                frame = camera().clone()
-                frames.append(frame)
-                print(step, frame)
+            # if step % 2 == 0 and len(frames) < 1000:
+                # frame = camera().clone()
+                # frames.append(frame)
+                # print(step, frame)
             
             step += 1
             if step >= 1000:

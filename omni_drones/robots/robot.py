@@ -2,7 +2,7 @@ import torch
 import abc
 import os.path as osp
 from contextlib import contextmanager
-from typing import Dict, Type
+from typing import Dict, Type, Sequence
 from torchrl.data import TensorSpec
 
 import omni.timeline
@@ -60,26 +60,32 @@ class RobotBase(abc.ABC):
         RobotBase.REGISTRY[cls.__name__] = cls
 
     def spawn(
-        self, n: int=1, translation=(0., 0., 0.5),
-        parent_prim_path: str = TEMPLATE_PRIM_PATH
+        self, 
+        n: int=1, 
+        translations=(0., 0., 0.5),
+        prim_paths: Sequence[str]=None
     ):
-        if SimulationContext._instance._physics_sim_view is not None:
+        if SimulationContext.instance()._physics_sim_view is not None:
             raise RuntimeError(
                 "Cannot spawn robots after simulation_context.reset() is called."
             )
-        translation = torch.atleast_2d(torch.as_tensor(translation, device=self.device))
-        if n != len(translation):
+        translations = torch.atleast_2d(torch.as_tensor(translations, device=self.device))
+        if prim_paths is None:
+            prim_paths = [f"{TEMPLATE_PRIM_PATH}/{self.name}_{i}" for i in range(n)]
+        
+        if not (n == len(translations) == len(prim_paths)):
             raise ValueError
+        
         for i in range(self._count, self._count + n):
-            prim_path = f"{parent_prim_path}/{self.name}_{i}"
+            prim_path = prim_paths[i]
             if prim_utils.is_prim_path_valid(prim_path):
                 raise RuntimeError(
                     f"Duplicate prim at {prim_path}."
                 )
-            prim = prim_utils.create_prim(
+            prim_utils.create_prim(
                 prim_path,
                 usd_path=self.usd_path,
-                translation=translation[i],
+                translation=translations[i],
             )
             # apply rigid body properties
             kit_utils.set_nested_rigid_body_properties(

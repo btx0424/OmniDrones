@@ -40,9 +40,7 @@ class MultirotorBase(RobotBase):
         self.rotors_view = RigidPrimView(
             prim_paths_expr=f"{self.prim_paths_expr}/rotor_[0-{self.num_rotors-1}]", name="rotors")
         self.rotors_view.initialize()
-        translate, _ = self.rotors_view.get_local_poses()
-        arm_lengths = torch.norm(translate, dim=-1)
-        print(arm_lengths)
+        
         self.rotors = RotorGroup(self.params["rotor_configuration"], dt=self.dt).to(self.device)
         self.rotor_params_and_states = make_functional(self.rotors).expand(self.shape).clone()
         

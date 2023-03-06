@@ -52,6 +52,7 @@ def quaternion_to_euler(
 
 
 def euler_to_quaternion(euler: torch.Tensor) -> torch.Tensor:
+    euler = torch.as_tensor(euler)
     r, p, y = torch.unbind(euler, dim=-1)
     cy = torch.cos(y * 0.5)
     sy = torch.sin(y * 0.5)

@@ -72,15 +72,14 @@ def create_rope(
         capsuleGeom.AddScaleOp().Set(Gf.Vec3f(1.0, 1.0, 1.0))
         capsuleGeom.CreateDisplayColorAttr().Set([color])
 
-        UsdPhysics.CollisionAPI.Apply(capsuleGeom.GetPrim())
         UsdPhysics.RigidBodyAPI.Apply(capsuleGeom.GetPrim())
         massAPI = UsdPhysics.MassAPI.Apply(capsuleGeom.GetPrim())
         massAPI.CreateMassAttr().Set(0.01)
-        physxCollisionAPI = PhysxSchema.PhysxCollisionAPI.Apply(capsuleGeom.GetPrim())
-        physxCollisionAPI.CreateRestOffsetAttr().Set(0.0)
-        physxCollisionAPI.CreateContactOffsetAttr().Set(0.02)
-
-        capsuleGeom.GetPrim().GetAttribute('physics:collisionEnabled').Set(enable_collision)
+        if enable_collision:
+            UsdPhysics.CollisionAPI.Apply(capsuleGeom.GetPrim())
+            physxCollisionAPI = PhysxSchema.PhysxCollisionAPI.Apply(capsuleGeom.GetPrim())
+            physxCollisionAPI.CreateRestOffsetAttr().Set(0.0)
+            physxCollisionAPI.CreateContactOffsetAttr().Set(0.02)
 
         if len(links) > 0:
             # jointPath = f"{link_path}/joint_{i}"

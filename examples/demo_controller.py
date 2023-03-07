@@ -16,11 +16,11 @@ def main(cfg):
     from omni.isaac.core.simulation_context import SimulationContext
     import omni.isaac.core.utils.prims as prim_utils
     import omni_drones.utils.kit as kit_utils
+    import omni_drones.utils.scene as scene_utils
     from omni_drones.robots.drone import MultirotorBase, Crazyflie, Firefly, Hummingbird
     from omni_drones.robots import RobotCfg
     from omni_drones.controllers import LeePositionController
     from omni_drones.sensors.camera import Camera, PinholeCameraCfg
-    from helpers import design_scene
 
     sim = SimulationContext(
         stage_units_in_meters=1.0, 
@@ -38,7 +38,7 @@ def main(cfg):
     translations[:, 2] = 0.5
     firefly.spawn(n, translations=translations)
 
-    design_scene()
+    scene.design_scene()
 
     camera_cfg = PinholeCameraCfg(
         sensor_tick=0,

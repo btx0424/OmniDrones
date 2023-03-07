@@ -152,7 +152,7 @@ def create_frame(
     arm_angles: Sequence[float],
     arm_lengths: Sequence[float],
     to_prims: Sequence[str],
-    joint_damping: float=0.05,
+    joint_damping: float=0.005,
     color: Sequence[float]=(.1, .3, .1),
     enable_collision: bool=False,
 ):

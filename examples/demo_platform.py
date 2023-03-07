@@ -15,10 +15,6 @@ def main(cfg):
 
     from omni.isaac.core.simulation_context import SimulationContext
     import omni.isaac.core.utils.prims as prim_utils
-    import omni.isaac.core.utils.stage as stage_utils
-    import omni.physx.scripts.utils as script_utils
-    import omni_drones.utils.kit as kit_utils
-    import omni_drones.utils.math as math_utils
     import omni_drones.utils.scene as scene_utils
     from omni_drones.robots.drone import MultirotorBase
 
@@ -46,7 +42,7 @@ def main(cfg):
     controller_state = TensorDict({}, n, device=sim.device)
     control_target = torch.zeros(n, 7, device=sim.device)
     control_target[:, 0:3] = (
-        torch.tensor(translations) + torch.tensor([3.0, 0., 0.7])
+        translations + torch.tensor([3.0, 0., 1.5])
     ).to(cfg.sim.device)
 
     platform = prim_utils.create_prim(
@@ -76,21 +72,13 @@ def main(cfg):
         if not sim.is_playing(): 
             sim.step()
             continue
+        root_state = drone.get_state()[..., :13].squeeze(0)
+        action, controller_state = functorch.vmap(controller)(
+            root_state, control_target, controller_state)
+        drone.apply_action(action)
         sim.step()
 
     simulation_app.close()
 
 if __name__ == "__main__":
     main()
-
-"""
-import torch
-import omni_drones.utils.scene as scene_utils
-
-n =4
-arm_angles = [torch.pi/n * i for i in range(n)]
-arm_lengths = [0.5 for _ in range(n)]
-scene_utils.create_frame("/World/envs/env_0/frame", arm_angles, arm_lengths)
-
-
-"""

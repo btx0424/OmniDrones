@@ -8,7 +8,9 @@ from omni.isaac.core.objects import VisualSphere
 
 from omni_drones.envs.isaac_env import IsaacEnv, AgentSpec
 from omni_drones.robots.config import RobotCfg
-from omni_drones.robots.drone import MultirotorBase
+from omni_drones.robots.drone import (
+    Crazyflie, Firefly, Neo11, Hummingbird
+)
 import omni_drones.utils.kit as kit_utils
 
 
@@ -27,20 +29,15 @@ class Hover(IsaacEnv):
         )
         self.vels = self.drone.get_velocities()
         self.init_pos_scale = torch.tensor([2., 2., 0.6], device=self.device) 
-        self.init_pos_offset = torch.tensor([-1., -1., 0.4], device=self.device)
+        self.init_pos_offset = torch.tensor([-1., -1., 0.3], device=self.device)
 
     def _design_scene(self):
         cfg = RobotCfg()
-        self.drone: MultirotorBase = MultirotorBase.REGISTRY["Crazyflie"](cfg=cfg)
+        # self.drone = Crazyflie(cfg=cfg)
+        self.drone = Firefly(cfg=cfg)
+        # self.drone = Hummingbird(cfg=cfg)
+        # self.drone = Neo11(cfg=cfg)
 
-        self.target_pos = torch.tensor([[0., 0., 1.5]], device=self.device)
-        self.target = VisualSphere(
-            prim_path="/World/envs/env_0/target",
-            name="target",
-            translation=self.target_pos,
-            radius=0.05, 
-            color=torch.tensor([1., 0., 0.])
-        )
         kit_utils.create_ground_plane(
             "/World/defaultGroundPlane",
             static_friction=1.0,
@@ -63,33 +60,25 @@ class Hover(IsaacEnv):
     
     def _compute_state_and_obs(self):
         obs = self.drone.get_state()
-        obs[..., :3] = self.target_pos - obs[..., :3]
+        
         return TensorDict({
             "drone.obs": obs
         }, self.batch_size)
     
     def _compute_reward_and_done(self):
-        pos, rot = self.drone.get_env_poses(False)
-        # pos reward        
-        target_dist = torch.norm(pos-self.target_pos, dim=-1)
-        pos_reward = 1.0 / (1.0 + torch.square(target_dist))
+        pos, rot = self.drone.get_env_poses(False)   
         # uprightness
         ups = functorch.vmap(torch_utils.quat_axis)(rot, axis=2)
         tiltage = torch.abs(1 - ups[..., 2])
         up_reward = 1.0 / (1.0 + torch.square(tiltage))
-        # effort
-        effort_reward = 0.05 * torch.exp(-0.5 * self.effort)
         # spin reward
         spin = torch.square(self.vels[..., -1])
         spin_reward = 1.0 / (1.0 + torch.square(spin))
-
-        assert pos_reward.shape == up_reward.shape == spin_reward.shape
-        reward = pos_reward + pos_reward * (up_reward + spin_reward) # + effort_reward
+        reward = (up_reward + spin_reward) # + effort_reward
         self._tensordict["drone.return"] += reward.unsqueeze(-1)
         done  = (
             (self.progress_buf >= self.max_eposode_length).unsqueeze(-1)
             | (pos[..., 2] < 0.1)
-            | (target_dist > 3)
         )
         return TensorDict({
             "reward": {

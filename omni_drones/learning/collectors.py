@@ -1,4 +1,5 @@
 import time
+import torch
 from typing import Union, Optional, Callable, Sequence
 from torchrl.collectors.collectors import (
     SyncDataCollector as _SyncDataCollector,
@@ -39,6 +40,7 @@ class SyncDataCollector(_SyncDataCollector):
     ):        
         super().__init__(create_env_fn, policy, total_frames, create_env_kwargs, max_frames_per_traj, frames_per_batch, init_random_frames, reset_at_each_iter, postproc, split_trajs, device, passing_device, seed, pin_memory, exploration_mode, init_with_lag, return_same_td, reset_when_done)
         self._reset_callbacks = []
+        self._episodes = 0
 
     def rollout(self) -> TensorDictBase:
         start = time.perf_counter()
@@ -47,8 +49,9 @@ class SyncDataCollector(_SyncDataCollector):
         return _tensordict_out
 
     def _reset_if_necessary(self) -> None:
-        done = self._tensordict.get("done")
+        done: torch.Tensor = self._tensordict.get("done")
         if done.any():
+            self._episodes += done.sum().item()
             for callback in self._reset_callbacks:
                 callback(done)
         super()._reset_if_necessary()

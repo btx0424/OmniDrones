@@ -3,17 +3,20 @@ import torch
 import logging
 from functorch import vmap
 from tensordict.nn import make_functional
-from torchrl.data import BoundedTensorSpec, UnboundedContinuousTensorSpec
+from typing import Type
+from torchrl.data import BoundedTensorSpec, UnboundedContinuousTensorSpec, CompositeSpec
 
 import omni.isaac.core.utils.torch as torch_utils
 from omni.isaac.core.prims import RigidPrimView
 
-from omni_drones.robots.robot import RobotBase
+from omni_drones.robots import RobotBase
 from omni_drones.actuators.rotor_group import RotorGroup
+from omni_drones.controllers import LeePositionController
 
 class MultirotorBase(RobotBase):
 
     param_path: str
+    default_controller: Type = LeePositionController
 
     def __init__(self, name: str=None, cfg=None) -> None:
         super().__init__(name, cfg)
@@ -26,12 +29,9 @@ class MultirotorBase(RobotBase):
 
         self.action_spec = BoundedTensorSpec(-1, 1, self.num_rotors, device=self.device)
         self.state_spec = UnboundedContinuousTensorSpec(19 + self.num_rotors, device=self.device)
-        self.prim_paths_expr = f"/World/envs/.*/{self.name}_*"
         
-        self.rotors = RotorGroup(self.params["rotor_configuration"], dt=self.dt).to(self.device)
-
-    def initialize(self):
-        super().initialize()
+    def initialize(self, prim_paths_expr: str=None):
+        super().initialize(prim_paths_expr=prim_paths_expr)
         self.base_link = RigidPrimView(
             prim_paths_expr=f"{self.prim_paths_expr}/base_link", name="base_link")
         self.base_link.initialize()
@@ -39,20 +39,27 @@ class MultirotorBase(RobotBase):
             prim_paths_expr=f"{self.prim_paths_expr}/rotor_[0-{self.num_rotors-1}]", name="rotors")
         self.rotors_view.initialize()
         
-        self.forces = torch.zeros(*self.shape, self.num_rotors, 3, device=self.device)
-        self.torques = torch.zeros(*self.shape, 3, device=self.device)
+        self.rotors = RotorGroup(self.params["rotor_configuration"], dt=self.dt).to(self.device)
         self.rotor_params_and_states = make_functional(self.rotors).expand(self.shape).clone()
-        self.max_forces = self.rotor_params_and_states["max_forces"]
-        self.throttle = self.rotor_params_and_states["throttle"]
+        
+        self.MAX_ROT_VEL = self.rotor_params_and_states["MAX_ROT_VEL"]
         self.KF = self.rotor_params_and_states["KF"]
         self.KM = self.rotor_params_and_states["KM"]
+
+        self.max_forces = self.rotor_params_and_states["max_forces"]
+        self.throttle = self.rotor_params_and_states["throttle"]
         self.directions = self.rotor_params_and_states["directions"]
+
+        self.forces = torch.zeros(*self.shape, self.num_rotors, 3, device=self.device)
+        self.torques = torch.zeros(*self.shape, 3, device=self.device)
 
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
         rotor_cmds = actions.expand(*self.shape, self.num_rotors)
         thrusts, moments = vmap(vmap(self.rotors))(rotor_cmds, self.rotor_params_and_states)
         self.forces[..., 2] = thrusts
         self.torques[..., 2] = moments.sum(-1)
+        self.articulations.set_joint_velocities(
+            self.throttle * self.directions * self.MAX_ROT_VEL)
         self.rotors_view.apply_forces(self.forces.reshape(-1, 3), is_global=False)
         self.base_link.apply_forces_and_torques_at_pos(
             None, self.torques.reshape(-1, 3), is_global=False)

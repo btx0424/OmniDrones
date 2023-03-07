@@ -19,62 +19,43 @@ def main(cfg):
     from omni.isaac.core.objects import DynamicSphere, FixedSphere, VisualSphere
     import omni.isaac.core.utils.prims as prim_utils
     import omni_drones.utils.kit as kit_utils
+    import omni_drones.utils.scene as scene_utils
 
-    from omni_drones.robots import drone, RobotBase
+    from omni_drones.robots.drone import MultirotorBase
 
     sim = SimulationContext(
         stage_units_in_meters=1.0, 
         physics_dt=0.005, rendering_dt=0.005, 
         sim_params=cfg.sim,
-        backend="torch", device="cuda:0"
+        backend="torch", 
+        device=cfg.sim.device
     )
+    
     cloner = GridCloner(spacing=1.)
     cloner.define_base_env("/World/envs")
     prim_utils.define_prim("/World/envs/env_0")
 
-    drones: Dict[str, RobotBase] = {}
+    drones: Dict[str, MultirotorBase] = {}
     n = 2
     for i, model in enumerate([
-        "Quadcopter", # "Firefly", # "Hummingbird", "Neo11", "Omav"
+        "Firefly", 
+        "Hummingbird", 
+        "Neo11"
     ]):
-        drones[model] = getattr(drone, model)()
-        translation = torch.zeros(n, 3)
-        translation[:, 0] = i * 0.5
-        translation[:, 1] = torch.arange(n) * 0.5
-        translation[:, 2] = 0.5
-        drones[model].spawn(n, translation=translation)
+        drones[model] = MultirotorBase.REGISTRY[model]()
+        translations = torch.zeros(n, 3)
+        translations[:, 0] = i * 0.5
+        translations[:, 1] = torch.arange(n) * 0.5
+        translations[:, 2] = 0.5
+        drones[model].spawn(n, translations=translations)
 
-    kit_utils.create_ground_plane(
-        "/World/defaultGroundPlane",
-        static_friction=0.5,
-        dynamic_friction=0.5,
-        restitution=0.8,
-        improve_patch_friction=True,
-    )
-    # Lights-1
-    prim_utils.create_prim(
-        "/World/Light/GreySphere",
-        "SphereLight",
-        translation=(4.5, 3.5, 10.0),
-        attributes={"radius": 2.5, "intensity": 600.0, "color": (0.75, 0.75, 0.75)},
-    )
-    # Lights-2
-    prim_utils.create_prim(
-        "/World/Light/WhiteSphere",
-        "SphereLight",
-        translation=(-4.5, 3.5, 10.0),
-        attributes={"radius": 2.5, "intensity": 600.0, "color": (1.0, 1.0, 1.0)},
-    )
+    scene_utils.design_scene()
 
     prim_utils.create_prim(
         "/World/envs/env_0/target",
         "Sphere", attributes={"radius": 0.1, "primvars:displayColor": [(.5, 0.5, 0.5)]},
         translation=(0., 0., 0.5)
     )
-
-    # VisualSphere("/World/envs/env_0/visual_sphere", radius=0.2, color=torch.tensor([0., 0., 1.]))
-    # FixedSphere("/World/envs/env_0/fixed_sphere", radius=0.1, color=torch.tensor([0., 1., 0.]))
-    # DynamicSphere("/World/envs/env_0/dynamic_sphere", radius=0.1, color=torch.tensor([1., 0., 0.]))
     
     # How to clone environments and make them independent by filtering out collisions.
     global_prim_paths = ["/World/defaultGroundPlane"]
@@ -93,19 +74,19 @@ def main(cfg):
     RobotBase._envs_positions = envs_positions.unsqueeze(1)
     sim.reset()
 
-    for _drone in drones.values():
-        _drone.initialize()
-        pos, rot = _drone.get_world_poses()
-        _drone.set_env_poses(pos, rot)
+    for drone in drones.values():
+        drone.initialize()
+        pos, rot = drone.get_world_poses()
+        drone.set_env_poses(pos, rot)
         
     while simulation_app.is_running():
         if sim.is_stopped():
             break
         if sim.is_playing():
             sim.step()
-        for _drone in drones.values():
-            actions = _drone.action_spec.rand((cfg.env.num_envs, _drone._count,))
-            _drone.apply_action(actions)
+        for drone in drones.values():
+            actions = drone.action_spec.rand((cfg.env.num_envs, drone._count,))
+            drone.apply_action(actions)
 
     simulation_app.close()
 

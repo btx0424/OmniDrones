@@ -10,9 +10,9 @@ sim:
   substeps: 1
   gravity: [0, 0, -9.81]
   replicate_physics: false
-  use_flatcache: true
-  use_gpu_pipeline: true
-  device: "cuda"
+  use_flatcache: false
+  use_gpu_pipeline: false
+  device: cpu
 
   # GPU buffers
   gpu_max_rigid_contact_count: 524288

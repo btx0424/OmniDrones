@@ -8,7 +8,7 @@ from .utils import (
 
 class LeePositionController(nn.Module):
     def __init__(self,
-        g: float, uav_params
+        dt: float, g: float, uav_params
     ) -> None:
         super().__init__()
         self.pos_gain = nn.Parameter(torch.tensor([6., 6., 6.]))

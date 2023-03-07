@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torchinfo
 
-from typing import Any, Dict
+from typing import Optional, Sequence, Union, Type
 from tensordict import TensorDict
 
 from omni_drones.envs.isaac_env import AgentSpec
@@ -12,16 +12,20 @@ ALGOS = {}
 class ActorCriticPolicy:
 
     def __init__(self, cfg,
-        agent_type: AgentSpec,
+        agent_spec: AgentSpec,
+        act_name: str = None,
         device: str="cuda",
     ) -> None:
         self.cfg = cfg
-        self.agent_type = agent_type
+        self.agent_spec = agent_spec
         self.device = device
 
         self.actor: nn.Module
         self.critic: nn.Module
         
+        if act_name is not None:
+            self._act_name = act_name
+
         self.make_model()
         self.summary()
     
@@ -35,60 +39,26 @@ class ActorCriticPolicy:
             summaries.append(str(torchinfo.summary(self.critic)))
         summary = "\n".join(summaries)
         return summary
-
-    def policy_op(self, tensordict: TensorDict, training: bool):
-        """
-        
-        """
-
-    def value_op(self, tensordict: TensorDict, training: bool):
-        """
-        Compute the value of the given state.
-        """
-
-    def model_op(self, tensordict: TensorDict, training: bool):
-        """
-        
-        """
-    
-    def setup(self, envs): ...
-
-    def on_step(self): ...
-
-    def state_dict(self) -> Dict[str, Any]: ... 
-
-    def load_state_dict(self): ...
-
-    def train(self):
-        if hasattr(self, "actor"):
-            self.actor.train()
-        if hasattr(self, "critic"):
-            self.critic.train()
-    
-    def eval(self):
-        if hasattr(self, "actor"):
-            self.actor.eval()
-        if hasattr(self, "critic"):
-            self.critic.eval()
         
     @property
     def agent_name(self):
-        return self.agent_type.name
+        return self.agent_spec.name
     
     @property
     def num_agents(self):
-        return self.agent_type.n
+        return self.agent_spec.n
 
     @property
     def obs_name(self):
-        return self.agent_type.name + ".obs"
+        return self.agent_spec.name + ".obs"
     
     @property
     def states_name(self):
-        return self.agent_type.name + ".state"
+        return self.agent_spec.name + ".state"
     
     @property
     def act_name(self):
-        return self.agent_type.name + ".action"
-
-        
+        if hasattr(self, "_act_name"):
+            return self._act_name
+        else:
+            return self.agent_spec.name + ".action"

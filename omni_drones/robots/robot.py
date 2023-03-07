@@ -2,6 +2,7 @@ import torch
 import abc
 import os.path as osp
 from contextlib import contextmanager
+from typing import Dict, Type, Sequence
 from torchrl.data import TensorSpec
 
 import omni.timeline
@@ -23,11 +24,11 @@ TEMPLATE_PRIM_PATH = "/World/envs/env_0"
 class RobotBase(abc.ABC):
 
     usd_path: str
-    prim_type: str = "Xform"
-    prim_attributes: dict = None
 
     _robots = {}
     _envs_positions: torch.Tensor = None
+
+    REGISTRY: Dict[str, Type["RobotBase"]] = {}
 
     def __init__(self, name: str, cfg: RobotCfg=None) -> None:
         if name is None:
@@ -51,28 +52,39 @@ class RobotBase(abc.ABC):
         self.state_spec: TensorSpec
         self.action_spec: TensorSpec
 
+    @classmethod
+    def __init_subclass__(cls, **kwargs):
+        if cls.__name__ in RobotBase.REGISTRY:
+            raise ValueError
+        super().__init_subclass__(**kwargs)
+        RobotBase.REGISTRY[cls.__name__] = cls
+
     def spawn(
-        self, n: int=1, translation=(0., 0., 0.5)
+        self, 
+        n: int=1, 
+        translations=(0., 0., 0.5),
+        prim_paths: Sequence[str]=None
     ):
-        if SimulationContext._instance._physics_sim_view is not None:
+        if SimulationContext.instance()._physics_sim_view is not None:
             raise RuntimeError(
                 "Cannot spawn robots after simulation_context.reset() is called."
             )
-        translation = torch.atleast_2d(torch.as_tensor(translation, device=self.device))
-        if n != len(translation):
+        translations = torch.atleast_2d(torch.as_tensor(translations, device=self.device))
+        if prim_paths is None:
+            prim_paths = [f"{TEMPLATE_PRIM_PATH}/{self.name}_{i}" for i in range(n)]
+        
+        if not (n == len(translations) == len(prim_paths)):
             raise ValueError
-        for i in range(self._count, self._count + n):
-            prim_path = f"{TEMPLATE_PRIM_PATH}/{self.name}_{i}"
+        
+        for prim_path, translation in zip(prim_paths, translations):
             if prim_utils.is_prim_path_valid(prim_path):
                 raise RuntimeError(
                     f"Duplicate prim at {prim_path}."
                 )
-            prim = prim_utils.create_prim(
+            prim_utils.create_prim(
                 prim_path,
-                prim_type=self.prim_type,
                 usd_path=self.usd_path,
-                translation=translation[i],
-                attributes=self.prim_attributes,
+                translation=translation,
             )
             # apply rigid body properties
             kit_utils.set_nested_rigid_body_properties(
@@ -96,17 +108,20 @@ class RobotBase(abc.ABC):
 
         self._count += n
 
-    def initialize(self):
+    def initialize(self, prim_paths_expr: str=None):
         if SimulationContext._instance._physics_sim_view is None:
             raise RuntimeError(
                 "Cannot create ArticulationView before the simulation context resets."
                 "Call simulation_context.reset() first."
             )
-        prim_paths_expr = f"/World/envs/.*/{self.name}_*"
+        if prim_paths_expr is None:
+            prim_paths_expr = f"/World/envs/.*/{self.name}_*"
+        self.prim_paths_expr = prim_paths_expr
+
         # create handles
         # -- robot articulation
         self.articulations = ArticulationView(
-            prim_paths_expr, reset_xform_properties=False
+            self.prim_paths_expr, reset_xform_properties=False
         )
         self.articulations.initialize()
         # set the default state

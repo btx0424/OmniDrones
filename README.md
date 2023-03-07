@@ -68,13 +68,14 @@ source ${ISAACSIM_PATH}/setup_python_env.sh
 conda activate sim
 # check your python environment by
 python -c "from omni.isaac.kit import SimulationApp"
+# verify which torch is being used
+python -c "import torch; print(torch.__path__)"
 # then
 printenv > .vscode/.python.env
 ```
 And edit `.vscode/settings.json`:
 ```json
 {
-    // ...
     "python.envFile": "${workspaceFolder}/.vscode/.python.env",
 }
 ```

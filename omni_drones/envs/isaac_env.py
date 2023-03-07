@@ -23,9 +23,11 @@ class IsaacEnv(EnvBase):
     env_ns = "/World/envs"
     template_env_ns = "/World/envs/env_0"
 
+    REGISTRY: Dict[str, "IsaacEnv"] = {}
+
     def __init__(self, cfg, headless):
         super().__init__(
-            device=cfg.sim_device,
+            device=cfg.sim.device,
             batch_size=[cfg.env.num_envs],
             run_type_checks=False
         )
@@ -100,6 +102,13 @@ class IsaacEnv(EnvBase):
         self.action_spec = CompositeSpec(shape=self.batch_size)
         self.reward_spec = CompositeSpec(shape=self.batch_size)
     
+    @classmethod
+    def __init_subclass__(cls, **kwargs):
+        if cls.__name__ in IsaacEnv.REGISTRY:
+            raise ValueError
+        super().__init_subclass__(**kwargs)
+        IsaacEnv.REGISTRY[cls.__name__] = cls
+
     @property
     def agent_spec(self):
         if not hasattr(self, "_agent_spec"):
@@ -136,7 +145,7 @@ class IsaacEnv(EnvBase):
     
     def _reset(self, tensordict: TensorDictBase, **kwargs) -> TensorDictBase:
         if tensordict is not None:
-            env_mask = tensordict.get("_reset").squeeze()
+            env_mask = tensordict.pop("_reset").squeeze()
         else:
             env_mask = torch.ones(self.num_envs, dtype=bool, device=self.device)
         env_ids = env_mask.nonzero().squeeze(-1)
@@ -207,6 +216,7 @@ class AgentSpec:
     observation_spec: TensorSpec
     action_spec: TensorSpec
     reward_spec: TensorSpec
+    state_spec: TensorSpec = None
 
 
 class _AgentSpecView(Dict[str, AgentSpec]):
@@ -222,6 +232,9 @@ class _AgentSpecView(Dict[str, AgentSpec]):
             def expand(spec: TensorSpec) -> TensorSpec:
                 return spec.expand(*self.env.batch_size, __value.n, *spec.shape)
             self.env.observation_spec[f"{name}.obs"] = expand(__value.observation_spec)
+            if __value.state_spec is not None:
+                shape = (*self.env.batch_size, *__value.state_spec.shape)
+                self.env.observation_spec[f"{name}.state"] = __value.state_spec.expand(*shape)
             self.env.action_spec[f"{name}.action"] = expand(__value.action_spec)
             self.env.reward_spec[f"{name}.reward"] = expand(__value.reward_spec)
             self.env._tensordict[f"{name}.return"] = self.env.reward_spec[f"{name}.reward"].zero()

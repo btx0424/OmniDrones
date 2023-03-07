@@ -76,8 +76,7 @@ class RobotBase(abc.ABC):
         if not (n == len(translations) == len(prim_paths)):
             raise ValueError
         
-        for i in range(self._count, self._count + n):
-            prim_path = prim_paths[i]
+        for prim_path, translation in zip(prim_paths, translations):
             if prim_utils.is_prim_path_valid(prim_path):
                 raise RuntimeError(
                     f"Duplicate prim at {prim_path}."
@@ -85,7 +84,7 @@ class RobotBase(abc.ABC):
             prim_utils.create_prim(
                 prim_path,
                 usd_path=self.usd_path,
-                translation=translations[i],
+                translation=translation,
             )
             # apply rigid body properties
             kit_utils.set_nested_rigid_body_properties(
@@ -109,17 +108,20 @@ class RobotBase(abc.ABC):
 
         self._count += n
 
-    def initialize(self):
+    def initialize(self, prim_paths_expr: str=None):
         if SimulationContext._instance._physics_sim_view is None:
             raise RuntimeError(
                 "Cannot create ArticulationView before the simulation context resets."
                 "Call simulation_context.reset() first."
             )
-        prim_paths_expr = f"/World/envs/.*/{self.name}_*"
+        if prim_paths_expr is None:
+            prim_paths_expr = f"/World/envs/.*/{self.name}_*"
+        self.prim_paths_expr = prim_paths_expr
+
         # create handles
         # -- robot articulation
         self.articulations = ArticulationView(
-            prim_paths_expr, reset_xform_properties=False
+            self.prim_paths_expr, reset_xform_properties=False
         )
         self.articulations.initialize()
         # set the default state

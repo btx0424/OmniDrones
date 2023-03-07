@@ -29,11 +29,9 @@ class MultirotorBase(RobotBase):
 
         self.action_spec = BoundedTensorSpec(-1, 1, self.num_rotors, device=self.device)
         self.state_spec = UnboundedContinuousTensorSpec(19 + self.num_rotors, device=self.device)
-        self.prim_paths_expr = f"/World/envs/.*/{self.name}_*"
         
-
-    def initialize(self):
-        super().initialize()
+    def initialize(self, prim_paths_expr: str=None):
+        super().initialize(prim_paths_expr=prim_paths_expr)
         self.base_link = RigidPrimView(
             prim_paths_expr=f"{self.prim_paths_expr}/base_link", name="base_link")
         self.base_link.initialize()

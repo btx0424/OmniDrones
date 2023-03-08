@@ -148,6 +148,7 @@ class Formation(IsaacEnv):
             "reward": {
                 "drone.reward": reward
             },
+            "return": self._tensordict["drone.return"],
             "done": done
         }, self.batch_size)
 

@@ -2,8 +2,9 @@ headless: false
 
 env:
   num_envs: 4096
-  env_spacing: 2.5
+  env_spacing: 4
   max_episode_length: 500
+  min_episode_length: 50
 
 sim:
   dt: 0.016
@@ -51,6 +52,6 @@ wandb:
   tags: 
 
 defaults:
-  - task: test
+  - task: Hover
   - algo: mappo
   - _self_

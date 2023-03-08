@@ -4,8 +4,7 @@ from tensordict.tensordict import TensorDictBase
 from typing import Sequence, Any, Dict
 from collections import defaultdict, Callable
 
-
-class LogOnEpisode(Transform):
+class LogOnEpisode(Callable):
     def __init__(
         self, 
         n_episodes: int,
@@ -14,11 +13,11 @@ class LogOnEpisode(Transform):
         logger_func: Callable=None,
         process_func: Dict[str, Callable]=None
     ):
-        super().__init__(in_keys=in_keys)
         if not len(in_keys) == len(log_keys):
             raise ValueError
-        
+        self.in_keys = in_keys
         self.log_keys = log_keys
+
         self.n_episodes = n_episodes
         self.logger_func = logger_func
         self.process_func = defaultdict(lambda: lambda x: torch.mean(x).item())
@@ -27,9 +26,9 @@ class LogOnEpisode(Transform):
 
         self.stats = []
 
-    def _call(self, tensordict: TensorDictBase) -> TensorDictBase:
+    def __call__(self, env, tensordict: TensorDictBase):
         done = tensordict.get(
-            "done",
+            ("next", "done"),
             torch.zeros(
                 tensordict.batch_size,
                 dtype=torch.bool,
@@ -54,5 +53,4 @@ class LogOnEpisode(Transform):
                     self.logger_func(dict_to_log)
                 self.stats.clear()
         return tensordict
-        
-        
+

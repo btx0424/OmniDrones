@@ -37,6 +37,7 @@ class IsaacEnv(EnvBase):
         # extract commonly used parameters
         self.num_envs = self.cfg.env.num_envs
         self.max_eposode_length = self.cfg.env.max_episode_length
+        self.min_episode_length = self.cfg.env.min_episode_length
         # check that simulation is running
         if stage_utils.get_current_stage() is None:
             raise RuntimeError(
@@ -162,11 +163,11 @@ class IsaacEnv(EnvBase):
     def _step(self, tensordict: TensorDictBase) -> TensorDictBase:
         self._pre_sim_step(tensordict)
         for _ in range(1):
-            self.sim.step(render=not self.cfg.headless)
+            self.sim.step(self.enable_render)
         self.progress_buf += 1
-        tensordict = TensorDict({}, self.batch_size)
-        tensordict.update(self._compute_state_and_obs())
-        tensordict.update(self._compute_reward_and_done())
+        tensordict = TensorDict({"next": {}}, self.batch_size)
+        tensordict["next"].update(self._compute_state_and_obs())
+        tensordict["next"].update(self._compute_reward_and_done())
         return tensordict
 
     def _pre_sim_step(self, tensordict: TensorDictBase):

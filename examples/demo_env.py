@@ -57,15 +57,14 @@ def main(cfg):
     
     frames = []
     def record_frame(*args, **kwargs):
-        env.sim.render()
         frame = camera().clone().cpu()
         frames.append(frame)
 
+    env.enable_render = True
     env.rollout(
         max_steps=1000,
         policy=policy,
         callback=record_frame,
-        break_when_any_done=False
     )
 
     from torchvision.io import write_video

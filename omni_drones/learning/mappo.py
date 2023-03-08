@@ -262,9 +262,9 @@ class MAPPOPolicy(ActorCriticPolicy):
         }
 
     def _get_dones(self, tensordict: TensorDict):
-        env_done = tensordict["done"].unsqueeze(-1)
+        env_done = tensordict[("next", "done")].unsqueeze(-1)
         agent_done = tensordict.get(
-            f"{self.agent_name}.done", 
+            ("next", f"{self.agent_name}.done"),
             env_done.expand(*env_done.shape[:-2], self.num_agents, 1)
         )
         done = (agent_done | env_done)
@@ -276,7 +276,10 @@ class MAPPOPolicy(ActorCriticPolicy):
         with torch.no_grad():
             value_output = self.value_op(next_tensordict)
         
-        rewards = tensordict[("reward", f"{self.agent_name}.reward")]
+        rewards = tensordict.get(
+            ("next", "reward", f"{self.agent_name}.reward")
+        )
+        
         if self.value_learning == "combined":
             rewards = (rewards * self.reward_weights).sum(-1, keepdim=True)
         values = tensordict["state_value"]

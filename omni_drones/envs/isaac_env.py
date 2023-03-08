@@ -1,7 +1,7 @@
 import abc
 import torch
 
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Type
 from torchrl.envs import EnvBase
 from torchrl.data import TensorSpec, CompositeSpec
 from tensordict.tensordict import TensorDict, TensorDictBase
@@ -23,7 +23,7 @@ class IsaacEnv(EnvBase):
     env_ns = "/World/envs"
     template_env_ns = "/World/envs/env_0"
 
-    REGISTRY: Dict[str, "IsaacEnv"] = {}
+    REGISTRY: Dict[str, Type["IsaacEnv"]] = {}
 
     def __init__(self, cfg, headless):
         super().__init__(
@@ -108,6 +108,7 @@ class IsaacEnv(EnvBase):
             raise ValueError
         super().__init_subclass__(**kwargs)
         IsaacEnv.REGISTRY[cls.__name__] = cls
+        IsaacEnv.REGISTRY[cls.__name__.lower()] = cls
 
     @property
     def agent_spec(self):
@@ -152,7 +153,7 @@ class IsaacEnv(EnvBase):
         self._reset_idx(env_ids)
         self.sim.step(render=False)
         self._tensordict.masked_fill_(env_mask, 0)
-        return self._compute_state_and_obs()
+        return self._tensordict.update(self._compute_state_and_obs())
 
     @abc.abstractmethod
     def _reset_idx(self, env_ids: torch.Tensor):
@@ -172,11 +173,11 @@ class IsaacEnv(EnvBase):
         pass
     
     @abc.abstractmethod
-    def _compute_state_and_obs(self):
+    def _compute_state_and_obs(self) -> TensorDictBase:
         raise NotImplementedError
     
     @abc.abstractmethod
-    def _compute_reward_and_done(self):
+    def _compute_reward_and_done(self) -> TensorDictBase:
         raise NotImplementedError
 
     def _set_seed(self, seed: Optional[int]=-1):
@@ -237,7 +238,8 @@ class _AgentSpecView(Dict[str, AgentSpec]):
                 self.env.observation_spec[f"{name}.state"] = __value.state_spec.expand(*shape)
             self.env.action_spec[f"{name}.action"] = expand(__value.action_spec)
             self.env.reward_spec[f"{name}.reward"] = expand(__value.reward_spec)
-            self.env._tensordict[f"{name}.return"] = self.env.reward_spec[f"{name}.reward"].zero()
+            
+            self.env._tensordict["return"] = self.env.reward_spec[f"{name}.reward"].zero()
             super().__setitem__(__key, __value)
             self.env._agent_spec[__key] = __value
         else:

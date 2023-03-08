@@ -61,7 +61,7 @@ class Camera:
                 name=annotator_type, device=self.device)
             annotator.attach([self.render_product])
             self.annotators[annotator_type] = annotator
-
+        SimulationContext.instance().render()
 
     def __call__(self) -> TensorDict:
         tensordict = TensorDict({

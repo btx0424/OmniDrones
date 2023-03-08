@@ -36,9 +36,9 @@ def main(cfg):
     translations = torch.zeros(n, 3)
     translations[:, 1] = torch.arange(n)
     translations[:, 2] = 0.5
-    firefly.spawn(n, translations=translations)
+    firefly.spawn(translations=translations)
 
-    scene.design_scene()
+    scene_utils.design_scene()
 
     camera_cfg = PinholeCameraCfg(
         sensor_tick=0,
@@ -88,10 +88,10 @@ def main(cfg):
             firefly.apply_action(action)
             sim.step()
 
-            # if step % 2 == 0 and len(frames) < 1000:
-                # frame = camera().clone()
-                # frames.append(frame)
-                # print(step, frame)
+            if step % 2 == 0 and len(frames) < 1000:
+                frame = camera().clone()
+                frames.append(frame)
+                print(step, frame)
             
             step += 1
             if step >= 1000:

@@ -48,15 +48,9 @@ class SyncDataCollector(_SyncDataCollector):
         self._fps = _tensordict_out.numel() / (time.perf_counter() - start)
         return _tensordict_out
 
-    def _reset_if_necessary(self) -> None:
+    def _step_and_maybe_reset(self) -> None:
         done: torch.Tensor = self._tensordict.get("done")
         if done.any():
             self._episodes += done.sum().item()
-            for callback in self._reset_callbacks:
-                callback(done)
-        super()._reset_if_necessary()
-
-    def on_reset(self, callback: Callable):
-        assert callable(callback)
-        self._reset_callbacks.append(callback)
+        super()._step_and_maybe_reset()
 

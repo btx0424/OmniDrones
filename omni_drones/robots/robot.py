@@ -58,11 +58,11 @@ class RobotBase(abc.ABC):
             raise ValueError
         super().__init_subclass__(**kwargs)
         RobotBase.REGISTRY[cls.__name__] = cls
+        RobotBase.REGISTRY[cls.__name__.lower()] = cls
 
     def spawn(
         self, 
-        n: int=1, 
-        translations=(0., 0., 0.5),
+        translations=[(0., 0., 0.5)],
         prim_paths: Sequence[str]=None
     ):
         if SimulationContext.instance()._physics_sim_view is not None:
@@ -70,18 +70,21 @@ class RobotBase(abc.ABC):
                 "Cannot spawn robots after simulation_context.reset() is called."
             )
         translations = torch.atleast_2d(torch.as_tensor(translations, device=self.device))
+        n = translations.shape[0]
+        
         if prim_paths is None:
             prim_paths = [f"{TEMPLATE_PRIM_PATH}/{self.name}_{i}" for i in range(n)]
         
-        if not (n == len(translations) == len(prim_paths)):
+        if not len(translations) == len(prim_paths):
             raise ValueError
         
+        prims = []
         for prim_path, translation in zip(prim_paths, translations):
             if prim_utils.is_prim_path_valid(prim_path):
                 raise RuntimeError(
                     f"Duplicate prim at {prim_path}."
                 )
-            prim_utils.create_prim(
+            prim = prim_utils.create_prim(
                 prim_path,
                 usd_path=self.usd_path,
                 translation=translation,
@@ -105,8 +108,10 @@ class RobotBase(abc.ABC):
                 solver_position_iteration_count=self.articulation_props.solver_position_iteration_count,
                 solver_velocity_iteration_count=self.articulation_props.solver_velocity_iteration_count,
             )
-
+            prims.append(prim)
+            
         self._count += n
+        return prims
 
     def initialize(self, prim_paths_expr: str=None):
         if SimulationContext._instance._physics_sim_view is None:

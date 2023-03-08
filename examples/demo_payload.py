@@ -22,7 +22,7 @@ def main(cfg):
 
     sim = SimulationContext(
         stage_units_in_meters=1.0, 
-        physics_dt=0.005, rendering_dt=0.005, 
+        physics_dt=0.01, rendering_dt=0.01, 
         sim_params=cfg.sim,
         backend="torch", 
         device=cfg.sim.device

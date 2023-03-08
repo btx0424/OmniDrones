@@ -58,8 +58,9 @@ class MultirotorBase(RobotBase):
         thrusts, moments = vmap(vmap(self.rotors))(rotor_cmds, self.rotor_params_and_states)
         self.forces[..., 2] = thrusts
         self.torques[..., 2] = moments.sum(-1)
-        self.articulations.set_joint_velocities(
-            self.throttle * self.directions * self.MAX_ROT_VEL)
+        # self.articulations.set_joint_velocities(
+        #     (self.throttle * self.directions * self.MAX_ROT_VEL).reshape(-1, self.num_rotors)
+        # )
         self.rotors_view.apply_forces(self.forces.reshape(-1, 3), is_global=False)
         self.base_link.apply_forces_and_torques_at_pos(
             None, self.torques.reshape(-1, 3), is_global=False)

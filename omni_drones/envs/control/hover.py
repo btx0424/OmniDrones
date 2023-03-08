@@ -31,7 +31,7 @@ class Hover(IsaacEnv):
 
     def _design_scene(self):
         cfg = RobotCfg()
-        self.drone: MultirotorBase = MultirotorBase.REGISTRY["Crazyflie"](cfg=cfg)
+        self.drone = MultirotorBase.REGISTRY["Firefly"](cfg=cfg)
 
         self.target_pos = torch.tensor([[0., 0., 1.5]], device=self.device)
         self.target = VisualSphere(
@@ -47,7 +47,7 @@ class Hover(IsaacEnv):
             dynamic_friction=1.0,
             restitution=0.0,
         )
-        self.drone.spawn(translation=(0., 0., 1.))
+        self.drone.spawn(translations=[(0., 0., 1.)])
         return ["/World/defaultGroundPlane"]
     
     def _reset_idx(self, env_ids: torch.Tensor):
@@ -85,7 +85,7 @@ class Hover(IsaacEnv):
 
         assert pos_reward.shape == up_reward.shape == spin_reward.shape
         reward = pos_reward + pos_reward * (up_reward + spin_reward) # + effort_reward
-        self._tensordict["drone.return"] += reward.unsqueeze(-1)
+        self._tensordict["return"] += reward.unsqueeze(-1)
         done  = (
             (self.progress_buf >= self.max_eposode_length).unsqueeze(-1)
             | (pos[..., 2] < 0.1)
@@ -95,6 +95,7 @@ class Hover(IsaacEnv):
             "reward": {
                 "drone.reward": reward.unsqueeze(-1)
             },
+            "return": self._tensordict["return"],
             "done": done
         }, self.batch_size)
 

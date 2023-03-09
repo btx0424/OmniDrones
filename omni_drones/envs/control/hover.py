@@ -31,7 +31,7 @@ class Hover(IsaacEnv):
 
     def _design_scene(self):
         cfg = RobotCfg()
-        self.drone = MultirotorBase.REGISTRY["Firefly"](cfg=cfg)
+        self.drone: MultirotorBase = MultirotorBase.REGISTRY["Crazyflie"](cfg=cfg)
 
         self.target_pos = torch.tensor([[0., 0., 1.5]], device=self.device)
         self.target = VisualSphere(

@@ -55,13 +55,13 @@ def create_rope(
     ropeXform = UsdGeom.Xform.Define(stage, xform_path)
     ropeXform.AddTranslateOp().Set(Gf.Vec3f(*translation))
     ropeXform.AddRotateXYZOp().Set(Gf.Vec3f(0, 90, 0))
-    link_radius = link_length/4
+    link_radius = 0.02
     joint_offset = link_length/2 - link_length/8
 
     links = []
     for i in range(num_links):
         link_path = f"{xform_path}/seg_{i}"
-        location = (i * (link_length-link_radius), 0, 0)
+        location = (i * (link_length-link_length/4), 0, 0)
         
         capsuleGeom = UsdGeom.Capsule.Define(stage, link_path)
         capsuleGeom.CreateHeightAttr(link_length/2)
@@ -137,11 +137,11 @@ def create_rope(
     
     if from_prim is not None: 
         joint: Usd.Prim = script_utils.createJoint(stage, "Fixed", from_prim, links[-1])
-        joint.GetAttribute('physics:excludeFromArticulation').Set(True)
+        # joint.GetAttribute('physics:excludeFromArticulation').Set(True)
 
     if to_prim is not None:
         joint: Usd.Prim = script_utils.createJoint(stage, "Fixed", links[0], to_prim)
-        joint.GetAttribute('physics:excludeFromArticulation').Set(True)
+        # joint.GetAttribute('physics:excludeFromArticulation').Set(True)
 
     return links
 

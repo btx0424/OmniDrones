@@ -17,6 +17,7 @@ from omni.isaac.core.utils import stage as stage_utils
 from omni.isaac.core.utils import prims as prim_utils
 
 from omni_drones.robots.robot import RobotBase
+from omni_drones.sensors.camera import PinholeCameraCfg
 
 class IsaacEnv(EnvBase):
 
@@ -24,6 +25,23 @@ class IsaacEnv(EnvBase):
     template_env_ns = "/World/envs/env_0"
 
     REGISTRY: Dict[str, Type["IsaacEnv"]] = {}
+
+    _DEFAULT_CAMERA_CONFIG = {
+        "cfg": PinholeCameraCfg(
+            sensor_tick=0,
+            resolution=(640, 480),
+            data_types=["rgb"],
+            usd_params=PinholeCameraCfg.UsdCameraCfg(
+                focal_length=24.0, 
+                focus_distance=400.0, 
+                horizontal_aperture=20.955, 
+                clipping_range=(0.1, 1.0e5)
+            ),
+        ),
+        "parent_prim_path": "/World",
+        "translation": (4., 2., 3.),
+        "target": (0., 0., 1.)
+    }
 
     def __init__(self, cfg, headless):
         super().__init__(
@@ -117,6 +135,11 @@ class IsaacEnv(EnvBase):
             self._agent_spec = {}
         return _AgentSpecView(self)
 
+    @property
+    def DEFAULT_CAMERA_CONFIG(self):
+        import copy
+        return copy.deepcopy(self._DEFAULT_CAMERA_CONFIG)
+    
     @abc.abstractmethod
     def _design_scene(self) -> Optional[List[str]]:
         """Creates the template environment scene.

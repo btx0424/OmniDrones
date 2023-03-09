@@ -10,6 +10,7 @@ from omni_drones.envs.utils.helpers import off_diag, cpos
 from omni_drones.robots.config import RobotCfg
 from omni_drones.robots.drone import MultirotorBase
 import omni_drones.utils.kit as kit_utils
+import omni_drones.utils.scene as scene_utils
 
 REGULAR_HEXAGON = [
     [0, 0, 0],
@@ -63,27 +64,37 @@ class Formation(IsaacEnv):
             UnboundedContinuousTensorSpec(3).to(self.device),
             state_spec.to(self.device)
         )
-        self.ep_return = self._tensordict["drone.return"]
-        self._tensordict["drone.return.cost_l"] = self.ep_return[..., 0]
-        self._tensordict["drone.return.cost_h"] = self.ep_return[..., 1]
-        self._tensordict["drone.return.height"] = self.ep_return[..., 2]
+        self.ep_return = self._tensordict["return"]
+        self._tensordict["return.cost_l"] = self.ep_return[..., 0]
+        self._tensordict["return.cost_h"] = self.ep_return[..., 1]
+        self._tensordict["return.height"] = self.ep_return[..., 2]
 
         self.last_cost_l = torch.zeros(self.num_envs, 1, device=self.device)
         self.last_cost_h = torch.zeros(self.num_envs, 1, device=self.device)
 
+    @property
+    def DEFAULT_CAMERA_CONFIG(self):
+        cfg = super().DEFAULT_CAMERA_CONFIG
+        cfg.update({
+            "parent_prim_path": f"/World/envs/env_0/{self.drone.name}_{0}",
+            "translation": (2, 0, 3),
+            "target": (0, 0, 0.7)
+        })
+        return cfg
+
     def _design_scene(self) -> Optional[List[str]]:
         cfg = RobotCfg()
-        self.drone: MultirotorBase = MultirotorBase.REGISTRY["Crazyflie"](cfg=cfg)
-        kit_utils.create_ground_plane(
-            "/World/defaultGroundPlane",
-            static_friction=1.0,
-            dynamic_friction=1.0,
-            restitution=0.0,
-        )
+        drone_cls = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
+        self.drone = drone_cls(cfg=cfg)
+
+        scene_utils.design_scene()
+        
+        self.target_height = 1.5
         self.formation = torch.as_tensor(FORMATIONS["tetragon"], device=self.device).float()
+        self.formation[:, 2] = self.target_height
         self.formation_L = laplacian(self.formation)
-        self.target_height = 1.0
-        self.drone.spawn(5, translation=self.formation)
+
+        self.drone.spawn(translations=self.formation)
         return ["/World/defaultGroundPlane"]
     
     def _reset_idx(self, env_ids: torch.Tensor):
@@ -142,13 +153,14 @@ class Formation(IsaacEnv):
         self.last_cost_l[:] = cost_l
         self.last_cost_h[:] = cost_h
 
-        self._tensordict["drone.return"] += reward
+        self._tensordict["return"] += reward
         done = (self.progress_buf >= self.max_eposode_length).unsqueeze(-1)
+        
         return TensorDict({
             "reward": {
                 "drone.reward": reward
             },
-            "return": self._tensordict["drone.return"],
+            "return": self._tensordict["return"],
             "done": done
         }, self.batch_size)
 

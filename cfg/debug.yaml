@@ -44,6 +44,6 @@ wandb:
   tags: 
 
 defaults:
-  - task: test
+  # - task: test
   - algo: mappo
   - _self_

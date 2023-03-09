@@ -29,7 +29,7 @@ def main(cfg):
 
     from omni_drones.envs import IsaacEnv
     from omni_drones.learning.mappo import MAPPOPolicy
-    from omni_drones.sensors.camera import Camera, PinholeCameraCfg
+    from omni_drones.sensors.camera import Camera
     
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
     env = env_class(cfg, headless=cfg.headless)
@@ -77,22 +77,7 @@ def main(cfg):
         return_same_td=True,
     )
     
-    camera_cfg = PinholeCameraCfg(
-        sensor_tick=0,
-        resolution=(640, 480),
-        data_types=["rgb"],
-        usd_params=PinholeCameraCfg.UsdCameraCfg(
-            focal_length=24.0, 
-            focus_distance=400.0, 
-            horizontal_aperture=20.955, 
-            clipping_range=(0.1, 1.0e5)
-        ),
-    )
-    camera = Camera(
-        camera_cfg, 
-        "/World",
-        translation=(4., 3., 2.), target=(0., 0., 1)
-    )
+    camera = Camera(**env.DEFAULT_CAMERA_CONFIG)
 
     @torch.no_grad()
     def evaluate():

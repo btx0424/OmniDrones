@@ -20,7 +20,7 @@ def main(cfg):
     from omni_drones.sensors.camera import Camera, PinholeCameraCfg
 
     env = Hover(cfg, headless=cfg.headless)
-    controller = env.drone.default_controller(
+    controller = env.drone.DEFAULT_CONTROLLER(
         env.drone.dt, 9.81, env.drone.params
     ).to(env.device)
 

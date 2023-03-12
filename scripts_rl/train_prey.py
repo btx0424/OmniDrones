@@ -29,7 +29,7 @@ def main(cfg):
     
 
     ppo = MAPPOPolicy(cfg.algo, agent_spec, act_name="drone.control_target", device="cuda")
-    controller = env.drone.default_controller(
+    controller = env.drone.DEFAULT_CONTROLLER(
         env.drone.dt, 9.81, env.drone.params
     ).to(env.device)
 

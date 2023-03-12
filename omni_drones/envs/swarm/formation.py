@@ -10,6 +10,7 @@ from omni_drones.envs.utils.helpers import off_diag, cpos
 from omni_drones.robots.config import RobotCfg
 from omni_drones.robots.drone import MultirotorBase
 import omni_drones.utils.kit as kit_utils
+import omni_drones.utils.scene as scene_utils
 
 REGULAR_HEXAGON = [
     [0, 0, 0],
@@ -42,17 +43,17 @@ class Formation(IsaacEnv):
         self.init_poses = self.drone.get_env_poses(clone=True)
 
         observation_spec = CompositeSpec({
-            "self": self.drone.state_spec.expand(
+            "state_self": self.drone.state_spec.expand(
                 1, *self.drone.state_spec.shape
             ).to(self.device),
-            "others": UnboundedContinuousTensorSpec(
+            "state_others": UnboundedContinuousTensorSpec(
                 (4, 3+3+1)
             ).to(self.device)
         })
 
         state_spec = CompositeSpec({
             "drones": self.drone.state_spec.expand(
-                self.drone._count, *self.drone.state_spec.shape
+                self.drone.n, *self.drone.state_spec.shape
             ),
         })
 
@@ -63,39 +64,51 @@ class Formation(IsaacEnv):
             UnboundedContinuousTensorSpec(3).to(self.device),
             state_spec.to(self.device)
         )
-        self.ep_return = self._tensordict["drone.return"]
-        self._tensordict["drone.return.cost_l"] = self.ep_return[..., 0]
-        self._tensordict["drone.return.cost_h"] = self.ep_return[..., 1]
-        self._tensordict["drone.return.height"] = self.ep_return[..., 2]
+        self.ep_return = self._tensordict["return"]
+        self._tensordict["return.cost_l"] = self.ep_return[..., 0]
+        self._tensordict["return.cost_h"] = self.ep_return[..., 1]
+        self._tensordict["return.height"] = self.ep_return[..., 2]
 
         self.last_cost_l = torch.zeros(self.num_envs, 1, device=self.device)
         self.last_cost_h = torch.zeros(self.num_envs, 1, device=self.device)
+        self.last_cost_pos = torch.zeros(self.num_envs, 1, device=self.device)
+
+    @property
+    def DEFAULT_CAMERA_CONFIG(self):
+        cfg = super().DEFAULT_CAMERA_CONFIG
+        cfg.update({
+            "parent_prim_path": "/World/envs/env_0",
+            "translation": (2, 0, 3),
+            "target": (0, 0, 0.7)
+        })
+        return cfg
 
     def _design_scene(self) -> Optional[List[str]]:
         cfg = RobotCfg()
-        self.drone: MultirotorBase = MultirotorBase.REGISTRY["Crazyflie"](cfg=cfg)
-        kit_utils.create_ground_plane(
-            "/World/defaultGroundPlane",
-            static_friction=1.0,
-            dynamic_friction=1.0,
-            restitution=0.0,
-        )
+        drone_cls = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
+        self.drone: MultirotorBase = drone_cls(cfg=cfg)
+
+        scene_utils.design_scene()
+        
+        self.target_pos = torch.tensor([0., 0., 1.5], device=self.device)
         self.formation = torch.as_tensor(FORMATIONS["tetragon"], device=self.device).float()
+        self.formation = self.target_pos + self.target_pos
         self.formation_L = laplacian(self.formation)
-        self.target_height = 1.0
-        self.drone.spawn(5, translation=self.formation)
+
+        self.drone.spawn(translations=self.formation)
         return ["/World/defaultGroundPlane"]
     
     def _reset_idx(self, env_ids: torch.Tensor):
         _, rot = self.init_poses
         self.drone._reset_idx(env_ids)
-        pos = torch.rand(len(env_ids), self.drone._count, 3, device=self.device)
-        vel = torch.zeros(len(env_ids), self.drone._count, 6, device=self.device)
+        pos = torch.rand(len(env_ids), self.drone.n, 3, device=self.device)
+        vel = torch.zeros(len(env_ids), self.drone.n, 6, device=self.device)
         self.drone.set_env_poses(pos, rot[env_ids], env_ids)
         self.drone.set_velocities(vel, env_ids)
 
         self.last_cost_h[env_ids] = functorch.vmap(cost_formation_laplacian)(pos, desired_L=self.formation_L)
         self.last_cost_l[env_ids] = functorch.vmap(cost_formation_hausdorff)(pos, desired_p=self.formation)
+        self.last_cost_pos[env_ids] = torch.square(pos.mean(-2, keepdim=True) - self.target_pos).sum(-1)
     
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict["drone.action"]
@@ -112,9 +125,9 @@ class Formation(IsaacEnv):
         relative_vel = functorch.vmap(off_diag)(relative_vel)
 
         obs = TensorDict({
-            "self": states.unsqueeze(2),
-            "others": torch.cat([relative_pos, relative_vel, pdist], dim=-1)
-        }, [self.num_envs, self.drone._count])
+            "state_self": states.unsqueeze(2),
+            "state_others": torch.cat([relative_pos, relative_vel, pdist], dim=-1)
+        }, [self.num_envs, self.drone.n])
 
         center = pos.mean(-2, keepdim=True)
         states[..., :3] -= center
@@ -130,25 +143,32 @@ class Formation(IsaacEnv):
     def _compute_reward_and_done(self):
         pos, rot = self.drone.get_env_poses()
 
-        reward = torch.zeros(self.num_envs, self.drone._count, 3, device=self.device)
+        reward = torch.zeros(self.num_envs, self.drone.n, 3, device=self.device)
         cost_l = functorch.vmap(cost_formation_laplacian)(pos, desired_L=self.formation_L)
         cost_h = functorch.vmap(cost_formation_hausdorff)(pos, desired_p=self.formation)
-        cost_height = torch.square(pos[..., 2] - self.target_height)
+        cost_pos = torch.square(pos.mean(-2, keepdim=True) - self.target_pos).sum(-1)
 
         reward[..., 0] = self.last_cost_l - cost_l
         reward[..., 1] = self.last_cost_h - cost_h
-        reward[..., 2] = - cost_height
+        reward[..., 2] = self.last_cost_pos - cost_pos
+        reward[..., 3] = - self.drone.base_link.get_net_contact_forces().any()
 
         self.last_cost_l[:] = cost_l
         self.last_cost_h[:] = cost_h
+        self.last_cost_pos[:] = cost_pos
 
-        self._tensordict["drone.return"] += reward
-        done = (self.progress_buf >= self.max_eposode_length).unsqueeze(-1)
+        self._tensordict["return"] += reward
+
+        terminated = (self.progress_buf >= self.max_eposode_length).unsqueeze(-1)
+        crash = (pos[..., 2] < 0.2).all(-1, keepdim=True)
+
+        done = terminated | crash
+
         return TensorDict({
             "reward": {
                 "drone.reward": reward
             },
-            "return": self._tensordict["drone.return"],
+            "return": self._tensordict["return"],
             "done": done
         }, self.batch_size)
 

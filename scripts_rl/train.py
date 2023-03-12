@@ -29,7 +29,7 @@ def main(cfg):
 
     from omni_drones.envs import IsaacEnv
     from omni_drones.learning.mappo import MAPPOPolicy
-    from omni_drones.sensors.camera import Camera, PinholeCameraCfg
+    from omni_drones.sensors.camera import Camera
     
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
     env = env_class(cfg, headless=cfg.headless)
@@ -37,7 +37,7 @@ def main(cfg):
     agent_spec = env.agent_spec["drone"]
     agent_spec.action_spec = UnboundedContinuousTensorSpec(3, device=env.device)
     ppo = MAPPOPolicy(cfg.algo, agent_spec=agent_spec, act_name="drone.target_vel", device="cuda")
-    controller = env.drone.default_controller(
+    controller = env.drone.DEFAULT_CONTROLLER(
         env.drone.dt, 9.81, env.drone.params
     ).to(env.device)
 
@@ -77,22 +77,7 @@ def main(cfg):
         return_same_td=True,
     )
     
-    camera_cfg = PinholeCameraCfg(
-        sensor_tick=0,
-        resolution=(640, 480),
-        data_types=["rgb"],
-        usd_params=PinholeCameraCfg.UsdCameraCfg(
-            focal_length=24.0, 
-            focus_distance=400.0, 
-            horizontal_aperture=20.955, 
-            clipping_range=(0.1, 1.0e5)
-        ),
-    )
-    camera = Camera(
-        camera_cfg, 
-        "/World",
-        translation=(4., 3., 2.), target=(0., 0., 1)
-    )
+    camera = Camera(**env.DEFAULT_CAMERA_CONFIG)
 
     @torch.no_grad()
     def evaluate():
@@ -123,20 +108,20 @@ def main(cfg):
     pbar = tqdm(collector)
     for i, data in enumerate(pbar):
         info = {"env_frames": collector._frames}
-        info.update(ppo.train_op(data))
+        # info.update(ppo.train_op(data))
 
-        if i % 10 == 0:
-            run.log(info)
+        # if i % 10 == 0:
+        #     run.log(info)
         
-        if i % 100 == 0:
-            logging.info(f"Eval at {collector._frames} steps.")
-            run.log(evaluate())
+        # if i % 100 == 0:
+        #     logging.info(f"Eval at {collector._frames} steps.")
+        #     run.log(evaluate())
 
-        pbar.set_postfix({
-            "rollout_fps": collector._fps,
-            "frames": collector._frames,
-            "episodes": collector._episodes,
-        })
+        # pbar.set_postfix({
+        #     "rollout_fps": collector._fps,
+        #     "frames": collector._frames,
+        #     "episodes": collector._episodes,
+        # })
         
     simulation_app.close()
 

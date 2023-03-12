@@ -1,5 +1,5 @@
 task: 
-  name: formation
+  name: Formation
   drone_model: Crazyflie
   formation: tetragon
 algo:
@@ -54,6 +54,7 @@ env:
   num_envs: 1024
   env_spacing: 2.5
   max_episode_length: 500
+  min_episode_length: 50
 sim:
   dt: 0.016
   substeps: 1

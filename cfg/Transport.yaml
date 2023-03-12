@@ -52,6 +52,7 @@ env:
   num_envs: 4
   env_spacing: 4
   max_episode_length: 500
+  min_episode_length: 50
 sim:
   dt: 0.01
   substeps: 1

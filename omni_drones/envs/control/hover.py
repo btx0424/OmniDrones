@@ -7,7 +7,7 @@ import omni.isaac.core.utils.torch as torch_utils
 from omni.isaac.core.objects import VisualSphere
 
 from omni_drones.envs.isaac_env import IsaacEnv, AgentSpec
-from omni_drones.robots.config import RobotCfg
+from omni_drones.robots.config import RobotCfg, RigidBodyPropertiesCfg
 from omni_drones.robots.drone import MultirotorBase
 import omni_drones.utils.kit as kit_utils
 

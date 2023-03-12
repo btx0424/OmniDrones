@@ -14,7 +14,7 @@ from omni_drones.envs.isaac_env import AgentSpec
 
 from .utils import valuenorm
 from .utils.clip_grad import clip_grad_norm_
-from .utils.gae import compute_gae, compute_gae_
+from .utils.gae import compute_gae
 from .common import ActorCriticPolicy
 
 LR_SCHEDULER = lr_scheduler._LRScheduler
@@ -49,8 +49,6 @@ class MAPPOPolicy(ActorCriticPolicy):
             self.obs_name,
             self.states_name,
             "next",
-            # ("next", self.obs_name),
-            # ("next", self.states_name),
             self.act_name,
             self.act_logps_name,
             ("reward", f"{self.agent_name}.reward"),
@@ -96,8 +94,7 @@ class MAPPOPolicy(ActorCriticPolicy):
 
             return policy_loss, (dist_entropy, approx_kl, clip_frac)
         
-        self.share_actor = self.cfg.share_actor
-        if self.share_actor:
+        if self.cfg.share_actor:
             self.actor = TensorDictModule(
                 make_ppo_actor(cfg, self.agent_spec.observation_spec, self.agent_spec.action_spec),
                 in_keys=self.actor_in_keys, out_keys=self.actor_out_keys
@@ -126,19 +123,11 @@ class MAPPOPolicy(ActorCriticPolicy):
 
     def make_critic(self):
         cfg = self.cfg.critic
-
-        self.value_learning = self.cfg.value_learning
-        assert self.value_learning in ["combined", "separate"]
         
         if cfg.use_huber_loss:
             self.critic_loss_fn = nn.HuberLoss(reduction="none", delta=cfg.huber_delta)
         else:
             self.critic_loss_fn = nn.MSELoss(reduction="none")
-        
-        self.critic_output_shape = (
-            self.agent_spec.n if self.cfg.critic_input == "state" else 1,
-            self.agent_spec.num_rewards if self.value_learning == "separate" else 1,
-        )
         
         if self.cfg.critic_input == "state":
             if self.agent_spec.state_spec is None:
@@ -151,12 +140,13 @@ class MAPPOPolicy(ActorCriticPolicy):
                     cfg,
                     entity_ids=torch.arange(self.agent_spec.n, device=self.device),
                     state_spec=self.agent_spec.state_spec,
-                    num_rewards=self.agent_spec.num_rewards if self.value_learning == "separate" else 1,
+                    reward_spec=self.agent_spec.reward_spec
                 ),
                 in_keys=self.critic_in_keys,
                 out_keys=self.critic_out_keys
             ).to(self.device)
             self.value_func = self.critic
+            
         elif self.cfg.critic_input == "obs":
             self.critic_in_keys = [f"{self.agent_name}.obs"]
             self.critic_out_keys = ["state_value"]
@@ -165,7 +155,7 @@ class MAPPOPolicy(ActorCriticPolicy):
                 SharedCritic(
                     cfg,
                     self.agent_spec.observation_spec,
-                    self.agent_spec.num_rewards if self.value_learning == "separate" else 1,
+                    self.agent_spec.reward_spec
                 ),
                 in_keys=self.critic_in_keys, 
                 out_keys=self.critic_out_keys
@@ -188,10 +178,7 @@ class MAPPOPolicy(ActorCriticPolicy):
             # Empirically the performance is similar on most of the tasks.
             cls = getattr(valuenorm, cfg.value_norm["class"])
             self.value_normalizer: valuenorm.Normalizer = cls(
-                input_shape=(
-                    self.num_agents, 
-                    self.agent_spec.num_rewards if self.value_learning == "separate" else 1,
-                ),
+                input_shape=self.agent_spec.reward_spec.shape,
                 **cfg.value_norm["kwargs"]
             ).to(self.device)
         
@@ -221,7 +208,7 @@ class MAPPOPolicy(ActorCriticPolicy):
         actor_input.batch_size = [*actor_input.batch_size, self.num_agents]
         policy_loss, (dist_entropy, approx_kl, clip_frac) = self.actor_loss(
             params, actor_input, advantages, batch[self.act_logps_name])
-        if self.share_actor:
+        if self.cfg.share_actor:
             grads = torch.autograd.grad(policy_loss.mean(), params)
             grad_norm = clip_grad_norm_(grads, max_norm=self.cfg.max_grad_norm)
             updates, self.actor_opt_state = self.actor_opt.update(grads, self.actor_opt_state)
@@ -280,8 +267,6 @@ class MAPPOPolicy(ActorCriticPolicy):
             ("next", "reward", f"{self.agent_name}.reward")
         )
         
-        if self.value_learning == "combined":
-            rewards = (rewards * self.reward_weights).sum(-1, keepdim=True)
         values = tensordict["state_value"]
         next_value = value_output["state_value"].squeeze(0)
 
@@ -295,9 +280,6 @@ class MAPPOPolicy(ActorCriticPolicy):
             rewards, dones, values, next_value, 
             gamma=self.gae_gamma, lmbda=self.gae_lambda,
         )
-
-        if self.value_learning == "separate":
-            tensordict["advantages"] = (tensordict["advantages"] * self.reward_weights(self.n_updates)).sum(-1, keepdim=True)
 
         advantages_mean = tensordict["advantages"].mean()
         advantages_std = tensordict["advantages"].std()
@@ -346,23 +328,7 @@ class MAPPOPolicy(ActorCriticPolicy):
             perm = torch.randperm(batch_size, device=self.device).reshape(self.num_minibatches, -1)
             for indices in perm:
                 yield tensordict[indices]
-        
-    def state_dict(self):
-        state_dict =  {
-            "actor": self.actor.state_dict(),
-            "actor_opt_state": self.actor_opt_state,
-            "critic": self.critic.state_dict(),
-            "critic_opt": self.critic_opt.state_dict()
-        }
-        if hasattr(self, "critic_opt_scheduler"):
-            state_dict["critic_opt_scheduler"] = self.critic_opt_scheduler.state_dict()
-        return state_dict
-    
-    def load_state_dict(self, state_dict: Dict[str, Any]):
-        self.actor.load_state_dict(state_dict["actor"])
-        self.actor_opt_state = state_dict["actor_opt_state"]
-        self.critic.load_state_dict(state_dict["critic"])
-        self.critic_opt.load_state_dict(state_dict["critic_opt"])
+
 
 
 from .utils.network import ENCODERS_MAP, SplitEmbedding, MLP
@@ -452,18 +418,14 @@ class StochasticActor(nn.Module):
     ):
         ...
 
-import math
+
 class SharedCritic(nn.Module):
     def __init__(self, 
         args, 
         observation_spec: TensorSpec,
-        output_shape: Tuple[int, ...],
+        reward_spec: TensorSpec,
     ):
         super().__init__()
-        if type(output_shape) == int: 
-            output_shape = (output_shape,)
-        self.output_shape = torch.Size(output_shape)
-
         if isinstance(observation_spec, (BoundedTensorSpec, UnboundedTensorSpec)):
             input_dim = observation_spec.shape.numel()
             self.base = nn.Sequential(
@@ -477,6 +439,7 @@ class SharedCritic(nn.Module):
         else:
             raise TypeError(observation_spec)
 
+        self.output_shape = reward_spec.shape
         self.v_out = nn.Linear(self.base.output_shape.numel(), self.output_shape.numel())
         nn.init.orthogonal_(self.v_out.weight, args.gain)
 
@@ -499,7 +462,7 @@ class CentralizedCritic(nn.Module):
         cfg,
         entity_ids: INDEX_TYPE,
         state_spec: CompositeSpec, 
-        num_rewards: int,
+        reward_spec: TensorSpec,
         embed_dim = 128,
         nhead=1,
         num_layers=1,
@@ -517,11 +480,12 @@ class CentralizedCritic(nn.Module):
             ),
             num_layers=num_layers,
         )
-        self.v_out = nn.Linear(embed_dim, num_rewards)
+        self.output_shape = reward_spec.shape
+        self.v_out = nn.Linear(embed_dim, self.output_shape.shape.numel())
     
     def forward(self, x: torch.Tensor):
         x = self.embed(x)
         x = self.encoder(x)
-        values = self.v_out(x[..., self.entity_ids, :])
+        values = self.v_out(x[..., self.entity_ids, :]).unflatten(-1, self.output_shape)
         return values
 

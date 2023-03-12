@@ -11,6 +11,7 @@ import omni.isaac.core.utils.torch as torch_utils
 import omni_drones.utils.kit as kit_utils
 from omni.isaac.core.simulation_context import SimulationContext
 from omni.isaac.core.articulations import ArticulationView
+from omni.isaac.core.prims import RigidPrimView
 
 from omni_drones.robots.config import (
     RobotCfg,
@@ -30,7 +31,7 @@ class RobotBase(abc.ABC):
 
     REGISTRY: Dict[str, Type["RobotBase"]] = {}
 
-    def __init__(self, name: str, cfg: RobotCfg=None) -> None:
+    def __init__(self, name: str, cfg: RobotCfg=None, is_articulation=True) -> None:
         if name is None:
             name = self.__class__.__name__
         if name in RobotBase._robots:
@@ -39,16 +40,17 @@ class RobotBase(abc.ABC):
         if cfg is None:
             cfg = RobotCfg()
         self.name = name
+        self.is_articulation = is_articulation
         self.rigid_props: RigidBodyPropertiesCfg = cfg.rigid_props
         self.articulation_props: ArticulationRootPropertiesCfg = cfg.articulation_props
         
-        self._count = 0
+        self.n = 0
         
         if SimulationContext._instance is None:
             raise RuntimeError("The SimulationContext is not created.")
 
-        self.device = SimulationContext._instance._device
-        self.dt = SimulationContext._instance.get_physics_dt()
+        self.device = SimulationContext.instance()._device
+        self.dt = SimulationContext.instance().get_physics_dt()
         self.state_spec: TensorSpec
         self.action_spec: TensorSpec
 
@@ -102,21 +104,24 @@ class RobotBase(abc.ABC):
                 retain_accelerations=self.rigid_props.retain_accelerations,
             )
             # articulation root settings
-            kit_utils.set_articulation_properties(
-                prim_path,
-                enable_self_collisions=self.articulation_props.enable_self_collisions,
-                solver_position_iteration_count=self.articulation_props.solver_position_iteration_count,
-                solver_velocity_iteration_count=self.articulation_props.solver_velocity_iteration_count,
-            )
+            if self.is_articulation:
+                kit_utils.set_articulation_properties(
+                    prim_path,
+                    enable_self_collisions=False,
+                    solver_position_iteration_count=self.articulation_props.solver_position_iteration_count,
+                    solver_velocity_iteration_count=self.articulation_props.solver_velocity_iteration_count,
+                )
             prims.append(prim)
             
-        self._count += n
+        self.n += n
         return prims
 
-    def initialize(self, prim_paths_expr: str=None):
-        if SimulationContext._instance._physics_sim_view is None:
+    def initialize(self, 
+        prim_paths_expr: str=None,
+    ):
+        if SimulationContext.instance()._physics_sim_view is None:
             raise RuntimeError(
-                "Cannot create ArticulationView before the simulation context resets."
+                f"Cannot initialize {self.__class__.__name__} before the simulation context resets."
                 "Call simulation_context.reset() first."
             )
         if prim_paths_expr is None:
@@ -125,31 +130,28 @@ class RobotBase(abc.ABC):
 
         # create handles
         # -- robot articulation
-        self.articulations = ArticulationView(
-            self.prim_paths_expr, reset_xform_properties=False
-        )
-        self.articulations.initialize()
+        if self.is_articulation:
+            self._view = ArticulationView(
+                self.prim_paths_expr, reset_xform_properties=False,
+            )
+        else:
+            self._view = RigidPrimView(
+                self.prim_paths_expr, reset_xform_properties=False
+            )
+ 
+        self._view.initialize()
         # set the default state
-        self.articulations.post_reset()
+        self._view.post_reset()
         self.shape = (
-            torch.arange(self.articulations.count)
-            .reshape(-1, self._count).shape
+            torch.arange(self._view.count)
+            .reshape(-1, self.n).shape
         )
-        self._physics_view = self.articulations._physics_view
-        self._physics_sim_view = self.articulations._physics_sim_view
+        self._physics_view = self._view._physics_view
+        self._physics_sim_view = self._view._physics_sim_view
         
         if self._envs_positions is not None:
             pos, rot = self.get_world_poses()
             self.set_env_poses(pos, rot)
-
-        print(self.articulations._dof_names)
-        print(self.articulations._dof_types)
-
-        # so that joint rotations do not produce torques
-        dof_dampings = self._physics_view.get_dof_dampings().clone()
-        self.articulations.set_gains(
-            kds=torch.zeros_like(dof_dampings)
-        )
 
     @abc.abstractmethod
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
@@ -161,20 +163,26 @@ class RobotBase(abc.ABC):
 
     def get_world_poses(self, clone=True):
         with self._disable_warnings():
-            poses = torch.unflatten(self._physics_view.get_root_transforms(), 0, self.shape)
+            if self.is_articulation:
+                poses = torch.unflatten(self._physics_view.get_root_transforms(), 0, self.shape)
+            else:
+                poses = torch.unflatten(self._physics_view.get_transforms(), 0, self.shape)
             if clone:
                 poses = poses.clone()
         return poses[..., :3], poses[..., [6, 3, 4 ,5]]
 
     def get_env_poses(self, clone=True):
         with self._disable_warnings():
-            poses = torch.unflatten(self._physics_view.get_root_transforms(), 0, self.shape)
+            if self.is_articulation:
+                poses = torch.unflatten(self._physics_view.get_root_transforms(), 0, self.shape)
+            else:
+                poses = torch.unflatten(self._physics_view.get_transforms(), 0, self.shape)
             if clone:
                 poses = poses.clone()
         if self._envs_positions is not None:
             poses[..., :3] -= self._envs_positions
         return poses[..., :3], poses[..., [6, 3, 4, 5]]
-        
+
     def set_env_poses(self, 
         positions: torch.Tensor, 
         orientations: torch.Tensor,
@@ -186,7 +194,10 @@ class RobotBase(abc.ABC):
             else:
                 positions = positions.reshape(-1, 3)
             orientations = orientations.reshape(-1, 4)[:, [1, 2, 3, 0]]
-            old_pose = self._physics_view.get_root_transforms().clone()
+            if self.is_articulation:
+                old_pose = self._physics_view.get_root_transforms().clone()
+            else:
+                old_pose = self._physics_view.get_transforms().clone()
             indices = self._resolve_indices(indices)
             if positions is None:
                 positions = old_pose[indices, :3]
@@ -194,11 +205,17 @@ class RobotBase(abc.ABC):
                 orientations = old_pose[indices, 3:]
             new_pose = torch.cat([positions, orientations], dim=-1)
             old_pose[indices] = new_pose
-            self._physics_view.set_root_transforms(old_pose, indices)
+            if self.is_articulation:
+                self._physics_view.set_root_transforms(old_pose, indices)
+            else:
+                self._physics_view.set_transforms(old_pose, indices)
 
     def get_velocities(self, clone=True):
         with self._disable_warnings():
-            velocities = torch.unflatten(self._physics_view.get_root_velocities(), 0, self.shape)
+            if self.is_articulation:
+                velocities = torch.unflatten(self._physics_view.get_root_velocities(), 0, self.shape)
+            else:
+                velocities = torch.unflatten(self._physics_view.get_velocities(), 0, self.shape)
             if clone:
                 velocities = velocities.clone()
         return velocities
@@ -222,9 +239,13 @@ class RobotBase(abc.ABC):
                 joint_positions = joint_positions.clone()
         return joint_positions
 
-    def set_joint_positions(self, ):
+    def set_joint_positions(self, pos: torch.Tensor, indices: torch.Tensor=None):
         with self._disable_warnings():
-            ...
+            pos = pos.flatten(0, -2)
+            indices = self._resolve_indices(indices)
+            joint_pos = self._physics_view.get_dof_positions()
+            joint_pos[indices] = pos
+            self._physics_view.set_dof_positions(pos, indices)
 
     def get_joint_velocities(self, clone=True):
         with self._disable_warnings():
@@ -233,15 +254,19 @@ class RobotBase(abc.ABC):
                 joint_velocities = joint_velocities.clone()
         return joint_velocities
 
-    def set_joint_velocities(self, ):
+    def set_joint_velocities(self, vel: torch.Tensor):
         with self._disable_warnings():
-            ...
+            vel = vel.flatten(0, -2)
+            indices = self._resolve_indices(indices)
+            joint_vel = self._physics_view.get_dof_velocities()
+            joint_vel[indices] = vel
+            self._physics_view.set_dof_velocities(vel)
 
     def get_state(self):
         raise NotImplementedError
 
     def _resolve_indices(self, indices: torch.Tensor=None):
-        all_indices = torch.arange(self.articulations.count, device=self.device).reshape(self.shape)
+        all_indices = torch.arange(self._view.count, device=self.device).reshape(self.shape)
         if indices is None:
             indices = all_indices
         else:

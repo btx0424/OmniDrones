@@ -16,13 +16,13 @@ from omni_drones.controllers import LeePositionController
 class MultirotorBase(RobotBase):
 
     param_path: str
-    default_controller: Type = LeePositionController
+    DEFAULT_CONTROLLER: Type = LeePositionController
 
     def __init__(self, name: str=None, cfg=None) -> None:
         super().__init__(name, cfg)
 
         with open(self.param_path, "r") as f:
-            logging.info(f"Reading {name}'s params from {self.param_path}.")
+            logging.info(f"Reading {self.name}'s params from {self.param_path}.")
             self.params = yaml.safe_load(f)
         self.mass = self.params["mass"]
         self.num_rotors = self.params["rotor_configuration"]["num_rotors"]
@@ -31,10 +31,19 @@ class MultirotorBase(RobotBase):
         self.state_spec = UnboundedContinuousTensorSpec(19 + self.num_rotors, device=self.device)
         
     def initialize(self, prim_paths_expr: str=None):
-        super().initialize(prim_paths_expr=prim_paths_expr)
-        self.base_link = RigidPrimView(
-            prim_paths_expr=f"{self.prim_paths_expr}/base_link", name="base_link")
-        self.base_link.initialize()
+        if self.is_articulation:
+            super().initialize(prim_paths_expr=prim_paths_expr)
+            self.base_link = RigidPrimView(
+                prim_paths_expr=f"{self.prim_paths_expr}/base_link", 
+                name="base_link",
+                track_contact_forces=True
+            )
+            self.base_link.initialize()
+        else:
+            super().initialize(prim_paths_expr=f"{prim_paths_expr}/base_link")
+            self.base_link = self._view
+            self.prim_paths_expr = prim_paths_expr
+        
         self.rotors_view = RigidPrimView(
             prim_paths_expr=f"{self.prim_paths_expr}/rotor_[0-{self.num_rotors-1}]", name="rotors")
         self.rotors_view.initialize()

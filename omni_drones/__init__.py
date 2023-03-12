@@ -1,9 +1,11 @@
 import os
+
 import torch
 from omni.isaac.kit import SimulationApp
 from tensordict import TensorDict
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), os.path.pardir, "cfg")
+
 
 def init_simulation_app(cfg):
     # launch the simulator
@@ -19,11 +21,17 @@ def init_simulation_app(cfg):
 
 
 def _get_shapes(self: TensorDict):
-    return {k: v.shape if isinstance(v, torch.Tensor) else v.shapes for k, v in self.items()}
+    return {
+        k: v.shape if isinstance(v, torch.Tensor) else v.shapes for k, v in self.items()
+    }
+
 
 def _get_devices(self: TensorDict):
-    return {k: v.device if isinstance(v, torch.Tensor) else v.devices for k, v in self.items()}
+    return {
+        k: v.device if isinstance(v, torch.Tensor) else v.devices
+        for k, v in self.items()
+    }
+
 
 TensorDict.shapes = property(_get_shapes)
 TensorDict.devices = property(_get_devices)
-

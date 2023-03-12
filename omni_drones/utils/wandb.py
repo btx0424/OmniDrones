@@ -1,6 +1,7 @@
-import wandb
 import datetime
 import logging
+
+import wandb
 from omegaconf import OmegaConf
 
 
@@ -23,7 +24,7 @@ def dict_flatten(a: dict, delim="."):
     result = {}
     for k, v in a.items():
         if isinstance(v, dict):
-            result.update({k+delim+kk: vv for kk, vv in dict_flatten(v).items()})
+            result.update({k + delim + kk: vv for kk, vv in dict_flatten(v).items()})
         else:
             result[k] = v
     return result
@@ -33,11 +34,11 @@ def init_wandb(cfg):
     """Initialize WandB.
 
     If only `run_id` is given, resume from the run specified by `run_id`.
-    If only `run_path` is given, start a new run from that specified by `run_path`, 
+    If only `run_path` is given, start a new run from that specified by `run_path`,
         possibly restoring trained models.
-    
+
     Otherwise, start a fresh new run.
-    
+
     """
     wandb_cfg = cfg.wandb
     time_str = datetime.datetime.now().strftime("%m-%d_%H-%M")
@@ -56,7 +57,9 @@ def init_wandb(cfg):
     else:
         kwargs["id"] = wandb.util.generate_id()
     run = wandb.init(**kwargs)
-    if wandb_cfg.run_id is not None and run.resumed: # because wandb sweep forces resumed=True
+    if (
+        wandb_cfg.run_id is not None and run.resumed
+    ):  # because wandb sweep forces resumed=True
         logging.info(f"Trying to resume run {wandb_cfg.run_id}")
         cfg_dict = dict_flatten(OmegaConf.to_container(cfg))
         run.config.update(cfg_dict)
@@ -81,4 +84,3 @@ def init_wandb(cfg):
     if wandb_cfg.log_code is not None:
         run.log_code()
     return run
-

@@ -8,20 +8,21 @@
 #
 
 # python
-import typing
 import re
+import typing
 
-# omniverse
-from pxr import UsdGeom, Usd, UsdPhysics
 import omni.kit
 import omni.usd
-from omni.usd.commands import MovePrimCommand, DeletePrimsCommand
-from omni.isaac.dynamic_control import _dynamic_control
+from omni.isaac.core.utils.semantics import add_update_semantics
 
 # isaacsim
 from omni.isaac.core.utils.stage import add_reference_to_stage, get_current_stage
 from omni.isaac.core.utils.string import find_root_prim_path_from_regex
-from omni.isaac.core.utils.semantics import add_update_semantics
+from omni.isaac.dynamic_control import _dynamic_control
+from omni.usd.commands import DeletePrimsCommand, MovePrimCommand
+
+# omniverse
+from pxr import Usd, UsdGeom, UsdPhysics
 
 
 def get_prim_at_path(prim_path: str) -> Usd.Prim:
@@ -94,7 +95,9 @@ def move_prim(path_from: str, path_to: str) -> None:
     MovePrimCommand(path_from=path_from, path_to=path_to).do()
 
 
-def get_first_matching_child_prim(prim_path: str, predicate: typing.Callable[[str], bool]) -> Usd.Prim:
+def get_first_matching_child_prim(
+    prim_path: str, predicate: typing.Callable[[str], bool]
+) -> Usd.Prim:
     """Recursively get the first USD Prim at the path string that passes the predicate function
 
     Args:
@@ -117,7 +120,9 @@ def get_first_matching_child_prim(prim_path: str, predicate: typing.Callable[[st
     return None
 
 
-def get_first_matching_parent_prim(prim_path: str, predicate: typing.Callable[[str], bool]) -> Usd.Prim:
+def get_first_matching_parent_prim(
+    prim_path: str, predicate: typing.Callable[[str], bool]
+) -> Usd.Prim:
     """Recursively get the first USD Prim at the parent path string that passes the predicate function
 
     Args:
@@ -131,12 +136,16 @@ def get_first_matching_parent_prim(prim_path: str, predicate: typing.Callable[[s
     while not is_prim_root_path(current_prim_path):
         if predicate(current_prim_path):
             return get_prim_at_path(current_prim_path)
-        current_prim_path = get_prim_path(get_prim_parent(get_prim_at_path(current_prim_path)))
+        current_prim_path = get_prim_path(
+            get_prim_parent(get_prim_at_path(current_prim_path))
+        )
     return None
 
 
 def get_all_matching_child_prims(
-    prim_path: str, predicate: typing.Callable[[str], bool] = lambda x: True, depth: typing.Optional[int] = None
+    prim_path: str,
+    predicate: typing.Callable[[str], bool] = lambda x: True,
+    depth: typing.Optional[int] = None,
 ) -> typing.List[Usd.Prim]:
     """Performs a breadth-first search starting from the root and returns all the prims matching the predicate.
 
@@ -159,7 +168,9 @@ def get_all_matching_child_prims(
                 out.append(prim)
             if depth is None or current_depth < depth:
                 children = get_prim_children(prim)
-                traversal_queue = traversal_queue + [(child, current_depth + 1) for child in children]
+                traversal_queue = traversal_queue + [
+                    (child, current_depth + 1) for child in children
+                ]
     return out
 
 
@@ -181,17 +192,24 @@ def find_matching_prim_paths(prim_path_regex: str) -> typing.List[str]:
             if is_prim_path_valid(expression_to_match):
                 result.append(expression_to_match)
         else:
-            immediate_expression_to_match = "/".join(expression_to_match.split("/")[: tree_level + 1])
+            immediate_expression_to_match = "/".join(
+                expression_to_match.split("/")[: tree_level + 1]
+            )
             children_matching = get_all_matching_child_prims(
                 prim_path=root_prim_path,
-                predicate=lambda a: re.search(immediate_expression_to_match, a) is not None,
+                predicate=lambda a: re.search(immediate_expression_to_match, a)
+                is not None,
                 depth=1,
             )
             children_matching = [get_prim_path(prim) for prim in children_matching]
-            remainder_expression = "/".join(expression_to_match.split("/")[tree_level + 1 :])
+            remainder_expression = "/".join(
+                expression_to_match.split("/")[tree_level + 1 :]
+            )
             if remainder_expression != "":
                 remainder_expression = "/" + remainder_expression
-            children_expressions = [child + remainder_expression for child in children_matching]
+            children_expressions = [
+                child + remainder_expression for child in children_matching
+            ]
             expressions_to_match = expressions_to_match + children_expressions
     return result
 
@@ -234,7 +252,9 @@ def query_parent_path(prim_path: str, predicate: typing.Callable[[str], bool]) -
     while not is_prim_root_path(current_prim_path):
         if predicate(current_prim_path):
             return True
-        current_prim_path = get_prim_path(get_prim_parent(get_prim_at_path(current_prim_path)))
+        current_prim_path = get_prim_path(
+            get_prim_parent(get_prim_at_path(current_prim_path))
+        )
     return False
 
 
@@ -372,7 +392,13 @@ def create_prim(
     if semantic_label is not None:
         add_update_semantics(prim, semantic_label, semantic_type)
     # apply the transformations
-    XFormPrim(prim_path=prim_path, position=position, translation=translation, orientation=orientation, scale=scale)
+    XFormPrim(
+        prim_path=prim_path,
+        position=position,
+        translation=translation,
+        orientation=orientation,
+        scale=scale,
+    )
 
     return prim
 
@@ -400,7 +426,9 @@ def get_prim_property(prim_path: str, property_name: str) -> typing.Any:
     return prim.GetAttribute(property_name).Get()
 
 
-def set_prim_property(prim_path: str, property_name: str, property_value: typing.Any) -> None:
+def set_prim_property(
+    prim_path: str, property_name: str, property_value: typing.Any
+) -> None:
     """Set the attribute of the USD Prim at the path
 
     Args:
@@ -463,7 +491,8 @@ def is_prim_non_root_articulation_link(prim_path: str) -> bool:
               and can't have a transformation applied to it.
     """
     parent_articulation_root = get_first_matching_parent_prim(
-        prim_path=prim_path, predicate=lambda a: get_prim_at_path(a).HasAPI(UsdPhysics.ArticulationRootAPI)
+        prim_path=prim_path,
+        predicate=lambda a: get_prim_at_path(a).HasAPI(UsdPhysics.ArticulationRootAPI),
     )
     if parent_articulation_root is None:
         return False
@@ -474,14 +503,17 @@ def is_prim_non_root_articulation_link(prim_path: str) -> bool:
 
     # get all joints under ArticulationRoot
     joint_prims = get_all_matching_child_prims(
-        prim_path=get_prim_path(parent_articulation_root), predicate=lambda a: "Joint" in get_prim_type_name(a)
+        prim_path=get_prim_path(parent_articulation_root),
+        predicate=lambda a: "Joint" in get_prim_type_name(a),
     )
     # this assumes if that the first link is a root articulation link
     for joint_prim in joint_prims:
         joint = UsdPhysics.Joint(joint_prim)
         if joint.GetExcludeFromArticulationAttr().Get():
             continue
-        body_targets = joint.GetBody0Rel().GetTargets() + joint.GetBody1Rel().GetTargets()
+        body_targets = (
+            joint.GetBody0Rel().GetTargets() + joint.GetBody1Rel().GetTargets()
+        )
         for target in body_targets:
             if prim_path == str(target):
                 return True

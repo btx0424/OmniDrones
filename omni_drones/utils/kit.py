@@ -55,12 +55,16 @@ def create_ground_plane(
         # get path to the nucleus server
         assets_root_path = nucleus_utils.get_assets_root_path()
         if assets_root_path is None:
-            carb.log_error("Unable to access the Isaac Sim assets folder on Nucleus server.")
+            carb.log_error(
+                "Unable to access the Isaac Sim assets folder on Nucleus server."
+            )
             return
         # prepend path to the grid plane
         usd_path = f"{assets_root_path}/Isaac/Environments/Grid/default_environment.usd"
     # Spawn Ground-plane
-    prim_utils.create_prim(prim_path, usd_path=usd_path, translation=(0.0, 0.0, z_position))
+    prim_utils.create_prim(
+        prim_path, usd_path=usd_path, translation=(0.0, 0.0, z_position)
+    )
     # Create physics material
     material = PhysicsMaterial(
         f"{prim_path}/groundMaterial",
@@ -174,9 +178,13 @@ def set_drive_dof_properties(
         ValueError: When no joint of given name found under the provided prim path.
     """
     # find matching prim path for the dof name
-    dof_prim = prim_utils.get_first_matching_child_prim(prim_path, lambda x: dof_name in x)
+    dof_prim = prim_utils.get_first_matching_child_prim(
+        prim_path, lambda x: dof_name in x
+    )
     if not dof_prim.IsValid():
-        raise ValueError(f"No joint named '{dof_name}' found in articulation '{prim_path}'.")
+        raise ValueError(
+            f"No joint named '{dof_name}' found in articulation '{prim_path}'."
+        )
     # obtain the dof drive type
     if dof_prim.IsA(UsdPhysics.RevoluteJoint):
         drive_type = "angular"
@@ -185,7 +193,9 @@ def set_drive_dof_properties(
     else:
         # get joint USD prim
         dof_prim_path = prim_utils.get_prim_path(dof_prim)
-        raise ValueError(f"The joint at path '{dof_prim_path}' is not linear or angular.")
+        raise ValueError(
+            f"The joint at path '{dof_prim_path}' is not linear or angular."
+        )
 
     # convert to USD Physics drive
     if dof_prim.HasAPI(UsdPhysics.DriveAPI):
@@ -275,25 +285,35 @@ def set_articulation_properties(
     # retrieve the articulation api
     physx_articulation_api = PhysxSchema.PhysxArticulationAPI(articulation_prim)
     if not physx_articulation_api:
-        physx_articulation_api = PhysxSchema.PhysxArticulationAPI.Apply(articulation_prim)
+        physx_articulation_api = PhysxSchema.PhysxArticulationAPI.Apply(
+            articulation_prim
+        )
     # set enable/disable rigid body API
     if articulation_enabled is not None:
         physx_articulation_api.GetArticulationEnabledAttr().Set(articulation_enabled)
     # set solver position iteration
     if solver_position_iteration_count is not None:
-        physx_articulation_api.GetSolverPositionIterationCountAttr().Set(solver_position_iteration_count)
+        physx_articulation_api.GetSolverPositionIterationCountAttr().Set(
+            solver_position_iteration_count
+        )
     # set solver velocity iteration
     if solver_velocity_iteration_count is not None:
-        physx_articulation_api.GetSolverVelocityIterationCountAttr().Set(solver_velocity_iteration_count)
+        physx_articulation_api.GetSolverVelocityIterationCountAttr().Set(
+            solver_velocity_iteration_count
+        )
     # set sleep threshold
     if sleep_threshold is not None:
         physx_articulation_api.GetSleepThresholdAttr().Set(sleep_threshold)
     # set stabilization threshold
     if stabilization_threshold is not None:
-        physx_articulation_api.GetStabilizationThresholdAttr().Set(stabilization_threshold)
+        physx_articulation_api.GetStabilizationThresholdAttr().Set(
+            stabilization_threshold
+        )
     # set self collisions
     if enable_self_collisions is not None:
-        physx_articulation_api.GetEnabledSelfCollisionsAttr().Set(enable_self_collisions)
+        physx_articulation_api.GetEnabledSelfCollisionsAttr().Set(
+            enable_self_collisions
+        )
 
 
 def set_rigid_body_properties(
@@ -355,10 +375,14 @@ def set_rigid_body_properties(
         usd_rigid_body_api.GetRigidBodyEnabledAttr().Set(rigid_body_enabled)
     # set solver position iteration
     if solver_position_iteration_count is not None:
-        physx_rigid_body_api.GetSolverPositionIterationCountAttr().Set(solver_position_iteration_count)
+        physx_rigid_body_api.GetSolverPositionIterationCountAttr().Set(
+            solver_position_iteration_count
+        )
     # set solver velocity iteration
     if solver_velocity_iteration_count is not None:
-        physx_rigid_body_api.GetSolverVelocityIterationCountAttr().Set(solver_velocity_iteration_count)
+        physx_rigid_body_api.GetSolverVelocityIterationCountAttr().Set(
+            solver_velocity_iteration_count
+        )
     # set linear damping
     if linear_damping is not None:
         physx_rigid_body_api.GetLinearDampingAttr().Set(linear_damping)
@@ -377,16 +401,22 @@ def set_rigid_body_properties(
         physx_rigid_body_api.GetSleepThresholdAttr().Set(sleep_threshold)
     # set stabilization threshold
     if stabilization_threshold is not None:
-        physx_rigid_body_api.GetStabilizationThresholdAttr().Set(stabilization_threshold)
+        physx_rigid_body_api.GetStabilizationThresholdAttr().Set(
+            stabilization_threshold
+        )
     # set max depenetration velocity
     if max_depenetration_velocity is not None:
-        physx_rigid_body_api.GetMaxDepenetrationVelocityAttr().Set(max_depenetration_velocity)
+        physx_rigid_body_api.GetMaxDepenetrationVelocityAttr().Set(
+            max_depenetration_velocity
+        )
     # set max contact impulse
     if max_contact_impulse is not None:
         physx_rigid_body_api.GetMaxContactImpulseAttr().Set(max_contact_impulse)
     # set enable gyroscopic forces
     if enable_gyroscopic_forces is not None:
-        physx_rigid_body_api.GetEnableGyroscopicForcesAttr().Set(enable_gyroscopic_forces)
+        physx_rigid_body_api.GetEnableGyroscopicForcesAttr().Set(
+            enable_gyroscopic_forces
+        )
     # set disable gravity
     if disable_gravity is not None:
         physx_rigid_body_api.GetDisableGravityAttr().Set(disable_gravity)
@@ -442,7 +472,9 @@ def set_collision_properties(
         physx_collision_api.GetTorsionalPatchRadiusAttr().Set(torsional_patch_radius)
     # set min torsional patch radius
     if min_torsional_patch_radius is not None:
-        physx_collision_api.GetMinTorsionalPatchRadiusAttr().Set(min_torsional_patch_radius)
+        physx_collision_api.GetMinTorsionalPatchRadiusAttr().Set(
+            min_torsional_patch_radius
+        )
 
 
 def set_nested_articulation_properties(prim_path: str, **kwargs) -> None:

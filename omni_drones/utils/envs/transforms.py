@@ -1,17 +1,19 @@
+from collections import Callable, defaultdict
+from typing import Any, Dict, Sequence
+
 import torch
-from torchrl.envs.transforms import Transform
 from tensordict.tensordict import TensorDictBase
-from typing import Sequence, Any, Dict
-from collections import defaultdict, Callable
+from torchrl.envs.transforms import Transform
+
 
 class LogOnEpisode(Callable):
     def __init__(
-        self, 
+        self,
         n_episodes: int,
-        in_keys: Sequence[str]=None,
-        log_keys: Sequence[str]=None,
-        logger_func: Callable=None,
-        process_func: Dict[str, Callable]=None
+        in_keys: Sequence[str] = None,
+        log_keys: Sequence[str] = None,
+        logger_func: Callable = None,
+        process_func: Dict[str, Callable] = None,
     ):
         if not len(in_keys) == len(log_keys):
             raise ValueError
@@ -33,15 +35,10 @@ class LogOnEpisode(Callable):
                 tensordict.batch_size,
                 dtype=torch.bool,
                 device=tensordict.device,
-            )
+            ),
         ).squeeze(-1)
         if done is not None and done.any():
-            self.stats.extend(
-                tensordict[done]
-                .select(*self.in_keys)
-                .clone()
-                .unbind(0)
-            )
+            self.stats.extend(tensordict[done].select(*self.in_keys).clone().unbind(0))
             if len(self.stats) >= self.n_episodes:
                 stats: TensorDictBase = torch.stack(self.stats)
                 dict_to_log = {}
@@ -53,4 +50,3 @@ class LogOnEpisode(Callable):
                     self.logger_func(dict_to_log)
                 self.stats.clear()
         return tensordict
-

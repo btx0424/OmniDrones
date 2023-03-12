@@ -1,4 +1,4 @@
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 setup(
     name="omni_drones",
@@ -14,5 +14,5 @@ setup(
         "plotly",
         # "torchinfo",
         # "torchopt"
-    ]
+    ],
 )

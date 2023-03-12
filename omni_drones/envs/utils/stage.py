@@ -8,17 +8,17 @@
 #
 
 # python
-import typing
 import builtins
+import typing
 
 # omniverse
 import carb
 import omni.kit.app
-from pxr import Usd, UsdGeom, Sdf
-from omni.usd.commands import DeletePrimsCommand
 
 # isaacsim
 from omni.isaac.core.utils.constants import AXES_TOKEN
+from omni.usd.commands import DeletePrimsCommand
+from pxr import Sdf, Usd, UsdGeom
 
 
 def get_current_stage() -> Usd.Stage:
@@ -66,7 +66,9 @@ def get_stage_up_axis() -> str:
     return UsdGeom.GetStageUpAxis(stage)
 
 
-def clear_stage(predicate: typing.Optional[typing.Callable[[str], bool]] = None) -> None:
+def clear_stage(
+    predicate: typing.Optional[typing.Callable[[str], bool]] = None
+) -> None:
     """Deletes all prims in the stage without populating the undo command buffer
 
     Args:
@@ -78,10 +80,10 @@ def clear_stage(predicate: typing.Optional[typing.Callable[[str], bool]] = None)
     # Note: Need to import this here to prevent circular dependencies.
     from omni.isaac.core.utils.prims import (
         get_all_matching_child_prims,
-        is_prim_ancestral,
-        is_prim_no_delete,
-        is_prim_hidden_in_stage,
         get_prim_path,
+        is_prim_ancestral,
+        is_prim_hidden_in_stage,
+        is_prim_no_delete,
     )
 
     def default_predicate(prim_path: str):
@@ -123,7 +125,9 @@ def print_stage_prim_paths() -> None:
         print(prim_path)
 
 
-def add_reference_to_stage(usd_path: str, prim_path: str, prim_type: str = "Xform") -> Usd.Prim:
+def add_reference_to_stage(
+    usd_path: str, prim_path: str, prim_type: str = "Xform"
+) -> Usd.Prim:
     """Add USD reference to the opened stage at specified prim path.
 
     Args:
@@ -144,7 +148,9 @@ def add_reference_to_stage(usd_path: str, prim_path: str, prim_type: str = "Xfor
     carb.log_info("Loading Asset from path {} ".format(usd_path))
     success_bool = prim.GetReferences().AddReference(usd_path)
     if not success_bool:
-        raise FileNotFoundError("The usd file at path {} provided wasn't found".format(usd_path))
+        raise FileNotFoundError(
+            "The usd file at path {} provided wasn't found".format(usd_path)
+        )
     return prim
 
 
@@ -299,7 +305,9 @@ def set_stage_units(stage_units_in_meters: float) -> None:
         stage_units_in_meters (float): units for stage, 1.0 means meters, 0.01 mean centimeters
     """
     if get_current_stage() is None:
-        raise Exception("There is no stage currently opened, init_stage needed before calling this func")
+        raise Exception(
+            "There is no stage currently opened, init_stage needed before calling this func"
+        )
     UsdGeom.SetStageMetersPerUnit(get_current_stage(), stage_units_in_meters)
 
 

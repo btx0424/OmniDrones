@@ -1,29 +1,32 @@
-from omni.isaac.core.prims import XFormPrim
-from omni.isaac.core.simulation_context import SimulationContext
-from tensordict import TensorDict
-from pxr import UsdGeom, Sdf, Gf
+from typing import Optional, Union
+
+import omni.isaac.core.utils.prims as prim_utils
+import omni.isaac.core.utils.stage as stage_utils
+import omni.replicator.core as rep
 
 import torch
 import warp as wp
-import omni.replicator.core as rep
-import omni.isaac.core.utils.prims as prim_utils
-import omni.isaac.core.utils.stage as stage_utils
+from omni.isaac.core.prims import XFormPrim
+from omni.isaac.core.simulation_context import SimulationContext
+from pxr import Gf, Sdf, UsdGeom
+from tensordict import TensorDict
 
-from typing import Union, Optional
 from omni_drones.utils.math import quaternion_to_euler
-from .config import PinholeCameraCfg, FisheyeCameraCfg
+from .config import FisheyeCameraCfg, PinholeCameraCfg
+
 
 class Camera:
     """
     Viewport camera used for visualization purpose.
     """
+
     def __init__(
         self,
-        cfg: Union[PinholeCameraCfg, FisheyeCameraCfg]=None,
-        parent_prim_path: str="/World",
-        translation = None,
-        orientation = None,
-        target = None
+        cfg: Union[PinholeCameraCfg, FisheyeCameraCfg] = None,
+        parent_prim_path: str = "/World",
+        translation=None,
+        orientation=None,
+        target=None,
     ) -> None:
         if cfg is None:
             cfg = PinholeCameraCfg(
@@ -31,11 +34,11 @@ class Camera:
                 resolution=(640, 480),
                 data_types=["rgb"],
                 usd_params=PinholeCameraCfg.UsdCameraCfg(
-                    focal_length=24.0, 
-                    focus_distance=400.0, 
-                    horizontal_aperture=20.955, 
-                    clipping_range=(0.1, 1.0e5)
-                )
+                    focal_length=24.0,
+                    focus_distance=400.0,
+                    horizontal_aperture=20.955,
+                    clipping_range=(0.1, 1.0e5),
+                ),
             )
         self.cfg = cfg
         self.resolution = cfg.resolution
@@ -49,7 +52,7 @@ class Camera:
         self.set_local_pose(translation, orientation, target)
 
         self.device = SimulationContext.instance().device
-        if isinstance(self.device, str) and "cuda" in self.device: 
+        if isinstance(self.device, str) and "cuda" in self.device:
             self.device = self.device.split(":")[0]
 
         self.render_product = rep.create.render_product(
@@ -58,17 +61,21 @@ class Camera:
         self.annotators = {}
         for annotator_type in cfg.data_types:
             annotator = rep.AnnotatorRegistry.get_annotator(
-                name=annotator_type, device=self.device)
+                name=annotator_type, device=self.device
+            )
             annotator.attach([self.render_product])
             self.annotators[annotator_type] = annotator
         SimulationContext.instance().render()
 
     def __call__(self) -> TensorDict:
-        tensordict = TensorDict({
-            k: wp.to_torch(v.get_data(device=self.device)) 
-            for k, v in self.annotators.items()
-        }, self.shape)
-        return tensordict 
+        tensordict = TensorDict(
+            {
+                k: wp.to_torch(v.get_data(device=self.device))
+                for k, v in self.annotators.items()
+            },
+            self.shape,
+        )
+        return tensordict
 
     def set_local_pose(self, translation, orientation=None, target=None):
         if target is not None:
@@ -133,13 +140,13 @@ class Camera:
 
 
 def orientation_from_view(camera, target):
-    quat = lookat_to_quatf(
-        Gf.Vec3f(camera), Gf.Vec3f(target), Gf.Vec3f(0., 0., 1.)
-    )
+    quat = lookat_to_quatf(Gf.Vec3f(camera), Gf.Vec3f(target), Gf.Vec3f(0.0, 0.0, 1.0))
     return [quat.real, *quat.imaginary]
 
 
 import math
+
+
 def lookat_to_quatf(camera: Gf.Vec3f, target: Gf.Vec3f, up: Gf.Vec3f) -> Gf.Quatf:
     """[summary]
 
@@ -159,18 +166,30 @@ def lookat_to_quatf(camera: Gf.Vec3f, target: Gf.Vec3f, up: Gf.Vec3f) -> Gf.Quat
     trace = R[0] + U[1] + F[2]
     if trace > 0.0:
         s = 0.5 / math.sqrt(trace + 1.0)
-        q = Gf.Quatf(0.25 / s, Gf.Vec3f((U[2] - F[1]) * s, (F[0] - R[2]) * s, (R[1] - U[0]) * s))
+        q = Gf.Quatf(
+            0.25 / s, Gf.Vec3f((U[2] - F[1]) * s, (F[0] - R[2]) * s, (R[1] - U[0]) * s)
+        )
     else:
         if R[0] > U[1] and R[0] > F[2]:
             s = 2.0 * math.sqrt(1.0 + R[0] - U[1] - F[2])
-            q = Gf.Quatf((U[2] - F[1]) / s, Gf.Vec3f(0.25 * s, (U[0] + R[1]) / s, (F[0] + R[2]) / s))
+            q = Gf.Quatf(
+                (U[2] - F[1]) / s,
+                Gf.Vec3f(0.25 * s, (U[0] + R[1]) / s, (F[0] + R[2]) / s),
+            )
         elif U[1] > F[2]:
             s = 2.0 * math.sqrt(1.0 + U[1] - R[0] - F[2])
-            q = Gf.Quatf((F[0] - R[2]) / s, Gf.Vec3f((U[0] + R[1]) / s, 0.25 * s, (F[1] + U[2]) / s))
+            q = Gf.Quatf(
+                (F[0] - R[2]) / s,
+                Gf.Vec3f((U[0] + R[1]) / s, 0.25 * s, (F[1] + U[2]) / s),
+            )
         else:
             s = 2.0 * math.sqrt(1.0 + F[2] - R[0] - U[1])
-            q = Gf.Quatf((R[1] - U[0]) / s, Gf.Vec3f((F[0] + R[2]) / s, (F[1] + U[2]) / s, 0.25 * s))
+            q = Gf.Quatf(
+                (R[1] - U[0]) / s,
+                Gf.Vec3f((F[0] + R[2]) / s, (F[1] + U[2]) / s, 0.25 * s),
+            )
     return q
+
 
 def to_camel_case(snake_str: str, to: Optional[str] = "cC") -> str:
     """Converts a string from snake case to camel case.
@@ -198,4 +217,3 @@ def to_camel_case(snake_str: str, to: Optional[str] = "cC") -> str:
     else:
         # Capitalize first letter in all the components
         return "".join(x.title() for x in components)
-

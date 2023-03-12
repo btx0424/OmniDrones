@@ -1,10 +1,12 @@
-import torch
-import hydra
 import os
 
 from typing import Dict
+
+import hydra
+import torch
 from omegaconf import OmegaConf
 from omni_drones import CONFIG_PATH, init_simulation_app
+
 
 @hydra.main(version_base=None, config_path=CONFIG_PATH, config_name="config")
 def main(cfg):
@@ -12,32 +14,35 @@ def main(cfg):
     simulation_app = init_simulation_app(cfg)
     print(OmegaConf.to_yaml(cfg))
 
-    from omni.isaac.core.simulation_context import SimulationContext
     import omni.isaac.core.utils.prims as prim_utils
     import omni_drones.utils.kit as kit_utils
     import omni_drones.utils.scene as scene_utils
+    from omni.isaac.core.simulation_context import SimulationContext
     from omni_drones.robots.drone import MultirotorBase
 
     sim = SimulationContext(
-        stage_units_in_meters=1.0, 
-        physics_dt=0.005, rendering_dt=0.005, 
+        stage_units_in_meters=1.0,
+        physics_dt=0.005,
+        rendering_dt=0.005,
         sim_params=cfg.sim,
-        backend="torch", 
-        device=cfg.sim.device
+        backend="torch",
+        device=cfg.sim.device,
     )
-    
+
     drones: Dict[str, MultirotorBase] = {}
     n = 3
-    for i, model in enumerate([
-        # "Crazyflie", 
-        # "Firefly", 
-        # "Hummingbird",
-        # "Neo11", 
-        "Omav"
-    ]):
+    for i, model in enumerate(
+        [
+            # "Crazyflie",
+            # "Firefly",
+            # "Hummingbird",
+            # "Neo11",
+            "Omav"
+        ]
+    ):
         drones[model] = MultirotorBase.REGISTRY[model]()
         translations = torch.zeros(n, 3)
-        translations[:, 0] = i 
+        translations[:, 0] = i
         translations[:, 1] = torch.arange(n)
         translations[:, 2] = 0.5
         drones[model].spawn(translations=translations)
@@ -56,11 +61,12 @@ def main(cfg):
             continue
         for drone in drones.values():
             actions = drone.action_spec.zero((drone._count,))
-            actions.fill_(0.)
+            actions.fill_(0.0)
             drone.apply_action(actions)
         sim.step()
 
     simulation_app.close()
+
 
 if __name__ == "__main__":
     main()

@@ -21,6 +21,7 @@ class RigidBodyPropertiesCfg:
     retain_accelerations: Optional[bool] = None
     """Carries over forces/accelerations over sub-steps."""
 
+
 @dataclass
 class ArticulationRootPropertiesCfg:
     """Properties to apply to articulation."""
@@ -31,6 +32,7 @@ class ArticulationRootPropertiesCfg:
     """Solver position iteration counts for the body."""
     solver_velocity_iteration_count: Optional[int] = None
     """Solver position iteration counts for the body."""
+
 
 @dataclass
 class RobotCfg:

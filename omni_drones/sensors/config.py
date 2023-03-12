@@ -1,5 +1,6 @@
-from dataclasses import dataclass, MISSING, field
-from typing import Tuple, List
+from dataclasses import dataclass, field, MISSING
+from typing import List, Tuple
+
 
 @dataclass
 class PinholeCameraCfg:
@@ -92,6 +93,7 @@ class FisheyeCameraCfg(PinholeCameraCfg):
     """Type of projection to use for the camera. Defaults to "fisheye_polynomial"."""
     usd_params: UsdCameraCfg = UsdCameraCfg()
     """Parameters for setting USD camera settings."""
+
 
 def class_to_dict(obj: object):
     """Convert an object into dictionary recursively.

@@ -34,7 +34,7 @@ def main(cfg):
     agent_spec = env.agent_spec["drone"]
     agent_spec.action_spec = UnboundedContinuousTensorSpec(3, device=env.device)
     ppo = MAPPOPolicy(cfg.algo, agent_spec=agent_spec, act_name="drone.target_vel", device="cuda")
-    controller = env.drone.default_controller(
+    controller = env.drone.DEFAULT_CONTROLLER(
         env.drone.dt, 9.81, env.drone.params
     ).to(env.device)
 

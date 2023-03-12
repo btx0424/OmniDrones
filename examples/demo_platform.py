@@ -36,7 +36,7 @@ def main(cfg):
     ])
 
     drone: MultirotorBase = MultirotorBase.REGISTRY[drone_model]()
-    controller = drone.default_controller(
+    controller = drone.DEFAULT_CONTROLLER(
         dt=sim.get_physics_dt(), g=9.81, uav_params=drone.params
     ).to(sim.device)
     controller_state = TensorDict({}, n, device=sim.device)
@@ -50,7 +50,7 @@ def main(cfg):
         translation=(0, 0, 1)
     )
     drone.spawn(
-        n=n, translations=translations,
+        translations=translations,
         prim_paths=[f"/World/envs/env_0/platform/Firefly_{i}" for i in range(n)]
     )
 

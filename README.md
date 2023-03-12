@@ -21,20 +21,20 @@ ${ISAACSIM_PATH}/python.sh -m pip install name_of_package_here
 ```
 `python.sh` works by setting up the necessary environment variables including `PYTHONPATH` so that you can import the functionalities of Isaac SIm as modules in Python scripts. Check `${ISAACSIM_PATH}/setup_python_env.sh` for more detail.
 
-### Option 2: Conda environment
+### Option 2: Conda environment (recommended)
 
-Using a seperate conda environment is sometimes more flexible and comfortable. This can be done by creating a conda environment with Python 3.7. To automate the setup process , we also add a `env_vars.sh` file that is [executed every time we activate our conda environment](https://conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html#macos-and-linux).
+Using a separate conda environment is sometimes more flexible and comfortable. For example, you may want to install newer versions of PyTorch or share the same Isaac Sim Installation with other users. This can be done by creating a conda environment with Python 3.7. To automate the setup process, we also add two `env_vars.sh` files that are [sourced every time we activate/deactivate our conda environment](https://conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html#macos-and-linux).
 ```sh
 conda create -n sim python=3.7
 conda activate sim
-cd $CONDA_PREFIX
-mkdir -p etc/conda/activate.d
-touch etc/conda/activate.d/env_vars.sh
+# at OmniDrones/
+cp -r conda_setup/etc $CONDA_PREFIX
 ```
-Add the follwing content to `env_vars.sh`:
+The activation script `etc/conda/activate.d/env_vars.sh` looks like:
 ```sh
-source ${ISAACSIM_PATH}/setup_conda_env.sh
-echo "Setup Isaac Sim Conda Env"
+echo "Setup Isaac Sim Conda environment."
+export PYTHONPATH_PREV=$PYTHONPATH
+export LD_LIBRARY_PATH_PREV=$LD_LIBRARY_PATH
 
 if [ -n "$SSH_CLIENT" ] || [ -n "$SSH_CONNECTION" ]; then
     echo "Connected via SSH."
@@ -45,7 +45,7 @@ if [ -n "$SSH_CLIENT" ] || [ -n "$SSH_CONNECTION" ]; then
     fi
 fi
 ```
-Setting up X11 forwarding allows viewing the Isaac Sim GUI via an SSH connection. The correct value of `DISPLAY` depends on your display setting and SSH config. You can check the SSH config using `cat /etc/ssh/sshd_config | grep X11`, which would give something like
+Where setting up X11 forwarding allows viewing the Isaac Sim GUI via an SSH connection. The correct value of `DISPLAY` depends on your display setting and SSH config. You can check the SSH config using `cat /etc/ssh/sshd_config | grep X11`, which would give something like
 ```
 X11Forwarding yes # make sure this is `yes`
 X11DisplayOffset 10 # decides the DISPLAY variable

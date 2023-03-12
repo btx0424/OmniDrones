@@ -37,7 +37,7 @@ def main(cfg):
     agent_spec = env.agent_spec["drone"]
     agent_spec.action_spec = UnboundedContinuousTensorSpec(3, device=env.device)
     ppo = MAPPOPolicy(cfg.algo, agent_spec=agent_spec, act_name="drone.target_vel", device="cuda")
-    controller = env.drone.default_controller(
+    controller = env.drone.DEFAULT_CONTROLLER(
         env.drone.dt, 9.81, env.drone.params
     ).to(env.device)
 
@@ -108,20 +108,20 @@ def main(cfg):
     pbar = tqdm(collector)
     for i, data in enumerate(pbar):
         info = {"env_frames": collector._frames}
-        info.update(ppo.train_op(data))
+        # info.update(ppo.train_op(data))
 
-        if i % 10 == 0:
-            run.log(info)
+        # if i % 10 == 0:
+        #     run.log(info)
         
-        if i % 100 == 0:
-            logging.info(f"Eval at {collector._frames} steps.")
-            run.log(evaluate())
+        # if i % 100 == 0:
+        #     logging.info(f"Eval at {collector._frames} steps.")
+        #     run.log(evaluate())
 
-        pbar.set_postfix({
-            "rollout_fps": collector._fps,
-            "frames": collector._frames,
-            "episodes": collector._episodes,
-        })
+        # pbar.set_postfix({
+        #     "rollout_fps": collector._fps,
+        #     "frames": collector._frames,
+        #     "episodes": collector._episodes,
+        # })
         
     simulation_app.close()
 

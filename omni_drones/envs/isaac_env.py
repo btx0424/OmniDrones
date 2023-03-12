@@ -1,7 +1,7 @@
 import abc
 import torch
 
-from typing import Optional, Dict, List, Type
+from typing import Optional, Dict, List, Type, Tuple
 from torchrl.envs import EnvBase
 from torchrl.data import TensorSpec, CompositeSpec
 from tensordict.tensordict import TensorDict, TensorDictBase
@@ -205,6 +205,7 @@ class IsaacEnv(EnvBase):
         raise NotImplementedError
 
     def _set_seed(self, seed: Optional[int]=-1):
+        torch.manual_seed(seed)
         rep.set_global_seed(seed)
     
     def _configure_simulation_flags(self, sim_params: dict = None):
@@ -230,6 +231,14 @@ class IsaacEnv(EnvBase):
         if torch.device(device) != self.device:
             raise RuntimeError("Cannot move IsaacEnv to a different device once it's initialized.")
         return self
+
+    def get_env_poses(self, world_poses: Tuple[torch.Tensor, torch.Tensor]):
+        pos, rot = world_poses        
+        return pos - self.envs_positions, rot
+    
+    def get_world_poses(self, env_poses: Tuple[torch.Tensor, torch.Tensor]):
+        pos, rot = env_poses
+        return pos + self.envs_positions, rot
 
 
 from dataclasses import dataclass
@@ -268,4 +277,190 @@ class _AgentSpecView(Dict[str, AgentSpec]):
             self.env._agent_spec[__key] = __value
         else:
             raise TypeError
+
+
+from omni.isaac.core.articulations import ArticulationView as _ArticulationView
+from omni.isaac.core.prims import RigidPrimView as _RigidPrimView
+from contextlib import contextmanager
+
+class ArticulationView(_ArticulationView):
+    def __init__(
+        self, 
+        prim_paths_expr: str, 
+        name: str = "articulation_prim_view", 
+        positions: Optional[torch.Tensor] = None, 
+        translations: Optional[torch.Tensor] = None, 
+        orientations: Optional[torch.Tensor] = None, 
+        scales: Optional[torch.Tensor] = None, 
+        visibilities: Optional[torch.Tensor] = None, 
+        reset_xform_properties: bool = True, 
+        enable_dof_force_sensors: bool = False,
+        shape: Tuple[int, ...]=(-1,)
+    ) -> None:
+        self.shape = shape
+        super().__init__(prim_paths_expr, name, positions, translations, orientations, scales, visibilities, reset_xform_properties, enable_dof_force_sensors)
+
+    def get_world_poses(
+        self,
+        env_indices: Optional[torch.Tensor], 
+        clone: bool = True
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        with disable_extension(self._physics_sim_view):
+            poses = torch.unflatten(self._physics_view.get_root_transforms(), 0, self.shape)[env_indices]
+        if clone:
+            poses = poses.clone()
+        return poses[..., :3], poses[..., [6, 3, 4 ,5]]
+    
+    def set_world_poses(self, 
+        positions: Optional[torch.Tensor] = None, 
+        orientations: Optional[torch.Tensor] = None, 
+        env_indices: Optional[torch.Tensor] = None
+    ) -> None:
+        with disable_warnings(self._physics_sim_view):
+            indices = self._resolve_env_indices(env_indices)
+            poses = self._physics_view.get_root_transforms()
+            if positions is not None:
+                poses[indices, :3] = positions.reshape(-1, 3)
+            if orientations is not None:
+                poses[indices, 3:] = orientations[:, [1, 2, 3, 0]].reshape(-1, 4)
+            self._physics_view.set_root_transforms(poses, indices)
+
+    def get_joint_velocities(
+        self, 
+        env_indices: Optional[torch.Tensor] = None, 
+        clone: bool = True
+    ) -> torch.Tensor:
+        indices = self._resolve_env_indices(env_indices)
+        return super().get_joint_velocities(indices, clone=clone).unflatten(0, self.shape)
+    
+    def set_joint_velocities(
+        self, 
+        velocities: Optional[torch.Tensor], 
+        env_indices: Optional[torch.Tensor] = None, 
+    ) -> None:
+        indices = self._resolve_env_indices(env_indices)
+        super().set_joint_velocities(velocities.flatten(), indices)
+        
+    def get_joint_positions(
+        self, 
+        env_indices: Optional[torch.Tensor] = None, 
+        clone: bool = True
+    ) -> torch.Tensor:
+        indices = self._resolve_env_indices(env_indices)
+        return super().get_joint_positions(indices, clone=clone).unflatten(0, self.shape)
+
+    def set_joint_positions(
+        self, 
+        positions: Optional[torch.Tensor], 
+        env_indices: Optional[torch.Tensor] = None, 
+    ) -> None:
+        indices = self._resolve_env_indices(env_indices)
+        super().set_joint_positions(positions.flatten(), indices)
+    
+    def get_body_masses(
+        self, 
+        env_indices: Optional[torch.Tensor] = None, 
+        clone: bool = True
+    ) -> torch.Tensor:
+        indices = self._resolve_env_indices(env_indices)
+        return super().get_body_masses(indices, clone).unflatten(0, self.shape)
+    
+    def set_body_masses(
+        self, 
+        values: torch.Tensor, 
+        env_indices: Optional[torch.Tensor] = None, 
+    ) -> None:
+        indices = self._resolve_env_indices(env_indices)
+        return super().set_body_masses(values.flatten(), indices)
+
+    def _resolve_env_indices(self, env_indices: torch.Tensor):
+        if not hasattr(self, "_all_indices"):
+            self._all_indices = torch.arange(self.count, device=self._device)
+            self.shape = self._all_indices.reshape(self.shape).shape
+        if env_indices is None:
+            indices = self._all_indices[env_indices].reshape(self.shape).flatten()
+        else:
+            indices = self._all_indices
+        return indices
+
+    def squeeze_(self, dim: int=None):
+        self.shape = self._all_indices.reshape(self.shape).squeeze(dim).shape
+        return self
+
+
+class RigidPrimView(_RigidPrimView):
+    def __init__(
+        self, 
+        prim_paths_expr: str, 
+        name: str = "rigid_prim_view", 
+        positions: Optional[torch.Tensor] = None, 
+        translations: Optional[torch.Tensor] = None, 
+        orientations: Optional[torch.Tensor] = None, 
+        scales: Optional[torch.Tensor] = None, 
+        visibilities: Optional[torch.Tensor] = None, 
+        reset_xform_properties: bool = True, 
+        masses: Optional[torch.Tensor] = None, 
+        densities: Optional[torch.Tensor] = None, 
+        linear_velocities: Optional[torch.Tensor] = None, 
+        angular_velocities: Optional[torch.Tensor] = None, 
+        track_contact_forces: bool = False, 
+        prepare_contact_sensors: bool = True, 
+        disable_stablization: bool = True, 
+        contact_filter_prim_paths_expr: Optional[List[str]] = (),
+        shape: Tuple[int, ...]=(-1,)
+    ) -> None:
+        self.shape = shape
+        super().__init__(prim_paths_expr, name, positions, translations, orientations, scales, visibilities, reset_xform_properties, masses, densities, linear_velocities, angular_velocities, track_contact_forces, prepare_contact_sensors, disable_stablization, contact_filter_prim_paths_expr)
+
+    def get_world_poses(self, env_indices: Optional[torch.Tensor] = None, clone: bool = True) -> Tuple[torch.Tensor, torch.Tensor]:
+        indices = self._resolve_env_indices(env_indices)
+        pos, rot = super().get_world_poses(indices, clone)
+        return pos.unflatten(0, self.shape), rot.unflatten(0, self.shape)
+    
+    def set_world_poses(
+        self, 
+        positions: Optional[torch.Tensor] = None, 
+        orientations: Optional[torch.Tensor] = None, 
+        env_indices: Optional[torch.Tensor] = None
+    ) -> None:
+        if positions is not None:
+            positions = positions.reshape(-1, 3)
+        if orientations is not None:
+            orientations = orientations.reshape(-1, 4)
+        indices = self._resolve_env_indices(env_indices)
+        super().set_world_poses(positions, orientations, indices)
+    
+    def get_velocities(self, env_indices: Optional[torch.Tensor] = None, clone: bool = True) -> torch.Tensor:
+        indices = self._resolve_env_indices(env_indices)
+        return super().get_velocities(indices, clone).unflatten(0, self.shape)
+    
+    def set_velocities(self, velocities: torch.Tensor, env_indices: Optional[torch.Tensor] = None) -> torch.Tensor:
+        indices = self._resolve_env_indices(env_indices)
+        return super().set_velocities(velocities.reshape(-1, 6), indices)
+    
+    def get_net_contact_forces(self, env_indices: Optional[torch.Tensor] = None, clone: bool = True, dt: float = 1) -> torch.Tensor:
+        indices = self._resolve_env_indices(env_indices)
+        return super().get_net_contact_forces(indices, clone, dt).unflatten(0, self.shape)
+
+    def _resolve_env_indices(self, env_indices: torch.Tensor):
+        if not hasattr(self, "_all_indices"):
+            self._all_indices = torch.arange(self.count, device=self._device)
+            self.shape = self._all_indices.reshape(self.shape).shape
+        if env_indices is None:
+            indices = self._all_indices[env_indices].reshape(self.shape).flatten()
+        else:
+            indices = self._all_indices
+        return indices
+
+    def squeeze_(self, dim: int=None):
+        self.shape = self._all_indices.reshape(self.shape).squeeze(dim).shape
+        return self
+    
+@contextmanager
+def disable_warnings(physics_sim_view):
+    try:
+        physics_sim_view.enable_warnings(False)
+        yield
+    finally:
+        physics_sim_view.enable_warnings(True)
 

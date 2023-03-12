@@ -14,7 +14,6 @@ normalize_advantages: True
 reward_weights: null # null means all 1.0
 share_actor: true
 critic_input: obs # `obs` or `state`
-value_learning: combined # `combined` or `seperate`, in case of num_rewards > 1
 
 actor:
   lr: 0.0005

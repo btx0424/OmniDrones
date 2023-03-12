@@ -429,7 +429,8 @@ def set_collision_properties(
         physx_collision_api = PhysxSchema.PhysxCollisionAPI.Apply(collider_prim)
     # set enable/disable collision API
     if collision_enabled is not None:
-        physx_collision_api.GetCollisionEnabledAttr().Set(collision_enabled)
+        collider_prim.GetAttribute("physics:collisionEnabled").Set(False)
+        # physx_collision_api.GetCollisionEnabledAttr().Set(collision_enabled)
     # set contact offset
     if contact_offset is not None:
         physx_collision_api.GetContactOffsetAttr().Set(contact_offset)

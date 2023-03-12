@@ -17,7 +17,6 @@ def design_scene():
         restitution=0.8,
         improve_patch_friction=True,
     )
-    # Lights-1
     prim_utils.create_prim(
         "/World/Light/GreySphere",
         "SphereLight",
@@ -75,11 +74,12 @@ def create_rope(
         UsdPhysics.RigidBodyAPI.Apply(capsuleGeom.GetPrim())
         massAPI = UsdPhysics.MassAPI.Apply(capsuleGeom.GetPrim())
         massAPI.CreateMassAttr().Set(0.01)
-        if enable_collision:
-            UsdPhysics.CollisionAPI.Apply(capsuleGeom.GetPrim())
-            physxCollisionAPI = PhysxSchema.PhysxCollisionAPI.Apply(capsuleGeom.GetPrim())
-            physxCollisionAPI.CreateRestOffsetAttr().Set(0.0)
-            physxCollisionAPI.CreateContactOffsetAttr().Set(0.02)
+        
+        UsdPhysics.CollisionAPI.Apply(capsuleGeom.GetPrim())
+        physxCollisionAPI = PhysxSchema.PhysxCollisionAPI.Apply(capsuleGeom.GetPrim())
+        # physxCollisionAPI.CreateRestOffsetAttr().Set(0.0)
+        # physxCollisionAPI.CreateContactOffsetAttr().Set(0.02)
+        capsuleGeom.GetPrim().GetAttribute('physics:collisionEnabled')
 
         if len(links) > 0:
             # jointPath = f"{link_path}/joint_{i}"
@@ -141,9 +141,72 @@ def create_rope(
 
     if to_prim is not None:
         joint: Usd.Prim = script_utils.createJoint(stage, "Fixed", links[0], to_prim)
-        # joint.GetAttribute('physics:excludeFromArticulation').Set(True)
+        joint.GetAttribute('physics:excludeFromArticulation').Set(True)
 
     return links
+
+def create_bar(
+    prim_path: str,
+    length: float,
+    translation=(0, 0, 0),
+    from_prim: str=None,
+    to_prim: str=None,
+    mass: float=0.02,
+    enable_collision=False,
+    color=(0.4, 0.4, 0.2)
+):
+    if isinstance(from_prim, str):
+        from_prim = prim_utils.get_prim_at_path(from_prim)
+    if isinstance(to_prim, str):
+        to_prim = prim_utils.get_prim_at_path(to_prim)
+    if isinstance(translation, torch.Tensor):
+        translation = translation.tolist()
+    
+    stage = stage_utils.get_current_stage()
+
+    capsuleGeom = UsdGeom.Capsule.Define(stage, f"{prim_path}/Capsule")
+    capsuleGeom.CreateHeightAttr(length)
+    capsuleGeom.CreateRadiusAttr(0.012)
+    capsuleGeom.CreateAxisAttr("Z")
+    capsuleGeom.AddTranslateOp().Set(Gf.Vec3f(*translation))
+    capsuleGeom.AddOrientOp().Set(Gf.Quatf(1.0))
+    capsuleGeom.AddScaleOp().Set(Gf.Vec3f(1.0, 1.0, 1.0))
+    capsuleGeom.CreateDisplayColorAttr().Set([color])
+
+    UsdPhysics.RigidBodyAPI.Apply(capsuleGeom.GetPrim())
+    massAPI = UsdPhysics.MassAPI.Apply(capsuleGeom.GetPrim())
+    massAPI.CreateMassAttr().Set(mass)
+    
+    UsdPhysics.CollisionAPI.Apply(capsuleGeom.GetPrim())
+    prim: Usd.Prim = capsuleGeom.GetPrim()
+    prim.GetAttribute('physics:collisionEnabled').Set(enable_collision)
+    
+    if from_prim is not None: 
+        sphere = prim_utils.create_prim(
+            f"{prim_path}/Sphere",
+            "Sphere",
+            translation=(0, 0, -length),
+            attributes={"radius": 0.02}
+        )
+        UsdPhysics.RigidBodyAPI.Apply(sphere)
+        UsdPhysics.CollisionAPI.Apply(sphere)
+        sphere.GetAttribute('physics:collisionEnabled').Set(False)
+        
+        script_utils.createJoint(stage, "Fixed", from_prim, sphere)
+        joint: Usd.Prim = script_utils.createJoint(stage, "D6", prim, sphere)
+        joint.GetAttribute('limit:rotX:physics:low').Set(-120)
+        joint.GetAttribute('limit:rotX:physics:high').Set(120)
+        joint.GetAttribute('limit:rotY:physics:low').Set(-120)
+        joint.GetAttribute('limit:rotY:physics:high').Set(120)
+
+    if to_prim is not None:
+        joint: Usd.Prim = script_utils.createJoint(stage, "D6", prim, to_prim)
+        joint.GetAttribute('limit:rotX:physics:low').Set(-120)
+        joint.GetAttribute('limit:rotX:physics:high').Set(120)
+        joint.GetAttribute('limit:rotY:physics:low').Set(-120)
+        joint.GetAttribute('limit:rotY:physics:high').Set(120)
+
+    return prim
 
 
 def create_frame(

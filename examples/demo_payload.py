@@ -38,7 +38,7 @@ def main(cfg):
     ]
     
     drone: MultirotorBase = MultirotorBase.REGISTRY[drone_model]()
-    controller = drone.default_controller(
+    controller = drone.DEFAULT_CONTROLLER(
         dt=sim.get_physics_dt(), g=9.81, uav_params=drone.params
     ).to(sim.device)
     controller_state = TensorDict({}, n, device=sim.device)

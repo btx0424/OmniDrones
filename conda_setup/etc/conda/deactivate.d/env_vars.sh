@@ -1,0 +1,7 @@
+echo "Reset Conda environment."
+
+export PYTHONPATH=$PYTHONPATH_PREV
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH_PREV
+
+unset PYTHONPATH_PREV
+unset LD_LIBRARY_PATH_PREV

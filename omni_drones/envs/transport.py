@@ -29,23 +29,24 @@ class Transport(IsaacEnv):
         self.init_joint_pos = self.group.get_joint_positions(clone=True)
         self.init_drone_vels = torch.zeros_like(self.drone.get_velocities())
 
-        # observation_spec = CompositeSpec(
-        #     self=UnboundedContinuousTensorSpec(),
-        #     others=UnboundedContinuousTensorSpec(),
-        #     payload=UnboundedContinuousTensorSpec()
-        # )
+        observation_spec = CompositeSpec(
+            self=self.drone.state_spec,
+            others=UnboundedContinuousTensorSpec((self.drone.n-1, 4)).to(self.device),
+            payload=UnboundedContinuousTensorSpec((1, 19)).to(self.device)
+        )
 
-        # state_spec = CompositeSpec(
-        #     drones=self.drone.state_spec,
-        #     payload=UnboundedContinuousTensorSpec()
-        # )
+        state_spec = CompositeSpec(
+            drones=self.drone.state_spec,
+            payload=UnboundedContinuousTensorSpec((1, 16)).to(self.drone)
+        )
 
         self.agent_spec["drone"] = AgentSpec(
             "drone",
             4,
-            self.drone.state_spec.to(self.device),
+            observation_spec,
             self.drone.action_spec.to(self.device),
             UnboundedContinuousTensorSpec(1).to(self.device),
+            state_spec=state_spec
         )
 
         self.payload_target_pos = torch.zeros(self.num_envs, 3, device=self.device)

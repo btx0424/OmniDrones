@@ -5,14 +5,15 @@ import omni.isaac.core.utils.torch as torch_utils
 import torch
 import yaml
 from functorch import vmap
-from omni.isaac.core.prims import RigidPrimView
 from tensordict.nn import make_functional
 from torchrl.data import BoundedTensorSpec, CompositeSpec, UnboundedContinuousTensorSpec
 
+from omni_drones.envs.isaac_env import RigidPrimView
 from omni_drones.actuators.rotor_group import RotorGroup
 from omni_drones.controllers import LeePositionController
 
 from omni_drones.robots import RobotBase
+from omni_drones.utils.math import normalize
 
 
 class MultirotorBase(RobotBase):
@@ -100,3 +101,35 @@ class MultirotorBase(RobotBase):
         self.forces[env_ids] = 0.0
         self.torques[env_ids] = 0.0
         self.throttle[env_ids] = 0.0
+
+    @staticmethod
+    def downwash(
+        p0: torch.Tensor, 
+        p1: torch.Tensor,
+        p1_t: torch.Tensor,
+        kr: float=2,
+        kz: float=1,
+    ):
+        """
+        A highly simplified downwash effect model. 
+        
+        References:
+        https://arxiv.org/pdf/2207.09645.pdf
+        https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=8798116
+
+        """
+        z, r = separation(p0, p1, normalize(p1_t))
+        z = torch.clip(z, 0)
+        v = torch.exp(-0.5 * torch.square(kr * r / z)) / (1 + kz * z)**2
+        f = v * - p1_t
+        return f
+
+def separation(p0, p1, p1_d):
+    rel_pos = rel_pos =  p1.unsqueeze(0) - p0.unsqueeze(1)
+    z_distance = (rel_pos * p1_d).sum(-1, keepdim=True)
+    z_displacement = z_distance * p1_d
+
+    r_displacement = rel_pos - z_displacement
+    r_distance = torch.norm(r_displacement, dim=-1, keepdim=True)
+    return z_distance, r_distance
+

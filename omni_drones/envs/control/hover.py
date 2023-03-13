@@ -26,12 +26,13 @@ class Hover(IsaacEnv):
             UnboundedContinuousTensorSpec(1).to(self.device),
         )
         self.vels = self.drone.get_velocities()
-        self.init_pos_scale = torch.tensor([2.0, 2.0, 0.6], device=self.device)
-        self.init_pos_offset = torch.tensor([-1.0, -1.0, 0.4], device=self.device)
+        self.init_pos_scale = torch.tensor([3, 3.0, 1.0], device=self.device)
+        self.init_pos_offset = torch.tensor([-1.5, -1.5, 0.8], device=self.device)
 
     def _design_scene(self):
         cfg = RobotCfg()
-        self.drone: MultirotorBase = MultirotorBase.REGISTRY["Crazyflie"](cfg=cfg)
+        drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
+        self.drone: MultirotorBase = drone_model(cfg=cfg)
 
         self.target_pos = torch.tensor([[0.0, 0.0, 1.5]], device=self.device)
         self.target = VisualSphere(
@@ -47,7 +48,7 @@ class Hover(IsaacEnv):
             dynamic_friction=1.0,
             restitution=0.0,
         )
-        self.drone.spawn(translations=[(0.0, 0.0, 1.0)])
+        self.drone.spawn(translations=[(0.0, 0.0, 1.5)])
         return ["/World/defaultGroundPlane"]
 
     def _reset_idx(self, env_ids: torch.Tensor):

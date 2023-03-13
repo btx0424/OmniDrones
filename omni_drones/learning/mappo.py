@@ -12,7 +12,6 @@ from torch.optim import lr_scheduler
 from torchrl.data import CompositeSpec
 
 from omni_drones.envs.isaac_env import AgentSpec
-from .common import ActorCriticPolicy
 
 from .utils import valuenorm
 from .utils.clip_grad import clip_grad_norm_
@@ -21,11 +20,15 @@ from .utils.gae import compute_gae
 LR_SCHEDULER = lr_scheduler._LRScheduler
 
 
-class MAPPOPolicy(ActorCriticPolicy):
+class MAPPOPolicy(nn.Module):
     def __init__(
         self, cfg, agent_spec: AgentSpec, act_name: str = None, device="cuda"
     ) -> None:
-        super().__init__(cfg, agent_spec, act_name, device)
+        super().__init__()
+
+        self.cfg = cfg
+        self.agent_spec = agent_spec
+        self.device = device
 
         self.clip_param = cfg.clip_param
         self.ppo_epoch = int(cfg.ppo_epochs)
@@ -45,28 +48,33 @@ class MAPPOPolicy(ActorCriticPolicy):
                 self.agent_spec.reward_spec.shape, device=device
             )
 
-        self.train_in_keys = [
-            self.obs_name,
-            self.states_name,
-            "next",
-            self.act_name,
-            self.act_logps_name,
-            ("reward", f"{self.agent_name}.reward"),
-            "done",
-            f"{self.agent_name}.done",
-            "state_value",
-        ]
+        self.obs_name = f"{self.agent_spec.name}.obs"
+        self.act_name = act_name
+        self.state_name = f"{self.agent_spec.name}.state"
+        self.reward_name = f"{self.agent_spec.name}.reward"
 
-        self.in_keys = [self.obs_name, self.states_name]
+        self.make_actor()
+        self.make_critic()
+
+        self.train_in_keys = list(set(
+            self.actor_in_keys
+            + self.actor_out_keys
+            + self.critic_in_keys
+            + self.critic_out_keys
+            + [
+                "next",
+                self.act_logps_name,
+                ("reward", self.reward_name),
+                "state_value",
+            ]
+        ))
+
+        self.in_keys = [self.obs_name, self.state_name]
         self.n_updates = 0
 
     @property
     def act_logps_name(self):
-        return f"{self.agent_name}.action_logp"
-
-    def make_model(self):
-        self.make_actor()
-        self.make_critic()
+        return f"{self.agent_spec.name}.action_logp"
 
     def make_actor(self):
         cfg = self.cfg.actor
@@ -75,14 +83,14 @@ class MAPPOPolicy(ActorCriticPolicy):
         self.actor_out_keys = [
             self.act_name,
             self.act_logps_name,
-            f"{self.agent_name}.action_entropy",
+            f"{self.agent_spec.name}.action_entropy",
         ]
         self.actor_opt = torchopt.adam(lr=cfg.lr)
 
         def actor_loss(params, actor_input, advantages, log_probs_old):
             actor_output = fmodel(params, buffers, actor_input)
             log_probs = actor_output[self.act_logps_name]
-            dist_entropy = actor_output[f"{self.agent_name}.action_entropy"]
+            dist_entropy = actor_output[f"{self.agent_spec.name}.action_entropy"]
             assert advantages.shape == log_probs.shape == dist_entropy.shape
 
             ratio = torch.exp(log_probs - log_probs_old)
@@ -102,10 +110,19 @@ class MAPPOPolicy(ActorCriticPolicy):
             return policy_loss, (dist_entropy, approx_kl, clip_frac)
 
         if self.cfg.share_actor:
+            actor = make_ppo_actor(
+                cfg, self.agent_spec.observation_spec, self.agent_spec.action_spec
+            )
+            if actor.rnn:
+                self.actor_in_keys.extend(
+                    [f"{self.agent_spec.name}.rnn_state", "is_init"]
+                )
+                self.actor_out_keys.append(f"{self.agent_spec.name}.rnn_state")
+                self.minibatch_seq_len = self.cfg.actor.rnn.train_seq_len
+                assert self.minibatch_seq_len <= self.cfg.train_every
+
             self.actor = TensorDictModule(
-                make_ppo_actor(
-                    cfg, self.agent_spec.observation_spec, self.agent_spec.action_spec
-                ),
+                actor,
                 in_keys=self.actor_in_keys,
                 out_keys=self.actor_out_keys,
             ).to(self.device)
@@ -118,13 +135,7 @@ class MAPPOPolicy(ActorCriticPolicy):
                 fmodel, in_dims=(None, None, 1), out_dims=1, randomness="different"
             )
             self.actor_opt_state = self.actor_opt.init(params)
-            self.actor_loss = functorch.vmap(
-                actor_loss, in_dims=(None, 1, 1, 1)
-            )  # for torch.autograd.grad
-            self.actor_grad = functorch.vmap(
-                functorch.grad_and_value(actor_loss, has_aux=True),
-                in_dims=(None, 1, 1, 1),
-            )
+            self.actor_loss = functorch.vmap(actor_loss, in_dims=(None, 1, 1, 1))
         else:
             self.actor = nn.ModuleList(
                 [
@@ -137,7 +148,7 @@ class MAPPOPolicy(ActorCriticPolicy):
                         in_keys=self.actor_in_keys,
                         out_keys=self.actor_out_keys,
                     )
-                    for _ in range(self.num_agents)
+                    for _ in range(self.agent_spec.n)
                 ]
             ).to(self.device)
             self.actor_func_module = (
@@ -151,12 +162,7 @@ class MAPPOPolicy(ActorCriticPolicy):
             self.actor_opt_state = functorch.vmap(self.actor_opt.init)(params)
             for param in params:
                 param.requires_grad_(True)
-            self.actor_loss = functorch.vmap(
-                actor_loss, in_dims=(0, 1, 1, 1)
-            )  # for torch.autograd.grad
-            self.actor_grad = functorch.vmap(
-                functorch.grad_and_value(actor_loss, has_aux=True), in_dims=(0, 1, 1, 1)
-            )
+            self.actor_loss = functorch.vmap(actor_loss, in_dims=(0, 1, 1, 1))
 
     def make_critic(self):
         cfg = self.cfg.critic
@@ -169,7 +175,7 @@ class MAPPOPolicy(ActorCriticPolicy):
         if self.cfg.critic_input == "state":
             if self.agent_spec.state_spec is None:
                 raise ValueError
-            self.critic_in_keys = [f"{self.agent_name}.state"]
+            self.critic_in_keys = [f"{self.agent_spec.name}.state"]
             self.critic_out_keys = ["state_value"]
 
             self.critic = TensorDictModule(
@@ -185,7 +191,7 @@ class MAPPOPolicy(ActorCriticPolicy):
             self.value_func = self.critic
 
         elif self.cfg.critic_input == "obs":
-            self.critic_in_keys = [f"{self.agent_name}.obs"]
+            self.critic_in_keys = [f"{self.agent_spec.name}.obs"]
             self.critic_out_keys = ["state_value"]
 
             self.critic = TensorDictModule(
@@ -224,7 +230,7 @@ class MAPPOPolicy(ActorCriticPolicy):
     def policy_op(self, tensordict: TensorDict, training: bool):
         fmodel, params, buffers = self.actor_func_module
         actor_input = tensordict.select(*self.actor_in_keys, strict=False)
-        actor_input.batch_size = [*actor_input.batch_size, self.num_agents]
+        actor_input.batch_size = [*actor_input.batch_size, self.agent_spec.n]
         tensordict = self.actor_func(
             params, buffers, actor_input, deterministic=(not training)
         )
@@ -232,7 +238,7 @@ class MAPPOPolicy(ActorCriticPolicy):
 
     def value_op(self, tensordict: TensorDict) -> TensorDict:
         critic_input = tensordict.select(*self.critic_in_keys)
-        critic_input.batch_size = [*critic_input.batch_size, self.num_agents]
+        critic_input.batch_size = [*critic_input.batch_size, self.agent_spec.n]
         tensordict = self.value_func(critic_input)
         return tensordict
 
@@ -246,7 +252,7 @@ class MAPPOPolicy(ActorCriticPolicy):
         fmodel, params, buffers = self.actor_func_module
         advantages = batch["advantages"]
         actor_input = batch.select(*self.actor_in_keys)
-        actor_input.batch_size = [*actor_input.batch_size, self.num_agents]
+        actor_input.batch_size = [*actor_input.batch_size, self.agent_spec.n]
         policy_loss, (dist_entropy, approx_kl, clip_frac) = self.actor_loss(
             params, actor_input, advantages, batch[self.act_logps_name]
         )
@@ -303,8 +309,8 @@ class MAPPOPolicy(ActorCriticPolicy):
     def _get_dones(self, tensordict: TensorDict):
         env_done = tensordict[("next", "done")].unsqueeze(-1)
         agent_done = tensordict.get(
-            ("next", f"{self.agent_name}.done"),
-            env_done.expand(*env_done.shape[:-2], self.num_agents, 1),
+            ("next", f"{self.agent_spec.name}.done"),
+            env_done.expand(*env_done.shape[:-2], self.agent_spec.n, 1),
         )
         done = agent_done | env_done
         return done
@@ -315,7 +321,7 @@ class MAPPOPolicy(ActorCriticPolicy):
         with torch.no_grad():
             value_output = self.value_op(next_tensordict)
 
-        rewards = tensordict.get(("next", "reward", f"{self.agent_name}.reward"))
+        rewards = tensordict.get(("next", "reward", f"{self.agent_spec.name}.reward"))
 
         values = tensordict["state_value"]
         next_value = value_output["state_value"].squeeze(0)
@@ -350,7 +356,8 @@ class MAPPOPolicy(ActorCriticPolicy):
 
         train_info = []
         for ppo_epoch in range(self.ppo_epoch):
-            for minibatch in self.make_dataset(tensordict):
+            dataset = make_dataset_naive(tensordict, self.cfg.num_minibatches, self.minibatch_seq_len if hasattr(self, "minibatch_seq_len") else 1)
+            for minibatch in dataset:
                 train_info.append(
                     TensorDict(
                         {
@@ -371,41 +378,30 @@ class MAPPOPolicy(ActorCriticPolicy):
         if hasattr(self, "value_normalizer"):
             train_info["value_running_mean"] = self.value_normalizer.running_mean.mean()
         self.n_updates += 1
-        return {f"{self.agent_name}/{k}": v for k, v in train_info.items()}
+        return {f"{self.agent_spec.name}/{k}": v for k, v in train_info.items()}
 
-    def make_dataset(self, tensordict: TensorDict):
-        """
-        tensordict: [T, E, A]
-        """
-        if False:
-            assert tensordict["dones"].shape[0] % self.data_chunk_length == 0
-            tensordict = tensordict.flatten(1, 2)
-            chunk_len = (
-                self.data_chunk_length
-                if self.data_chunk_length > 0
-                else tensordict["dones"].shape[0]
-            )
-            batch_size = (
-                tensordict["dones"].shape[0] // chunk_len * tensordict["dones"].shape[1]
-            )
-            tensordict = (
-                tensordict.unflatten(0, [-1, chunk_len]).transpose(0, 1).flatten(1, 2)
-            )
-            perm = torch.randperm(batch_size, device=self.device).reshape(
-                self.num_minibatches, -1
-            )
-            for indices in perm:
-                yield tensordict[:, indices]
-        else:
-            tensordict = tensordict.reshape(-1)
-            batch_size = (
-                tensordict.shape.numel() // self.num_minibatches
-            ) * self.num_minibatches
-            perm = torch.randperm(batch_size, device=self.device).reshape(
-                self.num_minibatches, -1
-            )
-            for indices in perm:
-                yield tensordict[indices]
+
+def make_dataset_naive(
+    tensordict: TensorDict, num_minibatches: int = 4, seq_len: int = 1
+):
+    if seq_len > 1:
+        N, T = tensordict.shape
+        T = (T // seq_len) * seq_len
+        tensordict = tensordict[:, :T].reshape(-1, seq_len)
+        perm = torch.randperm(
+            (tensordict.shape[0] // num_minibatches) * num_minibatches,
+            device=tensordict.device,
+        ).reshape(num_minibatches, -1)
+        for indices in perm:
+            yield tensordict[indices]
+    else:
+        tensordict = tensordict.reshape(-1)
+        perm = torch.randperm(
+            (tensordict.shape[0] // num_minibatches) * num_minibatches,
+            device=tensordict.device,
+        ).reshape(num_minibatches, -1)
+        for indices in perm:
+            yield tensordict[indices]
 
 
 from torchrl.data import (
@@ -422,11 +418,16 @@ from .utils.distributions import (
     IndependentNormalModule,
     MultiCategoricalModule,
 )
-from .utils.network import ENCODERS_MAP, MLP, SplitEmbedding
+from .utils.network import (
+    ENCODERS_MAP,
+    MLP,
+    SplitEmbedding,
+)
+
+from .modules.rnn import GRU
 
 
 def make_ppo_actor(cfg, observation_spec: TensorSpec, action_spec: TensorSpec):
-
     if isinstance(observation_spec, (BoundedTensorSpec, UnboundedTensorSpec)):
         if not len(observation_spec.shape) == 1:
             raise ValueError
@@ -443,7 +444,7 @@ def make_ppo_actor(cfg, observation_spec: TensorSpec, action_spec: TensorSpec):
         raise NotImplementedError(observation_spec)
 
     if isinstance(action_spec, MultiDiscreteTensorSpec):
-        act_dist = MultiCategoricalModule(base.output_shape.numel(), action_spec.nvec)
+        act_dist = MultiCategoricalModule(action_spec.nvec)
     elif isinstance(action_spec, (UnboundedTensorSpec, BoundedTensorSpec)):
         action_dim = action_spec.shape.numel()
         act_dist = DiagGaussian(base.output_shape.numel(), action_dim, True, 0.01)
@@ -452,38 +453,58 @@ def make_ppo_actor(cfg, observation_spec: TensorSpec, action_spec: TensorSpec):
     else:
         raise NotImplementedError(action_spec)
 
-    return StochasticActor(base, act_dist)
+    if cfg.get("rnn", None):
+        rnn_cls = {"gru": GRU}[cfg.rnn.cls.lower()]
+        rnn = rnn_cls(input_size=base.output_shape.numel(), **cfg.rnn.kwargs)
+    else:
+        rnn = None
+
+    return Actor(base, act_dist, rnn)
 
 
-class StochasticActor(nn.Module):
+class Actor(nn.Module):
     def __init__(
         self,
-        base: nn.Module,
+        encoder: nn.Module,
         act_dist: nn.Module,
         rnn: Optional[nn.Module] = None,
     ) -> None:
         super().__init__()
-        self.base = base
+        self.encoder = encoder
         self.act_dist = act_dist
-        if rnn is not None:
-            self.rnn = rnn
+        self.rnn = rnn
 
     def forward(
         self,
         obs: Union[torch.Tensor, TensorDict],
         action: torch.Tensor = None,
-        done=None,
+        is_init=None,
         rnn_state=None,
         deterministic=False,
     ):
-        actor_features = self.base(obs)
-        if hasattr(self, "rnn"):
-            pass
+        actor_features = self.encoder(obs)
+        if self.rnn is not None:
+            if actor_features.dim() == 2:  # single-step inference
+                actor_features, rnn_state = self.rnn(
+                    actor_features.unsqueeze(0), rnn_state, is_init
+                )
+                actor_features, rnn_state = actor_features.squeeze(
+                    0
+                ), rnn_state.squeeze(0)
+            else:  # multi-step re-rollout during training
+                actor_features, rnn_state = self.rnn(
+                    actor_features,
+                    rnn_state[0] if rnn_state is not None else None,
+                    is_init,
+                )
+        else:
+            rnn_state = None
         action_dist = self.act_dist(actor_features)
+
         if action is None:
             action = action_dist.mode if deterministic else action_dist.sample()
             action_log_probs = action_dist.log_prob(action).unsqueeze(-1)
-            return action, action_log_probs
+            return action, action_log_probs, rnn_state
         else:
             action_log_probs = action_dist.log_prob(action).unsqueeze(-1)
             dist_entropy = action_dist.entropy().unsqueeze(-1)

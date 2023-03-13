@@ -1,4 +1,4 @@
-name: mappo
+name: ppo
 
 # ppo
 train_every: 32
@@ -32,7 +32,10 @@ actor:
     cls: gru
     kwargs:
       hidden_size: 128
-    train_seq_len: 8
+    
+    # cls: lstm
+    # kwargs:
+    #   hidden_size: 128
 
 critic:
   num_critics: 1

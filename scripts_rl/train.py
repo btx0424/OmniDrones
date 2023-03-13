@@ -15,7 +15,7 @@ from omni_drones.utils.wandb import init_wandb
 from setproctitle import setproctitle
 from tensordict import TensorDict
 from torchrl.data import UnboundedContinuousTensorSpec
-from torchrl.envs.transforms import TransformedEnv
+from torchrl.envs.transforms import TransformedEnv, InitTracker
 
 from tqdm import tqdm
 
@@ -52,8 +52,8 @@ def main(cfg):
 
         control_target = torch.cat(
             [
-                relative_state[..., :3],
                 target_vel,
+                torch.zeros_like(relative_state[..., :3]),
                 torch.zeros_like(target_vel[..., [0]]),
             ],
             dim=-1,
@@ -61,9 +61,12 @@ def main(cfg):
         controller_state = tensordict.get(
             "controller_state", TensorDict({}, relative_state.shape[:2])
         )
-
+        state = torch.cat([
+            torch.zeros_like(relative_state[..., :3]),
+            relative_state[..., 3:]
+        ], dim=-1)
         cmds, controller_state = vmap(vmap(controller))(
-            relative_state, control_target, controller_state
+            state, control_target, controller_state
         )
         torch.nan_to_num_(cmds, 0.0)
         assert not torch.isnan(cmds).any()
@@ -71,18 +74,23 @@ def main(cfg):
         tensordict["controller_state"] = controller_state
         return tensordict
 
+    def log(info):
+        for k, v in info.items():
+            print(f"train/{k}: {v}")
+        run.log(info)
+
     logger = LogOnEpisode(
         cfg.env.num_envs,
         in_keys=["return", "progress"],
         log_keys=["train/return", "train/ep_length"],
-        logger_func=run.log,
+        logger_func=log,
     )
 
+    env = TransformedEnv(env, InitTracker())
     collector = SyncDataCollector(
         env,
         policy,
         callback=logger,
-        split_trajs=False,
         frames_per_batch=env.num_envs * cfg.algo.train_every,
         device=cfg.sim.device,
         return_same_td=True,
@@ -117,7 +125,7 @@ def main(cfg):
     pbar = tqdm(collector)
     for i, data in enumerate(pbar):
         info = {"env_frames": collector._frames}
-        # info.update(ppo.train_op(data))
+        info.update(ppo.train_op(data))
 
         # if i % 10 == 0:
         #     run.log(info)
@@ -126,11 +134,11 @@ def main(cfg):
         #     logging.info(f"Eval at {collector._frames} steps.")
         #     run.log(evaluate())
 
-        # pbar.set_postfix({
-        #     "rollout_fps": collector._fps,
-        #     "frames": collector._frames,
-        #     "episodes": collector._episodes,
-        # })
+        pbar.set_postfix({
+            "rollout_fps": collector._fps,
+            "frames": collector._frames,
+            "episodes": collector._episodes,
+        })
 
     simulation_app.close()
 

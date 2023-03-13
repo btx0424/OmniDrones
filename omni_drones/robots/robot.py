@@ -147,10 +147,6 @@ class RobotBase(abc.ABC):
         self._physics_view = self._view._physics_view
         self._physics_sim_view = self._view._physics_sim_view
 
-        if self._envs_positions is not None:
-            pos, rot = self.get_world_poses()
-            self.set_env_poses(pos, rot)
-
     @abc.abstractmethod
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError

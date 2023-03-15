@@ -29,50 +29,16 @@ def main(cfg):
     setproctitle(run.name)
     print(OmegaConf.to_yaml(cfg))
 
-    from omni_drones.envs import IsaacEnv
+    from omni_drones.envs import Hover
     from omni_drones.learning.mappo import MAPPOPolicy
     from omni_drones.sensors.camera import Camera
 
-    env_class = IsaacEnv.REGISTRY[cfg.task.name]
-    env = env_class(cfg, headless=cfg.headless)
+    env = Hover(cfg, headless=cfg.headless)
 
     agent_spec = env.agent_spec["drone"]
-    agent_spec.action_spec = UnboundedContinuousTensorSpec(3, device=env.device)
     ppo = MAPPOPolicy(
-        cfg.algo, agent_spec=agent_spec, act_name="drone.target_vel", device="cuda"
+        cfg.algo, agent_spec=agent_spec, device="cuda"
     )
-    controller = env.drone.DEFAULT_CONTROLLER(env.drone.dt, 9.81, env.drone.params).to(
-        env.device
-    )
-
-    def policy(tensordict: TensorDict):
-        tensordict = ppo(tensordict)
-        relative_state = tensordict["drone.obs"][..., :13].clone()
-        target_vel = tensordict["drone.target_vel"]
-
-        control_target = torch.cat(
-            [
-                target_vel,
-                torch.zeros_like(relative_state[..., :3]),
-                torch.zeros_like(target_vel[..., [0]]),
-            ],
-            dim=-1,
-        )
-        controller_state = tensordict.get(
-            "controller_state", TensorDict({}, relative_state.shape[:2])
-        )
-        state = torch.cat([
-            torch.zeros_like(relative_state[..., :3]),
-            relative_state[..., 3:]
-        ], dim=-1)
-        cmds, controller_state = vmap(vmap(controller))(
-            state, control_target, controller_state
-        )
-        torch.nan_to_num_(cmds, 0.0)
-        assert not torch.isnan(cmds).any()
-        tensordict["drone.action"] = cmds
-        tensordict["controller_state"] = controller_state
-        return tensordict
 
     def log(info):
         for k, v in info.items():
@@ -89,7 +55,7 @@ def main(cfg):
     env = TransformedEnv(env, InitTracker())
     collector = SyncDataCollector(
         env,
-        policy,
+        ppo,
         callback=logger,
         frames_per_batch=env.num_envs * cfg.algo.train_every,
         device=cfg.sim.device,

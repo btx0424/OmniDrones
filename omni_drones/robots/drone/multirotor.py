@@ -8,7 +8,7 @@ from functorch import vmap
 from tensordict.nn import make_functional
 from torchrl.data import BoundedTensorSpec, CompositeSpec, UnboundedContinuousTensorSpec
 
-from omni_drones.envs.isaac_env import RigidPrimView
+from omni_drones.views import RigidPrimView
 from omni_drones.actuators.rotor_group import RotorGroup
 from omni_drones.controllers import LeePositionController
 

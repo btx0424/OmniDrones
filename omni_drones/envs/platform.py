@@ -28,15 +28,17 @@ class Platform(IsaacEnv):
         self.init_frame_poses = self.frame_view.get_world_poses(clone=True)
         self.init_frame_vels = torch.zeros_like(self.frame_view.get_velocities())
 
+        drone_state_dim = self.drone.state_spec.shape.numel()
         self.agent_spec["drone"] = AgentSpec(
             "drone",
             4,
-            UnboundedContinuousTensorSpec(35).to(self.device),
+            UnboundedContinuousTensorSpec(drone_state_dim+10).to(self.device),
             self.drone.action_spec.to(self.device),
             UnboundedContinuousTensorSpec(1).to(self.device),
+            state_spec=UnboundedContinuousTensorSpec(drone_state_dim*self.drone.n+7).to(self.device)
         )
 
-        self.init_pos_scale = torch.tensor([2.0, 2.0, 0.6], device=self.device)
+        self.init_pos_scale = torch.tensor([3.0, 3.0, 1.0], device=self.device)
 
     def _design_scene(self):
         drone_model = "Firefly"
@@ -48,7 +50,7 @@ class Platform(IsaacEnv):
         arm_angles = [torch.pi * 2 / n * i for i in range(n)]
         arm_lengths = [1.0 for _ in range(n)]
 
-        self.target_pos = torch.tensor([(0, 0, 1.5)], device=self.device)
+        self.target_pos = torch.tensor([(0, 0, 2)], device=self.device)
         platform = prim_utils.create_prim(
             "/World/envs/env_0/platform", translation=self.target_pos
         )
@@ -94,8 +96,7 @@ class Platform(IsaacEnv):
 
     def _compute_state_and_obs(self):
         drone_state = self.drone.get_state()
-        frame_pos, frame_rot = self.frame_view.get_world_poses(clone=True)
-        frame_pos = frame_pos - self.envs_positions
+        frame_pos, frame_rot = self.get_env_poses(self.frame_view.get_world_poses(clone=True))
 
         target_rel_pos = self.target_pos - frame_pos
 
@@ -130,8 +131,7 @@ class Platform(IsaacEnv):
         )
 
     def _compute_reward_and_done(self):
-        frame_pos, frame_rot = self.frame_view.get_world_poses(clone=True)
-        frame_pos = frame_pos - self.envs_positions
+        frame_pos, frame_rot = self.get_env_poses(self.frame_view.get_world_poses(clone=True))
 
         linvel, angvel = self.frame_view.get_velocities().split([3, 3], dim=-1)
 

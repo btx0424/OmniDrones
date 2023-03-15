@@ -9,7 +9,8 @@ from torchrl.data import CompositeSpec, UnboundedContinuousTensorSpec
 import omni_drones.utils.kit as kit_utils
 import omni_drones.utils.scene as scene_utils
 
-from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv, RigidPrimView
+from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
+from omni_drones.views import RigidPrimView
 from omni_drones.envs.utils.helpers import cpos, off_diag
 from omni_drones.robots.assembly.transportation_group import TransportationGroup
 from omni_drones.robots.config import RobotCfg
@@ -29,15 +30,16 @@ class Transport(IsaacEnv):
         self.init_joint_pos = self.group.get_joint_positions(clone=True)
         self.init_drone_vels = torch.zeros_like(self.drone.get_velocities())
 
-        observation_spec = CompositeSpec(
-            self=self.drone.state_spec,
-            others=UnboundedContinuousTensorSpec((self.drone.n-1, 4)).to(self.device),
-            payload=UnboundedContinuousTensorSpec((1, 19)).to(self.device)
-        )
+        drone_state_dim = self.drone.state_spec.shape[0]
+        observation_spec = CompositeSpec({
+            "self": UnboundedContinuousTensorSpec((1, drone_state_dim)).to(self.device),
+            "others": UnboundedContinuousTensorSpec((self.drone.n-1, 4)).to(self.device),
+            "payload": UnboundedContinuousTensorSpec((1, 19)).to(self.device)
+        })
 
         state_spec = CompositeSpec(
-            drones=self.drone.state_spec,
-            payload=UnboundedContinuousTensorSpec((1, 16)).to(self.drone)
+            drones=UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim)).to(self.device),
+            payload=UnboundedContinuousTensorSpec((1, 16)).to(self.device)
         )
 
         self.agent_spec["drone"] = AgentSpec(
@@ -45,7 +47,7 @@ class Transport(IsaacEnv):
             4,
             observation_spec,
             self.drone.action_spec.to(self.device),
-            UnboundedContinuousTensorSpec(1).to(self.device),
+            UnboundedContinuousTensorSpec(2).to(self.device),
             state_spec=state_spec
         )
 

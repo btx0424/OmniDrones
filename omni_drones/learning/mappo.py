@@ -5,7 +5,6 @@ import functorch
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchopt
 from tensordict import TensorDict
 from tensordict.nn import make_functional, TensorDictModule
 from torch.optim import lr_scheduler
@@ -27,7 +26,7 @@ from .utils.gae import compute_gae
 LR_SCHEDULER = lr_scheduler._LRScheduler
 
 
-class MAPPOPolicy(nn.Module):
+class MAPPOPolicy(object):
     def __init__(
         self, cfg, agent_spec: AgentSpec, act_name: str = None, device="cuda"
     ) -> None:
@@ -75,7 +74,7 @@ class MAPPOPolicy(nn.Module):
                     ("reward", self.reward_name),
                     "state_value",
                 ]
-                + ["progress", ("collector", "ttraj_id")]
+                + ["progress", ("collector", "traj_ids")]
             )
         )
 
@@ -195,23 +194,23 @@ class MAPPOPolicy(nn.Module):
             actor_input.squeeze(1), self.actor_params, deterministic=deterministic
         )
 
-        tensordict.update(actor_output)
+        tensordict.update(actor_output.unsqueeze(1))
         tensordict.update(self.value_op(tensordict))
         return tensordict
 
     def update_actor(self, batch: TensorDict) -> Dict[str, Any]:
-        advantages = batch["advantages"]
+        advantages = batch["advantages"].squeeze(2)
         actor_input = batch.select(*self.actor_in_keys)
         actor_input.batch_size = [*actor_input.batch_size, self.agent_spec.n]
 
-        log_probs_old = batch[self.act_logps_name]
+        log_probs_old = batch[self.act_logps_name].squeeze(2)
         if hasattr(self, "minibatch_seq_len"): # [N, T, A, *]
             actor_output = self.actor(
                 actor_input.squeeze(2), self.actor_params, eval_action=True
             )
         else: # [N, A, *]
-            actor_output = functorch.vmap(self.actor, in_dims=(1, 0), out_dims=1)(
-                actor_input, self.actor_params, eval_action=True
+            actor_output = self.actor(
+                actor_input.squeeze(1), self.actor_params, eval_action=True
             )
 
         log_probs = actor_output[self.act_logps_name]
@@ -450,11 +449,12 @@ class Actor(nn.Module):
                 rnn_state = rnn_state.squeeze(1)
             else:  
                 # multi-step re-rollout during training
-                actor_features, rnn_state = self.rnn(
+                rnn_features, rnn_state = self.rnn(
                     actor_features,
                     rnn_state[:, 0] if rnn_state is not None else None,
                     is_init,
                 )
+                actor_features = actor_features + rnn_features
         else:
             rnn_state = None
         action_dist = self.act_dist(actor_features)

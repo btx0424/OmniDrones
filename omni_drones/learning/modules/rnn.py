@@ -7,10 +7,14 @@ GRU and LSTM are not implemented yet (2023/03/13).
 """
 
 class GRU(nn.Module):
-    def __init__(self, input_size: int, hidden_size: int) -> None:
+    def __init__(
+        self, 
+        input_size: int, 
+        hidden_size: int
+    ) -> None:
         super().__init__()
         self.cell = nn.GRUCell(input_size=input_size, hidden_size=hidden_size)
-        self.layer_norm = nn.LayerNorm(hidden_size)
+        # self.layer_norm = nn.LayerNorm(hidden_size)
 
     def forward(
         self,
@@ -37,7 +41,7 @@ class GRU(nn.Module):
             h = self.cell(input[:, i], h)
             outputs.append(h.clone())
         outputs = torch.stack(outputs, dim=1)
-        outputs = self.layer_norm(outputs)
+        # outputs = self.layer_norm(outputs)
         return outputs, h.unsqueeze(1).expand(N, L, -1)  # pad to the same length
 
 

@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from tensordict import TensorDict
+from tensordict.utils import expand_right
 from tensordict.nn import make_functional, TensorDictModule
 from torch.optim import lr_scheduler
 
@@ -93,27 +94,33 @@ class MAPPOPolicy(object):
             f"{self.agent_spec.name}.action_entropy",
         ]
 
-        if self.cfg.share_actor:
-            actor = make_ppo_actor(
-                cfg, self.agent_spec.observation_spec, self.agent_spec.action_spec
+        if cfg.get("rnn", None):
+            self.actor_in_keys.extend(
+                [f"{self.agent_spec.name}.rnn_state", "is_init"]
             )
+            self.actor_out_keys.append(f"{self.agent_spec.name}.rnn_state")
+            self.minibatch_seq_len = self.cfg.actor.rnn.train_seq_len
+            assert self.minibatch_seq_len <= self.cfg.train_every
 
-            if actor.rnn:
-                self.actor_in_keys.extend(
-                    [f"{self.agent_spec.name}.rnn_state", "is_init"]
-                )
-                self.actor_out_keys.append(f"{self.agent_spec.name}.rnn_state")
-                self.minibatch_seq_len = self.cfg.actor.rnn.train_seq_len
-                assert self.minibatch_seq_len <= self.cfg.train_every
-            
-            self.actor = TensorDictModule(
-                actor, in_keys=self.actor_in_keys, out_keys=self.actor_out_keys
-            ).to(self.device)
-            self.actor_opt = torch.optim.Adam(self.actor.parameters())
+        create_actor_fn = lambda: TensorDictModule(
+            make_ppo_actor(
+                cfg, self.agent_spec.observation_spec, self.agent_spec.action_spec
+            ),
+            in_keys=self.actor_in_keys,
+            out_keys=self.actor_out_keys
+        ).to(self.device)
+
+        if self.cfg.share_actor:
+            self.actor = create_actor_fn()
+            self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=cfg.lr)
             self.actor_params_list = self.actor.parameters() # for grad clipping
             self.actor_params = make_functional(self.actor).expand(self.agent_spec.n)
         else:
-            raise NotImplementedError
+            actors = nn.ModuleList([create_actor_fn() for _ in range(self.agent_spec.n)])
+            self.actor = actors[0]
+            self.actor_opt = torch.optim.Adam(actors.parameters(), lr=cfg.lr)
+            self.actor_params_list = actors.parameters()
+            self.actor_params = torch.stack([make_functional(actor) for actor in actors])
 
     def make_critic(self):
         cfg = self.cfg.critic
@@ -187,7 +194,9 @@ class MAPPOPolicy(object):
     def __call__(self, tensordict: TensorDict, deterministic: bool = False):
         actor_input = tensordict.select(*self.actor_in_keys, strict=False)
         if "is_init" in actor_input.keys():
-            actor_input["is_init"] = actor_input["is_init"].reshape(*actor_input.batch_size, self.agent_spec.n)
+            actor_input["is_init"] = expand_right(
+            actor_input["is_init"], (*actor_input.batch_size, self.agent_spec.n)
+        )
         actor_input.batch_size = [*actor_input.batch_size, self.agent_spec.n]
         actor_output = vmap(self.actor, in_dims=(1, 0), out_dims=1, randomness="different")(
             actor_input, self.actor_params, deterministic=deterministic

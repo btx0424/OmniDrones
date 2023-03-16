@@ -12,7 +12,7 @@ max_grad_norm: 10.0
 normalize_advantages: True
 
 reward_weights: null # null means all 1.0
-share_actor: true
+share_actor: false
 critic_input: obs # `obs` or `state`
 
 actor:
@@ -28,11 +28,11 @@ actor:
   attn_encoder: PartialAttentionEncoder
   use_orthogonal: true
 
-  rnn:
-    cls: gru
-    kwargs:
-      hidden_size: 128
-    train_seq_len: 8
+  # rnn:
+  #   cls: gru
+  #   kwargs:
+  #     hidden_size: 128
+  #   train_seq_len: 8
 
 critic:
   num_critics: 1

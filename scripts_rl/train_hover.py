@@ -77,7 +77,7 @@ def main(cfg):
         env.enable_render = True
         env.rollout(
             max_steps=500,
-            policy=policy,
+            policy=ppo,
             callback=record_frame,
             auto_reset=True,
         )

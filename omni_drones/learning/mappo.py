@@ -1,7 +1,7 @@
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-import functorch
+from functorch import vmap
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -20,7 +20,6 @@ from torchrl.data import (
 from omni_drones.envs.isaac_env import AgentSpec
 
 from .utils import valuenorm
-from .utils.clip_grad import clip_grad_norm_
 from .utils.gae import compute_gae
 
 LR_SCHEDULER = lr_scheduler._LRScheduler
@@ -112,7 +111,7 @@ class MAPPOPolicy(object):
             ).to(self.device)
             self.actor_opt = torch.optim.Adam(self.actor.parameters())
             self.actor_params_list = self.actor.parameters() # for grad clipping
-            self.actor_params = make_functional(self.actor)
+            self.actor_params = make_functional(self.actor).expand(self.agent_spec.n)
         else:
             raise NotImplementedError
 
@@ -153,7 +152,7 @@ class MAPPOPolicy(object):
                 in_keys=self.critic_in_keys,
                 out_keys=self.critic_out_keys,
             ).to(self.device)
-            self.value_func = functorch.vmap(self.critic, in_dims=1, out_dims=1)
+            self.value_func = vmap(self.critic, in_dims=1, out_dims=1)
         else:
             raise ValueError(self.cfg.critic_input)
 
@@ -190,27 +189,27 @@ class MAPPOPolicy(object):
         if "is_init" in actor_input.keys():
             actor_input["is_init"] = actor_input["is_init"].reshape(*actor_input.batch_size, self.agent_spec.n)
         actor_input.batch_size = [*actor_input.batch_size, self.agent_spec.n]
-        actor_output = self.actor(
-            actor_input.squeeze(1), self.actor_params, deterministic=deterministic
+        actor_output = vmap(self.actor, in_dims=(1, 0), out_dims=1, randomness="different")(
+            actor_input, self.actor_params, deterministic=deterministic
         )
 
-        tensordict.update(actor_output.unsqueeze(1))
+        tensordict.update(actor_output)
         tensordict.update(self.value_op(tensordict))
         return tensordict
 
     def update_actor(self, batch: TensorDict) -> Dict[str, Any]:
-        advantages = batch["advantages"].squeeze(2)
+        advantages = batch["advantages"]
         actor_input = batch.select(*self.actor_in_keys)
         actor_input.batch_size = [*actor_input.batch_size, self.agent_spec.n]
 
-        log_probs_old = batch[self.act_logps_name].squeeze(2)
+        log_probs_old = batch[self.act_logps_name]
         if hasattr(self, "minibatch_seq_len"): # [N, T, A, *]
-            actor_output = self.actor(
-                actor_input.squeeze(2), self.actor_params, eval_action=True
+            actor_output = vmap(self.actor, in_dims=(2, 0), out_dims=2)(
+                actor_input, self.actor_params, eval_action=True
             )
         else: # [N, A, *]
-            actor_output = self.actor(
-                actor_input.squeeze(1), self.actor_params, eval_action=True
+            actor_output = vmap(self.actor, in_dims=(1, 0), out_dims=1)(
+                actor_input, self.actor_params, eval_action=True
             )
 
         log_probs = actor_output[self.act_logps_name]
@@ -369,10 +368,9 @@ def make_dataset_naive(
 
 from .utils.distributions import (
     DiagGaussian,
-    IndependentBetaModule,
-    IndependentNormalModule,
     MultiCategoricalModule,
 )
+
 from .utils.network import (
     ENCODERS_MAP,
     MLP,

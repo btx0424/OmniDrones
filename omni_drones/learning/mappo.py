@@ -96,9 +96,9 @@ class MAPPOPolicy(object):
 
         if cfg.get("rnn", None):
             self.actor_in_keys.extend(
-                [f"{self.agent_spec.name}.rnn_state", "is_init"]
+                [f"{self.agent_spec.name}.actor_rnn_state", "is_init"]
             )
-            self.actor_out_keys.append(f"{self.agent_spec.name}.rnn_state")
+            self.actor_out_keys.append(f"{self.agent_spec.name}.actor_rnn_state")
             self.minibatch_seq_len = self.cfg.actor.rnn.train_seq_len
             assert self.minibatch_seq_len <= self.cfg.train_every
 
@@ -130,19 +130,18 @@ class MAPPOPolicy(object):
         else:
             self.critic_loss_fn = nn.MSELoss(reduction="none")
 
+        
         if self.cfg.critic_input == "state":
-            if self.agent_spec.state_spec is None:
-                raise ValueError
             self.critic_in_keys = [f"{self.agent_spec.name}.state"]
             self.critic_out_keys = ["state_value"]
-
+            if cfg.get("rnn", None):
+                self.critic_in_keys.extend([
+                    f"{self.agent_spec.name}.critic_rnn_state", "is_init"
+                ])
+                self.critic_out_keys.append(f"{self.agent_spec.name}.critic_rnn_state")
+            critic = make_critic(cfg, self.agent_spec.state_spec, self.agent_spec.reward_spec)
             self.critic = TensorDictModule(
-                CentralizedCritic(
-                    cfg,
-                    entity_ids=torch.arange(self.agent_spec.n, device=self.device),
-                    state_spec=self.agent_spec.state_spec,
-                    reward_spec=self.agent_spec.reward_spec,
-                ),
+                critic,
                 in_keys=self.critic_in_keys,
                 out_keys=self.critic_out_keys,
             ).to(self.device)
@@ -151,15 +150,19 @@ class MAPPOPolicy(object):
         elif self.cfg.critic_input == "obs":
             self.critic_in_keys = [f"{self.agent_spec.name}.obs"]
             self.critic_out_keys = ["state_value"]
-
+            if cfg.get("rnn", None):
+                self.critic_in_keys.extend([
+                    f"{self.agent_spec.name}.critic_rnn_state", "is_init"
+                ])
+                self.critic_out_keys.append(f"{self.agent_spec.name}.critic_rnn_state")
+            critic = make_critic(cfg, self.agent_spec.observation_spec, self.agent_spec.reward_spec)
             self.critic = TensorDictModule(
-                SharedCritic(
-                    cfg, self.agent_spec.observation_spec, self.agent_spec.reward_spec
-                ),
+                critic,
                 in_keys=self.critic_in_keys,
                 out_keys=self.critic_out_keys,
             ).to(self.device)
             self.value_func = vmap(self.critic, in_dims=1, out_dims=1)
+
         else:
             raise ValueError(self.cfg.critic_input)
 
@@ -186,7 +189,11 @@ class MAPPOPolicy(object):
             ).to(self.device)
 
     def value_op(self, tensordict: TensorDict) -> TensorDict:
-        critic_input = tensordict.select(*self.critic_in_keys)
+        critic_input = tensordict.select(*self.critic_in_keys, strict=False)
+        if "is_init" in critic_input.keys():
+            critic_input["is_init"] = expand_right(
+            critic_input["is_init"], (*critic_input.batch_size, self.agent_spec.n)
+        )
         critic_input.batch_size = [*critic_input.batch_size, self.agent_spec.n]
         tensordict = self.value_func(critic_input)
         return tensordict
@@ -425,6 +432,32 @@ def make_ppo_actor(cfg, observation_spec: TensorSpec, action_spec: TensorSpec):
 
     return Actor(base, act_dist, rnn)
 
+def make_critic(cfg, state_spec: TensorSpec, reward_spec: TensorSpec):
+    if isinstance(state_spec, (BoundedTensorSpec, UnboundedTensorSpec)):
+        if not len(state_spec.shape) == 1:
+            raise ValueError
+        input_dim = state_spec.shape[0]
+        base = nn.Sequential(
+            nn.LayerNorm(input_dim),
+            MLP([input_dim] + cfg.hidden_units),
+        )
+        base.output_shape = torch.Size((cfg.hidden_units[-1],))
+    elif isinstance(state_spec, CompositeSpec):
+        encoder_cls = ENCODERS_MAP[cfg.attn_encoder]
+        base = encoder_cls(state_spec)
+    else:
+        raise NotImplementedError
+    
+    if cfg.get("rnn", None):
+        rnn_cls = {"gru": GRU}[cfg.rnn.cls.lower()]
+        rnn = rnn_cls(input_size=base.output_shape.numel(), **cfg.rnn.kwargs)
+    else:
+        rnn = None
+
+    v_out = nn.Linear(base.output_shape.numel(), reward_spec.shape.numel())
+    nn.init.orthogonal_(v_out.weight, cfg.gain)
+
+    return Critic(base, rnn, v_out, reward_spec.shape)
 
 class Actor(nn.Module):
     def __init__(
@@ -449,21 +482,7 @@ class Actor(nn.Module):
     ):
         actor_features = self.encoder(obs)
         if self.rnn is not None:
-            if actor_features.dim() == 2:  
-                # single-step inference, unsqueeze to add time dimension
-                rnn_features, rnn_state = self.rnn(
-                    actor_features.unsqueeze(1), rnn_state, is_init
-                )
-                actor_features = actor_features + rnn_features.squeeze(1)
-                rnn_state = rnn_state.squeeze(1)
-            else:  
-                # multi-step re-rollout during training
-                rnn_features, rnn_state = self.rnn(
-                    actor_features,
-                    rnn_state[:, 0] if rnn_state is not None else None,
-                    is_init,
-                )
-                actor_features = actor_features + rnn_features
+            actor_features, rnn_state = self.rnn(actor_features, rnn_state, is_init)    
         else:
             rnn_state = None
         action_dist = self.act_dist(actor_features)
@@ -478,38 +497,37 @@ class Actor(nn.Module):
             return action, action_log_probs, None, rnn_state
 
 
-class SharedCritic(nn.Module):
+class Critic(nn.Module):
     def __init__(
         self,
-        args,
-        observation_spec: TensorSpec,
-        reward_spec: TensorSpec,
+        base: nn.Module,
+        rnn: nn.Module,
+        v_out: nn.Module,
+        output_shape: torch.Size=torch.Size((-1,)),
     ):
         super().__init__()
-        if isinstance(observation_spec, (BoundedTensorSpec, UnboundedTensorSpec)):
-            input_dim = observation_spec.shape.numel()
-            self.base = nn.Sequential(
-                nn.LayerNorm(input_dim), MLP([input_dim] + args.hidden_units)
-            )
-            self.base.output_shape = torch.Size((args.hidden_units[-1],))
-        elif isinstance(observation_spec, CompositeSpec):
-            encoder_cls = ENCODERS_MAP[args.attn_encoder]
-            self.base = encoder_cls(observation_spec)
+        self.base = base
+        self.rnn = rnn
+        self.v_out = v_out
+        self.output_shape = output_shape
+
+    def forward(
+        self, 
+        critic_input: torch.Tensor,
+        rnn_state: torch.Tensor=None,
+        is_init: torch.Tensor=None,
+    ):
+        critic_features = self.base(critic_input)
+        if self.rnn is not None:
+            critic_features, rnn_state = self.rnn(critic_features, rnn_state, is_init)
         else:
-            raise TypeError(observation_spec)
+            rnn_state = None
 
-        self.output_shape = reward_spec.shape
-        self.v_out = nn.Linear(
-            self.base.output_shape.numel(), self.output_shape.numel()
-        )
-        nn.init.orthogonal_(self.v_out.weight, args.gain)
-
-    def forward(self, obs: torch.Tensor):
-        critic_features = self.base(obs)
         values = self.v_out(critic_features)
+
         if len(self.output_shape) > 1:
             values = values.unflatten(-1, self.output_shape)
-        return values
+        return values, rnn_state
 
 
 INDEX_TYPE = Union[int, slice, torch.LongTensor, List[int]]

@@ -14,7 +14,6 @@ class GRU(nn.Module):
     ) -> None:
         super().__init__()
         self.cell = nn.GRUCell(input_size=input_size, hidden_size=hidden_size)
-        # self.layer_norm = nn.LayerNorm(hidden_size)
 
     def forward(
         self,
@@ -23,26 +22,42 @@ class GRU(nn.Module):
         is_initial: torch.Tensor = None,
     ):
         """
-        input: [N, L, H_in]
+        input: [N, L, H_in] or [N, H_in]
         """
-        assert input.dim() == 3
+        
         if input.dim() == 3:
+            has_time_dim = True
             N, L = input.shape[:2]
+        else:
+            has_time_dim = False
+            N = input.shape[0]
 
         if h is None:
             h = torch.zeros(N, self.cell.hidden_size, device=input.device)
-        if is_initial is None:
-            is_initial = torch.zeros(N, L, 1, device=input.device)
-        mask = (1 - is_initial.float()).reshape(N, L, 1)
+        elif h.dim() > 2 and has_time_dim:
+            h = h[:, 0]
+        
+        
+        if has_time_dim:
+            if is_initial is None:
+                is_initial = torch.zeros(N, L, 1, device=input.device)
+            mask = (1 - is_initial.float()).reshape(N, L, 1)
+            output = []
+            for i in range(L):
+                h = h * mask[:, i]
+                h = self.cell(input[:, i], h)
+                output.append(h.clone())
+            output = torch.stack(output, dim=1)
+        else:
+            if is_initial is None:
+                is_initial = torch.zeros(N, 1, device=input.device)
+            mask = (1 - is_initial.float()).reshape(N, 1)
+            output = h = self.cell(input, h * mask)
 
-        outputs = []
-        for i in range(L):
-            h = h * mask[:, i]
-            h = self.cell(input[:, i], h)
-            outputs.append(h.clone())
-        outputs = torch.stack(outputs, dim=1)
-        # outputs = self.layer_norm(outputs)
-        return outputs, h.unsqueeze(1).expand(N, L, -1)  # pad to the same length
+        output = output + input
+        if has_time_dim:
+            h = h.unsqueeze(1).expand(N, L, -1)  # pad to the same length
+        return output, h
 
 
 # class LSTM(nn.Module):

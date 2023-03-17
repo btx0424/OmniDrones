@@ -89,8 +89,10 @@ class MultirotorBase(RobotBase):
         )
         return self.throttle.sum(-1)
 
-    def get_state(self):
-        pos, rot = self.get_env_poses(True)
+    def get_state(self, env=True):
+        pos, rot = self.get_world_poses(True)
+        if env:
+            pos = pos - RobotBase._envs_positions
         vel = self.get_velocities(True)
         thr = self.throttle * 2 - 1
         heading = vmap(torch_utils.quat_axis)(rot, axis=0)

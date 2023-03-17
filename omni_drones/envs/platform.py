@@ -19,7 +19,8 @@ class Platform(IsaacEnv):
     def __init__(self, cfg, headless):
         super().__init__(cfg, headless)
         self.drone.initialize(f"/World/envs/env_.*/platform/{self.drone.name}_*")
-        self.init_drone_poses = self.drone.get_env_poses(clone=True)
+        self.target.initialize()
+        self.init_drone_poses = self.drone.get_world_poses(clone=True)
         self.init_drone_vels = torch.zeros_like(self.drone.get_velocities())
 
         self.frame_view = RigidPrimView("/World/envs/env_.*/platform/frame")
@@ -38,7 +39,7 @@ class Platform(IsaacEnv):
             state_spec=UnboundedContinuousTensorSpec(drone_state_dim*self.drone.n+7).to(self.device)
         )
 
-        self.init_pos_scale = torch.tensor([3.0, 3.0, 1.0], device=self.device)
+        self.init_pos_scale = torch.tensor([4.0, 4.0, 1.0], device=self.device)
 
     def _design_scene(self):
         drone_model = "Firefly"
@@ -51,6 +52,14 @@ class Platform(IsaacEnv):
         arm_lengths = [1.0 for _ in range(n)]
 
         self.target_pos = torch.tensor([(0, 0, 2)], device=self.device)
+        self.target = VisualSphere(
+            prim_path="/World/envs/env_0/target",
+            name="target",
+            translation=self.target_pos,
+            radius=0.05,
+            color=torch.tensor([1.0, 0.0, 0.0]),
+        )
+
         platform = prim_utils.create_prim(
             "/World/envs/env_0/platform", translation=self.target_pos
         )
@@ -81,13 +90,13 @@ class Platform(IsaacEnv):
         )
 
         pos, rot = self.init_frame_poses
-        self.frame_view.set_world_poses(pos[env_ids] + offset, rot[env_ids], env_ids)
+        new_poses = (pos[env_ids] + offset, rot[env_ids])
+        self.frame_view.set_world_poses(*new_poses, env_ids)
         self.frame_view.set_velocities(self.init_frame_vels[env_ids], env_ids)
 
         pos, rot = self.init_drone_poses
-        self.drone.set_env_poses(
-            pos[env_ids] + offset.unsqueeze(-2), rot[env_ids], env_ids
-        )
+        new_poses = (pos[env_ids] + offset.unsqueeze(-2), rot[env_ids])
+        self.drone.set_world_poses(*new_poses, env_ids)
         self.drone.set_velocities(self.init_drone_vels[env_ids], env_ids)
 
     def _pre_sim_step(self, tensordict: TensorDictBase):

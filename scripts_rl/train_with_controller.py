@@ -10,8 +10,10 @@ from omegaconf import OmegaConf
 
 from omni_drones import CONFIG_PATH, init_simulation_app
 from omni_drones.learning.collectors import SyncDataCollector
-from omni_drones.utils.envs.transforms import LogOnEpisode
+from omni_drones.utils.envs.transforms import LogOnEpisode, SubPolicy
 from omni_drones.utils.wandb import init_wandb
+from omni_drones.utils.math import quaternion_to_euler
+
 from setproctitle import setproctitle
 from tensordict import TensorDict
 from torchrl.data import UnboundedContinuousTensorSpec
@@ -29,16 +31,54 @@ def main(cfg):
     setproctitle(run.name)
     print(OmegaConf.to_yaml(cfg))
 
-    from omni_drones.envs import Hover
+    from omni_drones.envs import IsaacEnv
     from omni_drones.learning.mappo import MAPPOPolicy
     from omni_drones.sensors.camera import Camera
 
-    env = Hover(cfg, headless=cfg.headless)
+    env_class = IsaacEnv.REGISTRY[cfg.task.name]
+    env = env_class(cfg, headless=cfg.headless)
 
     agent_spec = env.agent_spec["drone"]
+    agent_spec.action_spec = UnboundedContinuousTensorSpec(3, device=env.device)
     ppo = MAPPOPolicy(
-        cfg.algo, agent_spec=agent_spec, device="cuda"
+        cfg.algo, agent_spec=agent_spec, act_name="drone.target_vel", device="cuda"
     )
+    controller = env.drone.DEFAULT_CONTROLLER(env.drone.dt, 9.81, env.drone.params).to(
+        env.device
+    )
+
+    drone_state_key = "drone.obs" if isinstance(agent_spec.observation_spec, UnboundedContinuousTensorSpec) else ("drone.obs", "self")
+    
+    def policy(tensordict: TensorDict):
+        tensordict = ppo(tensordict)
+        relative_state = tensordict[drone_state_key][..., :13].clone()
+        if relative_state.dim() > 3:
+            relative_state = relative_state.squeeze(2)
+        target_vel = tensordict["drone.target_vel"]
+
+        control_target = torch.cat(
+            [
+                target_vel,
+                torch.zeros_like(relative_state[..., :3]),
+                torch.zeros_like(target_vel[..., [0]]),
+            ],
+            dim=-1,
+        )
+        controller_state = tensordict.get(
+            "controller_state", TensorDict({}, relative_state.shape[:2])
+        )
+        state = torch.cat([
+            torch.zeros_like(relative_state[..., :3]),
+            relative_state[..., 3:]
+        ], dim=-1)
+        cmds, controller_state = vmap(vmap(controller))(
+            state, control_target, controller_state
+        )
+        torch.nan_to_num_(cmds, 0.0)
+        assert not torch.isnan(cmds).any()
+        tensordict["drone.action"] = cmds
+        tensordict["controller_state"] = controller_state
+        return tensordict
 
     def log(info):
         for k, v in info.items():
@@ -55,7 +95,7 @@ def main(cfg):
     env = TransformedEnv(env, InitTracker())
     collector = SyncDataCollector(
         env,
-        ppo,
+        policy,
         callback=logger,
         frames_per_batch=env.num_envs * cfg.algo.train_every,
         device=cfg.sim.device,
@@ -77,7 +117,7 @@ def main(cfg):
         env.enable_render = True
         env.rollout(
             max_steps=500,
-            policy=ppo,
+            policy=policy,
             callback=record_frame,
             auto_reset=True,
         )

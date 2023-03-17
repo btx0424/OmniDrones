@@ -11,7 +11,7 @@ import omni_drones.utils.scene as scene_utils
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.views import RigidPrimView
-from omni_drones.envs.utils.helpers import cpos, off_diag
+from omni_drones.utils.torch import cpos, off_diag
 from omni_drones.robots.assembly.transportation_group import TransportationGroup
 from omni_drones.robots.config import RobotCfg
 from omni_drones.robots.drone import MultirotorBase
@@ -24,10 +24,16 @@ class Transport(IsaacEnv):
         self.payload = self.group.payload_view
         self.payload_target_visual = RigidPrimView(
             "/World/envs/.*/payloadTargetVis",
+            reset_xform_properties=False
         )
+        self.payload_target_visual.initialize()
 
-        self.init_poses = self.group.get_env_poses(clone=True)
+        self.init_poses = self.group.get_world_poses(clone=True)
+        self.init_velocities = torch.zeros_like(self.group.get_velocities())
         self.init_joint_pos = self.group.get_joint_positions(clone=True)
+        self.init_joint_vel = torch.zeros_like(self.group.get_joint_velocities())
+
+        self.init_drone_poses = self.drone.get_world_poses(clone=True)
         self.init_drone_vels = torch.zeros_like(self.drone.get_velocities())
 
         drone_state_dim = self.drone.state_spec.shape[0]
@@ -61,21 +67,33 @@ class Transport(IsaacEnv):
 
         scene_utils.design_scene()
 
-        self.group.spawn(translations=[(0, 0, 1.5)])
+        self.group.spawn(translations=[(0, 0, 2.0)])
         DynamicCuboid(
             "/World/envs/env_0/payloadTargetVis",
             scale=torch.tensor([0.5, 0.5, 0.2]),
             color=torch.tensor([0.8, 0.1, 0.1]),
+            size=2.01,
+        )
+        kit_utils.set_collision_properties(
+            "/World/envs/env_0/payloadTargetVis",
+            collision_enabled=False
+        )
+        kit_utils.set_rigid_body_properties(
+            "/World/envs/env_0/payloadTargetVis",
+            disable_gravity=True
         )
 
         return ["/World/defaultGroundPlane"]
 
     def _reset_idx(self, env_ids: torch.Tensor):
         pos, rot = self.init_poses
-        joint_pos = self.init_joint_pos[env_ids]
+
         self.group._reset_idx(env_ids)
-        self.group.set_env_poses(pos[env_ids], rot[env_ids], env_ids)
-        self.group.set_joint_positions(joint_pos)
+        self.group.set_world_poses(pos[env_ids], rot[env_ids], env_ids)
+        self.group.set_velocities(self.init_velocities[env_ids], env_ids)
+
+        self.group.set_joint_positions(self.init_joint_pos[env_ids], env_ids)
+        self.group.set_joint_velocities(self.init_joint_vel[env_ids], env_ids)
 
         payload_target_pos = torch.rand(len(env_ids), 3, device=self.device)
 
@@ -93,9 +111,8 @@ class Transport(IsaacEnv):
             payload_target_rot, axis=0
         )
 
-        self.payload_target_visual.set_world_poses(
-            *self.get_world_poses((payload_target_pos, payload_target_rot)), env_ids
-        )
+        payload_target_pose = (payload_target_pos + self.envs_positions[env_ids], payload_target_rot)
+        self.payload_target_visual.set_world_poses(*payload_target_pose, env_ids)
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict["drone.action"]
@@ -103,7 +120,7 @@ class Transport(IsaacEnv):
 
     def _compute_state_and_obs(self):
         drone_states = self.drone.get_state()
-        drone_pos = drone_states[..., :3]
+        drone_pos, drone_rot, drone_vels = drone_states[..., :13].split([3, 4, 6], dim=-1)
         payload_pos, payload_rot = self.get_env_poses(self.payload.get_world_poses())
         payload_vels = self.payload.get_velocities()
 
@@ -115,29 +132,34 @@ class Transport(IsaacEnv):
         payload_relative_pos_target = self.payload_target_pos - payload_pos
 
         payload_heading: torch.Tensor = torch_utils.quat_axis(payload_rot, axis=0)
+        
+        payload_state = torch.cat(
+            [
+                payload_relative_pos_target,  # 3
+                payload_rot,  # 4
+                payload_vels,  # 6
+                payload_heading,  # 3
+            ],
+            dim=-1,
+        ).unsqueeze(1)
 
         obs = TensorDict(
             {
-                "self": drone_states,  # [num_envs, 1, *]
+                "self": drone_states.unsqueeze(2),  # [num_envs, drone.n, 1, *]
                 "others": torch.cat(
                     [
                         drone_relative_pos,
                         drone_pdist,
                     ],
                     dim=-1,
-                ),  # [num_envs, drone.n-1, *]
+                ),  # [num_envs, drone.n, drone.n-1, *]
                 "payload": torch.cat(
                     [
                         payload_relative_pos_drone,  # 3
-                        payload_relative_pos_target.unsqueeze(1).expand(
-                            -1, self.drone.n, -1
-                        ),  # 3
-                        payload_vels.unsqueeze(1).expand(-1, self.drone.n, -1),  # 6
-                        payload_rot.unsqueeze(1).expand(-1, self.drone.n, -1),  # 4
-                        payload_heading.unsqueeze(1).expand(-1, self.drone.n, -1),  # 3
+                        payload_state.expand(-1, self.drone.n, -1)
                     ],
                     dim=-1,
-                ),  # [num_envs, drone.n, 19]
+                ).unsqueeze(2),  # [num_envs, drone.n, 1, 19]
             },
             [self.num_envs, self.drone.n],
         )
@@ -145,19 +167,9 @@ class Transport(IsaacEnv):
         state = TensorDict(
             {
                 "drones": torch.cat(
-                    [-payload_relative_pos_drone, drone_pos[..., 3:]], dim=-1
+                    [-payload_relative_pos_drone, drone_states[..., 3:]], dim=-1
                 ),  # [num_envs, drone.n, *]
-                "payload": torch.cat(
-                    [
-                        payload_relative_pos_target,  # 3
-                        payload_rot,  # 4
-                        payload_vels,  # 6
-                        payload_heading,  # 3
-                    ],
-                    dim=-1,
-                ).unsqueeze(
-                    1
-                ),  # [num_envs, 1, 16]
+                "payload": payload_state,  # [num_envs, 1, 16]
             },
             self.num_envs,
         )
@@ -166,15 +178,15 @@ class Transport(IsaacEnv):
 
     def _compute_reward_and_done(self):
         payload_pos, payload_rot = self.get_env_poses(self.payload.get_world_poses())
-        payload_heading = functorch.vmap(torch_utils.quat_axis)(payload_rot, axis=0)
-        drone_pos, drone_rot = self.drone.get_env_poses()
+        payload_heading = torch_utils.quat_axis(payload_rot, axis=0)
+        drone_pos, drone_rot = self.get_env_poses(self.drone.get_world_poses())
 
         distance = torch.norm(
             self.payload_target_pos - payload_pos, dim=-1, keepdim=True
         )
-        reward = torch.zeros(self.num_envs, self.drone.n, 1, device=self.device)
+        reward = torch.zeros(self.num_envs, self.drone.n, 2, device=self.device)
         reward[..., 0] = -torch.square(distance)
-        reward[..., 1] = payload_heading * self.payload_target_heading
+        reward[..., 1] = (payload_heading * self.payload_target_heading).sum(-1, keepdim=True)
 
         self._tensordict["return"] += reward
         done = (self.progress_buf >= self.max_eposode_length).unsqueeze(-1) | (

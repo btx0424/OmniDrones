@@ -248,11 +248,17 @@ class IsaacEnv(EnvBase):
 
     def get_env_poses(self, world_poses: Tuple[torch.Tensor, torch.Tensor]):
         pos, rot = world_poses
-        return pos - self.envs_positions, rot
+        if pos.dim() == 3:
+            return pos - self.envs_positions.unsqueeze(1), rot
+        else:
+            return pos - self.envs_positions, rot
 
     def get_world_poses(self, env_poses: Tuple[torch.Tensor, torch.Tensor]):
         pos, rot = env_poses
-        return pos + self.envs_positions, rot
+        if pos.dim() == 3:
+            return pos + self.envs_positions.unsqueeze(1), rot
+        else:
+            return pos + self.envs_positions, rot
 
 
 from dataclasses import dataclass

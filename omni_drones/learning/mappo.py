@@ -223,6 +223,8 @@ class MAPPOPolicy(object):
 
         log_probs = actor_output[self.act_logps_name]
         dist_entropy = actor_output[f"{self.agent_spec.name}.action_entropy"]
+        if advantages.shape[:-1] != 1:
+            advantages = advantages.sum(-1, keepdim=True)
         assert advantages.shape == log_probs.shape == dist_entropy.shape
 
         ratio = torch.exp(log_probs - log_probs_old)

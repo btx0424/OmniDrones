@@ -43,9 +43,9 @@ def main(cfg):
     scene_utils.design_scene()
     sim.reset()
     group.initialize()
-    init_poses = group.get_env_poses(True)
+    init_poses = group.get_world_poses(True)
     init_joint_pos = group.get_joint_positions(True)
-    init_drone_poses = drone.get_env_poses(True)
+    init_drone_poses = drone.get_world_poses(True)
 
     print(init_drone_poses[0])
 
@@ -67,7 +67,7 @@ def main(cfg):
         if not sim.is_playing():
             sim.step()
             continue
-        root_state = drone.get_state()[..., :13].squeeze(0)
+        root_state = drone.get_state(False)[..., :13].squeeze(0)
         action, controller_state = functorch.vmap(controller)(
             root_state, control_target, controller_state
         )
@@ -76,11 +76,11 @@ def main(cfg):
         sim.step()
         step += 1
         if step % 500 == 0:
-            group.set_env_poses(*init_poses)
+            group.set_world_poses(*init_poses)
             group.set_joint_positions(init_joint_pos)
 
             sim.step()
-            print(drone.get_env_poses(True)[0])
+            print(drone.get_world_poses(True)[0])
 
     simulation_app.close()
 

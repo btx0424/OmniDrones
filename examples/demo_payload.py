@@ -75,6 +75,7 @@ def main(cfg):
     sim.reset()
     drone.initialize("/World/envs/env_0/Unit_.*/Firefly")
     payload.initialize()
+    sim.pause()
 
     while simulation_app.is_running():
         if not sim.is_playing():

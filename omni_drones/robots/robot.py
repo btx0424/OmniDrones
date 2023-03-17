@@ -8,8 +8,7 @@ import omni.isaac.core.utils.torch as torch_utils
 
 import omni.timeline
 import torch
-from omni.isaac.core.articulations import ArticulationView
-from omni.isaac.core.prims import RigidPrimView
+from omni_drones.views import ArticulationView, RigidPrimView
 from omni.isaac.core.simulation_context import SimulationContext
 from torchrl.data import TensorSpec
 
@@ -134,10 +133,13 @@ class RobotBase(abc.ABC):
             self._view = ArticulationView(
                 self.prim_paths_expr,
                 reset_xform_properties=False,
+                shape=(-1, self.n)
             )
         else:
             self._view = RigidPrimView(
-                self.prim_paths_expr, reset_xform_properties=False
+                self.prim_paths_expr, 
+                reset_xform_properties=False,
+                shape=(-1, self.n)
             )
 
         self._view.initialize()
@@ -146,10 +148,6 @@ class RobotBase(abc.ABC):
         self.shape = torch.arange(self._view.count).reshape(-1, self.n).shape
         self._physics_view = self._view._physics_view
         self._physics_sim_view = self._view._physics_sim_view
-
-        if self._envs_positions is not None:
-            pos, rot = self.get_world_poses()
-            self.set_env_poses(pos, rot)
 
     @abc.abstractmethod
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
@@ -160,142 +158,29 @@ class RobotBase(abc.ABC):
         raise NotImplementedError
 
     def get_world_poses(self, clone=True):
-        with self._disable_warnings():
-            if self.is_articulation:
-                poses = torch.unflatten(
-                    self._physics_view.get_root_transforms(), 0, self.shape
-                )
-            else:
-                poses = torch.unflatten(
-                    self._physics_view.get_transforms(), 0, self.shape
-                )
-            if clone:
-                poses = poses.clone()
-        return poses[..., :3], poses[..., [6, 3, 4, 5]]
+        return self._view.get_world_poses(clone=clone)
 
-    def get_env_poses(self, clone=True):
-        with self._disable_warnings():
-            if self.is_articulation:
-                poses = torch.unflatten(
-                    self._physics_view.get_root_transforms(), 0, self.shape
-                )
-            else:
-                poses = torch.unflatten(
-                    self._physics_view.get_transforms(), 0, self.shape
-                )
-            if clone:
-                poses = poses.clone()
-        if self._envs_positions is not None:
-            poses[..., :3] -= self._envs_positions
-        return poses[..., :3], poses[..., [6, 3, 4, 5]]
-
-    def set_env_poses(
-        self,
-        positions: torch.Tensor,
-        orientations: torch.Tensor,
-        indices: torch.Tensor = None,
-    ):
-        with self._disable_warnings():
-            if self._envs_positions is not None:
-                positions = (positions + self._envs_positions[indices]).reshape(-1, 3)
-            else:
-                positions = positions.reshape(-1, 3)
-            orientations = orientations.reshape(-1, 4)[:, [1, 2, 3, 0]]
-            if self.is_articulation:
-                old_pose = self._physics_view.get_root_transforms().clone()
-            else:
-                old_pose = self._physics_view.get_transforms().clone()
-            indices = self._resolve_indices(indices)
-            if positions is None:
-                positions = old_pose[indices, :3]
-            if orientations is None:
-                orientations = old_pose[indices, 3:]
-            new_pose = torch.cat([positions, orientations], dim=-1)
-            old_pose[indices] = new_pose
-            if self.is_articulation:
-                self._physics_view.set_root_transforms(old_pose, indices)
-            else:
-                self._physics_view.set_transforms(old_pose, indices)
+    def set_world_poses(self, positions: torch.Tensor=None, orientations: torch.Tensor=None, env_indices: torch.Tensor = None):
+        return self._view.set_world_poses(positions, orientations, env_indices=env_indices)
 
     def get_velocities(self, clone=True):
-        with self._disable_warnings():
-            if self.is_articulation:
-                velocities = torch.unflatten(
-                    self._physics_view.get_root_velocities(), 0, self.shape
-                )
-            else:
-                velocities = torch.unflatten(
-                    self._physics_view.get_velocities(), 0, self.shape
-                )
-            if clone:
-                velocities = velocities.clone()
-        return velocities
+        return self._view.get_velocities(clone=clone)
 
-    def set_velocities(self, velocities: torch.Tensor, indices: torch.Tensor = None):
-        with self._disable_warnings():
-            velocities = velocities.flatten(0, -2)
-            indices = self._resolve_indices(indices)
-            root_vel = self._physics_view.get_root_velocities()
-            root_vel[indices] = velocities
-            self._physics_view.set_root_velocities(root_vel, indices)
+    def set_velocities(self, velocities: torch.Tensor, env_indices: torch.Tensor = None):
+        return self._view.set_velocities(velocities, env_indices=env_indices)
 
     def get_joint_positions(self, clone=True):
-        with self._disable_warnings():
-            joint_positions = torch.unflatten(
-                self._physics_view.get_dof_positions(), 0, self.shape
-            )
-            if clone:
-                joint_positions = joint_positions.clone()
-        return joint_positions
+        return self._view.get_joint_positions(clone=clone)
 
-    def set_joint_positions(self, pos: torch.Tensor, indices: torch.Tensor = None):
-        with self._disable_warnings():
-            pos = pos.flatten(0, -2)
-            indices = self._resolve_indices(indices)
-            joint_pos = self._physics_view.get_dof_positions()
-            joint_pos[indices] = pos
-            self._physics_view.set_dof_positions(pos, indices)
+    def set_joint_positions(self, pos: torch.Tensor, env_indices: torch.Tensor = None):
+        return self._view.set_joint_positions(pos, env_indices=env_indices)
 
     def get_joint_velocities(self, clone=True):
-        with self._disable_warnings():
-            joint_velocities = torch.unflatten(
-                self._physics_view.get_dof_velocities(), 0, self.shape
-            )
-            if clone:
-                joint_velocities = joint_velocities.clone()
-        return joint_velocities
+        return self._view.get_joint_velocities(clone=clone)
 
-    def set_joint_velocities(self, vel: torch.Tensor):
-        with self._disable_warnings():
-            vel = vel.flatten(0, -2)
-            indices = self._resolve_indices(indices)
-            joint_vel = self._physics_view.get_dof_velocities()
-            joint_vel[indices] = vel
-            self._physics_view.set_dof_velocities(vel)
+    def set_joint_velocities(self, vel: torch.Tensor, env_indices: torch.Tensor = None):
+        return self._view.set_joint_velocities(vel, env_indices=env_indices)
 
     def get_state(self):
         raise NotImplementedError
 
-    def _resolve_indices(self, indices: torch.Tensor = None):
-        all_indices = torch.arange(self._view.count, device=self.device).reshape(
-            self.shape
-        )
-        if indices is None:
-            indices = all_indices
-        else:
-            indices = all_indices[indices]
-        return indices.flatten()
-
-    @contextmanager
-    def _disable_warnings(self):
-        if (
-            not omni.timeline.get_timeline_interface().is_stopped()
-            and self._physics_view is not None
-        ):
-            try:
-                self._physics_sim_view.enable_warnings(False)
-                yield
-            finally:
-                self._physics_sim_view.enable_warnings(True)
-        else:
-            raise RuntimeError

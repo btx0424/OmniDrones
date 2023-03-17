@@ -1,32 +1,26 @@
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from functorch import vmap
+import functorch
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torchopt
 from tensordict import TensorDict
-from tensordict.utils import expand_right
 from tensordict.nn import make_functional, TensorDictModule
 from torch.optim import lr_scheduler
-
-from torchrl.data import (
-    BoundedTensorSpec,
-    CompositeSpec,
-    MultiDiscreteTensorSpec,
-    TensorSpec,
-    UnboundedContinuousTensorSpec as UnboundedTensorSpec,
-)
+from torchrl.data import CompositeSpec
 
 from omni_drones.envs.isaac_env import AgentSpec
 
 from .utils import valuenorm
+from .utils.clip_grad import clip_grad_norm_
 from .utils.gae import compute_gae
 
 LR_SCHEDULER = lr_scheduler._LRScheduler
 
 
-class MAPPOPolicy(object):
+class MAPPOPolicy(nn.Module):
     def __init__(
         self, cfg, agent_spec: AgentSpec, act_name: str = None, device="cuda"
     ) -> None:
@@ -55,29 +49,27 @@ class MAPPOPolicy(object):
             )
 
         self.obs_name = f"{self.agent_spec.name}.obs"
-        self.act_name = act_name or f"{self.agent_spec.name}.action"
+        self.act_name = act_name
         self.state_name = f"{self.agent_spec.name}.state"
         self.reward_name = f"{self.agent_spec.name}.reward"
 
         self.make_actor()
         self.make_critic()
 
-        self.train_in_keys = list(
-            set(
-                self.actor_in_keys
-                + self.actor_out_keys
-                + self.critic_in_keys
-                + self.critic_out_keys
-                + [
-                    "next",
-                    self.act_logps_name,
-                    ("reward", self.reward_name),
-                    "state_value",
-                ]
-                + ["progress", ("collector", "traj_ids")]
-            )
-        )
+        self.train_in_keys = list(set(
+            self.actor_in_keys
+            + self.actor_out_keys
+            + self.critic_in_keys
+            + self.critic_out_keys
+            + [
+                "next",
+                self.act_logps_name,
+                ("reward", self.reward_name),
+                "state_value",
+            ]
+        ))
 
+        self.in_keys = [self.obs_name, self.state_name]
         self.n_updates = 0
 
     @property
@@ -93,34 +85,84 @@ class MAPPOPolicy(object):
             self.act_logps_name,
             f"{self.agent_spec.name}.action_entropy",
         ]
+        self.actor_opt = torchopt.adam(lr=cfg.lr)
 
-        if cfg.get("rnn", None):
-            self.actor_in_keys.extend(
-                [f"{self.agent_spec.name}.rnn_state", "is_init"]
+        def actor_loss(params, actor_input, advantages, log_probs_old):
+            actor_output = fmodel(params, buffers, actor_input)
+            log_probs = actor_output[self.act_logps_name]
+            dist_entropy = actor_output[f"{self.agent_spec.name}.action_entropy"]
+            assert advantages.shape == log_probs.shape == dist_entropy.shape
+
+            ratio = torch.exp(log_probs - log_probs_old)
+            surr1 = ratio * advantages
+            surr2 = (
+                torch.clamp(ratio, 1.0 - self.clip_param, 1.0 + self.clip_param)
+                * advantages
             )
-            self.actor_out_keys.append(f"{self.agent_spec.name}.rnn_state")
-            self.minibatch_seq_len = self.cfg.actor.rnn.train_seq_len
-            assert self.minibatch_seq_len <= self.cfg.train_every
 
-        create_actor_fn = lambda: TensorDictModule(
-            make_ppo_actor(
-                cfg, self.agent_spec.observation_spec, self.agent_spec.action_spec
-            ),
-            in_keys=self.actor_in_keys,
-            out_keys=self.actor_out_keys
-        ).to(self.device)
+            policy_loss = -torch.min(surr1, surr2) * self.act_dim
+            policy_loss = torch.mean(policy_loss - self.entropy_coef * dist_entropy)
+
+            log_ratio = log_probs - log_probs_old
+            approx_kl = torch.mean(torch.exp(log_ratio) - 1 - log_ratio)
+            clip_frac = torch.mean((torch.abs(ratio - 1) > self.clip_param).float())
+
+            return policy_loss, (dist_entropy, approx_kl, clip_frac)
 
         if self.cfg.share_actor:
-            self.actor = create_actor_fn()
-            self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=cfg.lr)
-            self.actor_params_list = self.actor.parameters() # for grad clipping
-            self.actor_params = make_functional(self.actor).expand(self.agent_spec.n)
+            actor = make_ppo_actor(
+                cfg, self.agent_spec.observation_spec, self.agent_spec.action_spec
+            )
+            if actor.rnn:
+                self.actor_in_keys.extend(
+                    [f"{self.agent_spec.name}.rnn_state", "is_init"]
+                )
+                self.actor_out_keys.append(f"{self.agent_spec.name}.rnn_state")
+                self.minibatch_seq_len = self.cfg.actor.rnn.train_seq_len
+                assert self.minibatch_seq_len <= self.cfg.train_every
+
+            self.actor = TensorDictModule(
+                actor,
+                in_keys=self.actor_in_keys,
+                out_keys=self.actor_out_keys,
+            ).to(self.device)
+            self.actor_func_module = (
+                fmodel,
+                params,
+                buffers,
+            ) = functorch.make_functional_with_buffers(self.actor)
+            self.actor_func = functorch.vmap(
+                fmodel, in_dims=(None, None, 1), out_dims=1, randomness="different"
+            )
+            self.actor_opt_state = self.actor_opt.init(params)
+            self.actor_loss = functorch.vmap(actor_loss, in_dims=(None, 1, 1, 1))
         else:
-            actors = nn.ModuleList([create_actor_fn() for _ in range(self.agent_spec.n)])
-            self.actor = actors[0]
-            self.actor_opt = torch.optim.Adam(actors.parameters(), lr=cfg.lr)
-            self.actor_params_list = actors.parameters()
-            self.actor_params = torch.stack([make_functional(actor) for actor in actors])
+            self.actor = nn.ModuleList(
+                [
+                    TensorDictModule(
+                        make_ppo_actor(
+                            cfg,
+                            self.agent_spec.observation_spec,
+                            self.agent_spec.action_spec,
+                        ),
+                        in_keys=self.actor_in_keys,
+                        out_keys=self.actor_out_keys,
+                    )
+                    for _ in range(self.agent_spec.n)
+                ]
+            ).to(self.device)
+            self.actor_func_module = (
+                fmodel,
+                params,
+                buffers,
+            ) = functorch.combine_state_for_ensemble(self.actor)
+            self.actor_func = functorch.vmap(
+                fmodel, in_dims=(0, 0, 1), out_dims=1, randomness="different"
+            )
+            self.actor_opt_state = functorch.vmap(self.actor_opt.init)(params)
+            for param in params:
+                param.requires_grad_(True)
+            self.actor_loss = functorch.vmap(actor_loss, in_dims=(0, 1, 1, 1))
 
     def make_critic(self):
         cfg = self.cfg.critic
@@ -159,7 +201,7 @@ class MAPPOPolicy(object):
                 in_keys=self.critic_in_keys,
                 out_keys=self.critic_out_keys,
             ).to(self.device)
-            self.value_func = vmap(self.critic, in_dims=1, out_dims=1)
+            self.value_func = functorch.vmap(self.critic, in_dims=1, out_dims=1)
         else:
             raise ValueError(self.cfg.critic_input)
 
@@ -185,68 +227,57 @@ class MAPPOPolicy(object):
                 **cfg.value_norm["kwargs"],
             ).to(self.device)
 
+    def policy_op(self, tensordict: TensorDict, training: bool):
+        fmodel, params, buffers = self.actor_func_module
+        actor_input = tensordict.select(*self.actor_in_keys, strict=False)
+        actor_input.batch_size = [*actor_input.batch_size, self.agent_spec.n]
+        tensordict = self.actor_func(
+            params, buffers, actor_input, deterministic=(not training)
+        )
+        return tensordict
+
     def value_op(self, tensordict: TensorDict) -> TensorDict:
         critic_input = tensordict.select(*self.critic_in_keys)
         critic_input.batch_size = [*critic_input.batch_size, self.agent_spec.n]
         tensordict = self.value_func(critic_input)
         return tensordict
 
-    def __call__(self, tensordict: TensorDict, deterministic: bool = False):
-        actor_input = tensordict.select(*self.actor_in_keys, strict=False)
-        if "is_init" in actor_input.keys():
-            actor_input["is_init"] = expand_right(
-            actor_input["is_init"], (*actor_input.batch_size, self.agent_spec.n)
-        )
-        actor_input.batch_size = [*actor_input.batch_size, self.agent_spec.n]
-        actor_output = vmap(self.actor, in_dims=(1, 0), out_dims=1, randomness="different")(
-            actor_input, self.actor_params, deterministic=deterministic
-        )
-
-        tensordict.update(actor_output)
-        tensordict.update(self.value_op(tensordict))
+    def __call__(self, tensordict: TensorDict):
+        input_td = tensordict.select(*self.in_keys, strict=False)
+        tensordict.update(self.policy_op(input_td, True))
+        tensordict.update(self.value_op(input_td))
         return tensordict
 
     def update_actor(self, batch: TensorDict) -> Dict[str, Any]:
+        fmodel, params, buffers = self.actor_func_module
         advantages = batch["advantages"]
         actor_input = batch.select(*self.actor_in_keys)
         actor_input.batch_size = [*actor_input.batch_size, self.agent_spec.n]
-
-        log_probs_old = batch[self.act_logps_name]
-        if hasattr(self, "minibatch_seq_len"): # [N, T, A, *]
-            actor_output = vmap(self.actor, in_dims=(2, 0), out_dims=2)(
-                actor_input, self.actor_params, eval_action=True
-            )
-        else: # [N, A, *]
-            actor_output = vmap(self.actor, in_dims=(1, 0), out_dims=1)(
-                actor_input, self.actor_params, eval_action=True
-            )
-
-        log_probs = actor_output[self.act_logps_name]
-        dist_entropy = actor_output[f"{self.agent_spec.name}.action_entropy"]
-        if advantages.shape[:-1] != 1:
-            advantages = advantages.sum(-1, keepdim=True)
-        assert advantages.shape == log_probs.shape == dist_entropy.shape
-
-        ratio = torch.exp(log_probs - log_probs_old)
-        surr1 = ratio * advantages
-        surr2 = (
-            torch.clamp(ratio, 1.0 - self.clip_param, 1.0 + self.clip_param)
-            * advantages
+        policy_loss, (dist_entropy, approx_kl, clip_frac) = self.actor_loss(
+            params, actor_input, advantages, batch[self.act_logps_name]
         )
-        policy_loss = - torch.mean(torch.min(surr1, surr2) * self.act_dim)
-        entropy_loss = - torch.mean(dist_entropy)
-
-        self.actor_opt.zero_grad()
-        (policy_loss - entropy_loss * self.cfg.entropy_coef).backward()
-        grad_norm = torch.nn.utils.clip_grad_norm_(self.actor_params_list, self.cfg.max_grad_norm)
-        self.actor_opt.step()
+        if self.cfg.share_actor:
+            grads = torch.autograd.grad(policy_loss.mean(), params)
+            grad_norm = clip_grad_norm_(grads, max_norm=self.cfg.max_grad_norm)
+            updates, self.actor_opt_state = self.actor_opt.update(
+                grads, self.actor_opt_state
+            )
+        else:
+            grads = torch.autograd.grad(policy_loss.sum(), params)
+            grad_norm = functorch.vmap(clip_grad_norm_)(
+                grads, max_norm=self.cfg.max_grad_norm
+            )
+            updates, self.actor_opt_state = functorch.vmap(self.actor_opt.update)(
+                grads, self.actor_opt_state
+            )
+        torchopt.apply_updates(params, updates, inplace=True)
 
         return {
-            "policy_loss": policy_loss.item(),
-            "actor_grad_norm": grad_norm.item(),
-            "dist_entropy": entropy_loss.item(),
-            # "clip_fraction": clip_frac.mean(),
-            # "approx_kl": approx_kl.mean(),
+            "policy_loss": policy_loss.mean(),
+            "actor_grad_norm": grad_norm.mean(),
+            "dist_entropy": dist_entropy.mean(),
+            "clip_fraction": clip_frac.mean(),
+            "approx_kl": approx_kl.mean(),
         }
 
     def update_critic(self, batch: TensorDict) -> Dict[str, Any]:
@@ -325,11 +356,7 @@ class MAPPOPolicy(object):
 
         train_info = []
         for ppo_epoch in range(self.ppo_epoch):
-            dataset = make_dataset_naive(
-                tensordict,
-                self.cfg.num_minibatches,
-                self.minibatch_seq_len if hasattr(self, "minibatch_seq_len") else 1,
-            )
+            dataset = make_dataset_naive(tensordict, self.cfg.num_minibatches, self.minibatch_seq_len if hasattr(self, "minibatch_seq_len") else 1)
             for minibatch in dataset:
                 train_info.append(
                     TensorDict(
@@ -377,11 +404,20 @@ def make_dataset_naive(
             yield tensordict[indices]
 
 
-from .utils.distributions import (
-    DiagGaussian,
-    MultiCategoricalModule,
+from torchrl.data import (
+    BoundedTensorSpec,
+    CompositeSpec,
+    MultiDiscreteTensorSpec,
+    TensorSpec,
+    UnboundedContinuousTensorSpec as UnboundedTensorSpec,
 )
 
+from .utils.distributions import (
+    DiagGaussian,
+    IndependentBetaModule,
+    IndependentNormalModule,
+    MultiCategoricalModule,
+)
 from .utils.network import (
     ENCODERS_MAP,
     MLP,
@@ -442,40 +478,47 @@ class Actor(nn.Module):
         self,
         obs: Union[torch.Tensor, TensorDict],
         action: torch.Tensor = None,
-        rnn_state=None,
         is_init=None,
+        rnn_state=None,
         deterministic=False,
-        eval_action=False
     ):
         actor_features = self.encoder(obs)
         if self.rnn is not None:
-            if actor_features.dim() == 2:  
-                # single-step inference, unsqueeze to add time dimension
-                rnn_features, rnn_state = self.rnn(
-                    actor_features.unsqueeze(1), rnn_state, is_init
+            if actor_features.dim() == 2:  # single-step inference
+                actor_features, rnn_state = self.rnn(
+                    actor_features.unsqueeze(0), rnn_state, is_init
                 )
-                actor_features = actor_features + rnn_features.squeeze(1)
-                rnn_state = rnn_state.squeeze(1)
-            else:  
-                # multi-step re-rollout during training
-                rnn_features, rnn_state = self.rnn(
+                actor_features, rnn_state = actor_features.squeeze(
+                    0
+                ), rnn_state.squeeze(0)
+            else:  # multi-step re-rollout during training
+                actor_features, rnn_state = self.rnn(
                     actor_features,
-                    rnn_state[:, 0] if rnn_state is not None else None,
+                    rnn_state[0] if rnn_state is not None else None,
                     is_init,
                 )
-                actor_features = actor_features + rnn_features
         else:
             rnn_state = None
         action_dist = self.act_dist(actor_features)
 
-        if eval_action:
-            action_log_probs = action_dist.log_prob(action).unsqueeze(-1)
-            dist_entropy = action_dist.entropy().unsqueeze(-1)
-            return action, action_log_probs, dist_entropy, None
-        else:
+        if action is None:
             action = action_dist.mode if deterministic else action_dist.sample()
             action_log_probs = action_dist.log_prob(action).unsqueeze(-1)
-            return action, action_log_probs, None, rnn_state
+            return action, action_log_probs
+        else:
+            action_log_probs = action_dist.log_prob(action).unsqueeze(-1)
+            dist_entropy = action_dist.entropy().unsqueeze(-1)
+            return action, action_log_probs, dist_entropy
+
+    def evaluate(
+        self,
+        obs: Union[torch.Tensor, TensorDict],
+        action: torch.Tensor = None,
+        done=None,
+        rnn_state=None,
+        deterministic=False,
+    ):
+        ...
 
 
 class SharedCritic(nn.Module):

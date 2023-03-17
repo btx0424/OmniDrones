@@ -19,7 +19,8 @@ class Platform(IsaacEnv):
     def __init__(self, cfg, headless):
         super().__init__(cfg, headless)
         self.drone.initialize(f"/World/envs/env_.*/platform/{self.drone.name}_*")
-        self.init_drone_poses = self.drone.get_env_poses(clone=True)
+        self.target.initialize()
+        self.init_drone_poses = self.drone.get_world_poses(clone=True)
         self.init_drone_vels = torch.zeros_like(self.drone.get_velocities())
 
         self.frame_view = RigidPrimView("/World/envs/env_.*/platform/frame")
@@ -28,15 +29,17 @@ class Platform(IsaacEnv):
         self.init_frame_poses = self.frame_view.get_world_poses(clone=True)
         self.init_frame_vels = torch.zeros_like(self.frame_view.get_velocities())
 
+        drone_state_dim = self.drone.state_spec.shape.numel()
         self.agent_spec["drone"] = AgentSpec(
             "drone",
             4,
-            UnboundedContinuousTensorSpec(35).to(self.device),
+            UnboundedContinuousTensorSpec(drone_state_dim+10).to(self.device),
             self.drone.action_spec.to(self.device),
             UnboundedContinuousTensorSpec(1).to(self.device),
+            state_spec=UnboundedContinuousTensorSpec(drone_state_dim*self.drone.n+7).to(self.device)
         )
 
-        self.init_pos_scale = torch.tensor([2.0, 2.0, 0.6], device=self.device)
+        self.init_pos_scale = torch.tensor([4.0, 4.0, 1.0], device=self.device)
 
     def _design_scene(self):
         drone_model = "Firefly"
@@ -48,7 +51,15 @@ class Platform(IsaacEnv):
         arm_angles = [torch.pi * 2 / n * i for i in range(n)]
         arm_lengths = [1.0 for _ in range(n)]
 
-        self.target_pos = torch.tensor([(0, 0, 1.5)], device=self.device)
+        self.target_pos = torch.tensor([(0, 0, 2)], device=self.device)
+        self.target = VisualSphere(
+            prim_path="/World/envs/env_0/target",
+            name="target",
+            translation=self.target_pos,
+            radius=0.05,
+            color=torch.tensor([1.0, 0.0, 0.0]),
+        )
+
         platform = prim_utils.create_prim(
             "/World/envs/env_0/platform", translation=self.target_pos
         )
@@ -79,13 +90,13 @@ class Platform(IsaacEnv):
         )
 
         pos, rot = self.init_frame_poses
-        self.frame_view.set_world_poses(pos[env_ids] + offset, rot[env_ids], env_ids)
+        new_poses = (pos[env_ids] + offset, rot[env_ids])
+        self.frame_view.set_world_poses(*new_poses, env_ids)
         self.frame_view.set_velocities(self.init_frame_vels[env_ids], env_ids)
 
         pos, rot = self.init_drone_poses
-        self.drone.set_env_poses(
-            pos[env_ids] + offset.unsqueeze(-2), rot[env_ids], env_ids
-        )
+        new_poses = (pos[env_ids] + offset.unsqueeze(-2), rot[env_ids])
+        self.drone.set_world_poses(*new_poses, env_ids)
         self.drone.set_velocities(self.init_drone_vels[env_ids], env_ids)
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
@@ -94,8 +105,7 @@ class Platform(IsaacEnv):
 
     def _compute_state_and_obs(self):
         drone_state = self.drone.get_state()
-        frame_pos, frame_rot = self.frame_view.get_world_poses(clone=True)
-        frame_pos = frame_pos - self.envs_positions
+        frame_pos, frame_rot = self.get_env_poses(self.frame_view.get_world_poses(clone=True))
 
         target_rel_pos = self.target_pos - frame_pos
 
@@ -130,8 +140,7 @@ class Platform(IsaacEnv):
         )
 
     def _compute_reward_and_done(self):
-        frame_pos, frame_rot = self.frame_view.get_world_poses(clone=True)
-        frame_pos = frame_pos - self.envs_positions
+        frame_pos, frame_rot = self.get_env_poses(self.frame_view.get_world_poses(clone=True))
 
         linvel, angvel = self.frame_view.get_velocities().split([3, 3], dim=-1)
 

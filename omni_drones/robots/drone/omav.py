@@ -31,6 +31,7 @@ class Omav(MultirotorBase):
         thrusts, moments = vmap(vmap(self.rotors))(
             rotor_cmds, self.rotor_params_and_states
         )
+
         self.forces[..., 2] = thrusts
         self.torques[..., 2] = moments.sum(-1)
         self.rotors_view.apply_forces(self.forces.reshape(-1, 3), is_global=False)
@@ -38,4 +39,5 @@ class Omav(MultirotorBase):
         self.base_link.apply_forces_and_torques_at_pos(
             None, self.torques.reshape(-1, 3), is_global=False
         )
+
         return self.throttle.sum(-1)

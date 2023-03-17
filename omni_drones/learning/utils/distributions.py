@@ -69,7 +69,6 @@ class SafeTanhTransform(D.TanhTransform):
 
 
 class TanhIndependentNormal(D.TransformedDistribution):
-
     arg_constraints = {"loc": constraints.real, "scale": constraints.positive}
 
     def __init__(
@@ -115,7 +114,6 @@ class TanhIndependentNormal(D.TransformedDistribution):
 
 
 class IndependentNormal(D.Independent):
-
     arg_constraints = {"loc": constraints.real, "scale": constraints.positive}
 
     def __init__(self, loc, scale, validate_args=None):
@@ -306,11 +304,10 @@ class MultiCategorical(D.Distribution):
 class MultiCategoricalModule(nn.Module):
     def __init__(
         self,
-        input_dim: int,
         output_dims: Union[List[int], torch.Tensor],
     ):
         super().__init__()
-        self.operator = nn.Linear(input_dim, sum(output_dims))
+        self.operator = nn.LazyLinear(sum(output_dims))
         self.output_dims = (
             output_dims.tolist()
             if isinstance(output_dims, torch.Tensor)

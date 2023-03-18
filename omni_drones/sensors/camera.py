@@ -1,4 +1,4 @@
-from typing import Optional, Union
+from typing import Optional, Union, Sequence
 
 import omni.isaac.core.utils.prims as prim_utils
 import omni.isaac.core.utils.stage as stage_utils
@@ -14,7 +14,6 @@ from tensordict import TensorDict
 from omni_drones.utils.math import quaternion_to_euler
 from .config import FisheyeCameraCfg, PinholeCameraCfg
 
-
 class Camera:
     """
     Viewport camera used for visualization purpose.
@@ -22,11 +21,7 @@ class Camera:
 
     def __init__(
         self,
-        cfg: Union[PinholeCameraCfg, FisheyeCameraCfg] = None,
-        parent_prim_path: str = "/World",
-        translation=None,
-        orientation=None,
-        target=None,
+        cfg: Union[PinholeCameraCfg, FisheyeCameraCfg] = None
     ) -> None:
         if cfg is None:
             cfg = PinholeCameraCfg(
@@ -43,39 +38,60 @@ class Camera:
         self.cfg = cfg
         self.resolution = cfg.resolution
         self.shape = (self.resolution[1], self.resolution[0])
-        prim_path = stage_utils.get_next_free_path(f"{parent_prim_path}/Camera")
-        self.prim = UsdGeom.Camera(prim_utils.define_prim(prim_path, "Camera"))
-        self.prim_path = prim_utils.get_prim_path(self.prim)
-        self._define_usd_camera_attributes()
-        self.xform = XFormPrim(self.prim_path, translation=translation)
-        self.xform.initialize()
-        self.set_local_pose(translation, orientation, target)
-
         self.device = SimulationContext.instance().device
+        self.prim_paths = []
+        self.n = 0
+
         if isinstance(self.device, str) and "cuda" in self.device:
             self.device = self.device.split(":")[0]
+        self.annotators = []
+        self.render_products = []
 
-        self.render_product = rep.create.render_product(
-            self.prim_path, resolution=self.resolution
+    def spawn(
+        self, 
+        prim_paths: Sequence[str],
+        translations=None,
+    ):
+        n = len(prim_paths)
+        if translations is None:
+            translations = [(0, 0, 2) for _ in range(n)]
+
+        if not len(translations) == len(prim_paths):
+            raise ValueError
+        
+        render_products = rep.create.render_product(
+            prim_paths, resolution=self.resolution
         )
-        self.annotators = {}
-        for annotator_type in cfg.data_types:
-            annotator = rep.AnnotatorRegistry.get_annotator(
-                name=annotator_type, device=self.device
+        for prim_path, translation, render_product in zip(prim_paths, translations, render_products):
+            if prim_utils.is_prim_path_valid(prim_path):
+                raise RuntimeError(f"Duplicate prim at {prim_path}.")
+            prim = prim_utils.create_prim(
+                prim_path,
+                prim_type="Camera",
+                translation=translation,
             )
-            annotator.attach([self.render_product])
-            self.annotators[annotator_type] = annotator
-        SimulationContext.instance().render()
+            self._define_usd_camera_attributes(prim_path)
+            annotators = {}
+            for annotator_type in self.cfg.data_types:
+                annotator = rep.AnnotatorRegistry.get_annotator(
+                    name=annotator_type, device=self.device
+                )
+                annotator.attach([render_product])
+                annotators[annotator_type] = annotator
 
-    def __call__(self) -> TensorDict:
-        tensordict = TensorDict(
-            {
-                k: wp.to_torch(v.get_data(device=self.device))
-                for k, v in self.annotators.items()
-            },
-            self.shape,
-        )
-        return tensordict
+            self.annotators.append(annotators)
+            self.prim_paths.append(prim_path)
+        self.n += n
+
+    def initialize(self):
+        # SimulationContext.instance().render()
+        pass
+        
+    def get_images(self) -> TensorDict:
+        return torch.stack([TensorDict({
+            k: wp.to_torch(v.get_data(device=self.device))
+            for k, v in annotators.items()
+        }, self.shape) for annotators in self.annotators])
 
     def set_local_pose(self, translation, orientation=None, target=None):
         if target is not None:
@@ -92,7 +108,7 @@ class Camera:
 
         self.xform.set_local_pose(translation, orientation)
 
-    def _define_usd_camera_attributes(self):
+    def _define_usd_camera_attributes(self, prim_path):
         """Creates and sets USD camera attributes.
 
         This function creates additional attributes on the camera prim used by Replicator.
@@ -114,7 +130,7 @@ class Camera:
             "fthetaPolyE": "float",
         }
         # get camera prim
-        prim = prim_utils.get_prim_at_path(self.prim_path)
+        prim = prim_utils.get_prim_at_path(prim_path)
         # create attributes
         for attr_name, attr_type in attribute_types.items():
             # check if attribute does not exist

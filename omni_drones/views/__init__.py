@@ -4,6 +4,20 @@ from contextlib import contextmanager
 
 from omni.isaac.core.articulations import ArticulationView as _ArticulationView
 from omni.isaac.core.prims import RigidPrimView as _RigidPrimView
+from omni.isaac.core.simulation_context import SimulationContext
+import omni
+import functools
+
+
+def require_sim_initialized(func):
+
+    @functools.wraps(func)
+    def _func(*args, **kwargs):
+        if SimulationContext.instance()._physics_sim_view is None:
+            raise RuntimeError("SimulationContext not initialzed.")
+        return func(*args, **kwargs)
+    
+    return _func
 
 
 class ArticulationView(_ArticulationView):
@@ -32,6 +46,10 @@ class ArticulationView(_ArticulationView):
             reset_xform_properties,
             enable_dof_force_sensors,
         )
+    
+    @require_sim_initialized
+    def initialize(self, physics_sim_view: omni.physics.tensors.SimulationView = None) -> None:
+        return super().initialize(physics_sim_view)
 
     def get_world_poses(
         self, env_indices: Optional[torch.Tensor] = None, clone: bool = True
@@ -176,6 +194,10 @@ class RigidPrimView(_RigidPrimView):
             disable_stablization,
             contact_filter_prim_paths_expr,
         )
+
+    @require_sim_initialized
+    def initialize(self, physics_sim_view: omni.physics.tensors.SimulationView = None) -> None:
+        return super().initialize(physics_sim_view)
 
     def get_world_poses(
         self, env_indices: Optional[torch.Tensor] = None, clone: bool = True

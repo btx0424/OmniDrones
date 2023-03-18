@@ -34,10 +34,10 @@ def main(cfg):
     for i, model in enumerate(
         [
             # "Crazyflie",
-            # "Firefly",
-            # "Hummingbird",
+            "Firefly",
+            "Hummingbird",
             # "Neo11",
-            "Omav"
+            # "Omav"
         ]
     ):
         drones[model] = MultirotorBase.REGISTRY[model]()
@@ -60,7 +60,7 @@ def main(cfg):
             sim.step(render=not cfg.headless)
             continue
         for drone in drones.values():
-            actions = drone.action_spec.zero((drone._count,))
+            actions = drone.action_spec.zero((drone.n,))
             actions.fill_(0.0)
             drone.apply_action(actions)
         sim.step()

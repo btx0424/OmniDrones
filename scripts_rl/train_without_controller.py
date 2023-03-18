@@ -65,7 +65,7 @@ def main(cfg):
         return_same_td=True,
     )
 
-    camera = Camera(**env.DEFAULT_CAMERA_CONFIG)
+    # camera = Camera(**env.DEFAULT_CAMERA_CONFIG)
 
     @torch.no_grad()
     def evaluate():

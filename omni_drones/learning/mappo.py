@@ -139,7 +139,9 @@ class MAPPOPolicy(object):
                     f"{self.agent_spec.name}.critic_rnn_state", "is_init"
                 ])
                 self.critic_out_keys.append(f"{self.agent_spec.name}.critic_rnn_state")
-            critic = make_critic(cfg, self.agent_spec.state_spec, self.agent_spec.reward_spec)
+            reward_spec = self.agent_spec.reward_spec
+            reward_spec = reward_spec.expand(self.agent_spec.n, *reward_spec.shape)
+            critic = make_critic(cfg, self.agent_spec.state_spec, reward_spec)
             self.critic = TensorDictModule(
                 critic,
                 in_keys=self.critic_in_keys,
@@ -194,7 +196,10 @@ class MAPPOPolicy(object):
             critic_input["is_init"] = expand_right(
             critic_input["is_init"], (*critic_input.batch_size, self.agent_spec.n)
         )
-        critic_input.batch_size = [*critic_input.batch_size, self.agent_spec.n]
+        if self.cfg.critic_input == "obs":
+            critic_input.batch_size = [*critic_input.batch_size, self.agent_spec.n]
+        elif "is_init" in critic_input.keys() and critic_input["is_init"].shape[-1] != 1:
+            critic_input["is_init"] = critic_input["is_init"].all(-1, keepdim=True)
         tensordict = self.value_func(critic_input)
         return tensordict
 
@@ -216,6 +221,10 @@ class MAPPOPolicy(object):
     def update_actor(self, batch: TensorDict) -> Dict[str, Any]:
         advantages = batch["advantages"]
         actor_input = batch.select(*self.actor_in_keys)
+        if "is_init" in actor_input.keys():
+            actor_input["is_init"] = expand_right(
+            actor_input["is_init"], (*actor_input.batch_size, self.agent_spec.n)
+        )
         actor_input.batch_size = [*actor_input.batch_size, self.agent_spec.n]
 
         log_probs_old = batch[self.act_logps_name]

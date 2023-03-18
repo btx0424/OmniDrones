@@ -149,16 +149,17 @@ class Platform(IsaacEnv):
         reward = torch.zeros(self.num_envs, 4, 1, device=self.device)
         reward_pos = 1 / (1 + torch.square(distance))
         reward_rot = 1 / (1 + torch.square(angvel).sum(-1, keepdim=True))
+        reward_up = torch_utils.quat_axis(frame_rot, 2)[:, 2].unsqueeze(1)
 
-        reward[:] = (reward_pos + reward_pos * reward_rot).unsqueeze(1)
+        reward[:] = (reward_pos + reward_pos * (reward_rot + reward_up)).unsqueeze(1)
 
         self._tensordict["return"] += reward
 
-        misbehave = (frame_pos[..., 2] < 0.1).unsqueeze(-1) | (distance > 5.0)
+        misbehave = (frame_pos[..., 2] < 0.2).unsqueeze(-1) | (distance > 5.0)
 
         done = (self.progress_buf >= self.max_eposode_length).unsqueeze(-1) | (
             misbehave & (self.progress_buf >= self.min_episode_length).unsqueeze(-1)
-        )
+        ).all(-1, keepdim=True)
 
         return TensorDict(
             {

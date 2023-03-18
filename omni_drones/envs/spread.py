@@ -31,13 +31,17 @@ class Spread(IsaacEnv):
         observation_spec = UnboundedContinuousTensorSpec(
             drone_state_dim - 3 + self.drone.n * 6
         )
-        
+        state_spec = UnboundedContinuousTensorSpec(
+            observation_spec.shape[0] * self.drone.n
+        )
+
         self.agent_spec["drone"] = AgentSpec(
             "drone",
             self.drone.n,
             observation_spec.to(self.device),
             self.drone.action_spec.to(self.device),
             UnboundedContinuousTensorSpec(1).to(self.device),
+            state_spec=state_spec.to(self.device)
         )
         self.init_pos_scale = torch.tensor([4.0, 4.0, 2.0], device=self.device)
         self.init_pos_translation = torch.tensor([-2, -2, 1.5], device=self.device)

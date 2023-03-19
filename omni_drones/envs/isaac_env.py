@@ -185,7 +185,8 @@ class IsaacEnv(EnvBase):
             env_mask = torch.ones(self.num_envs, dtype=bool, device=self.device)
         env_ids = env_mask.nonzero().squeeze(-1)
         self._reset_idx(env_ids)
-        self.sim.step(render=False)
+        # self.sim.step(render=False)
+        self.sim._physics_sim_view.flush()
         self._tensordict.masked_fill_(env_mask, 0)
         return self._tensordict.update(self._compute_state_and_obs())
 

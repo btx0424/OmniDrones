@@ -30,7 +30,7 @@ def design_scene():
         "/World/Light/WhiteSphere",
         "SphereLight",
         translation=(-4.5, 3.5, 10.0),
-        attributes={"radius": 2.5, "intensity": 600.0, "color": (1.0, 1.0, 1.0)},
+        attributes={"radius": 2.5, "intensity": 1200.0, "color": (1.0, 1.0, 1.0)},
     )
 
 

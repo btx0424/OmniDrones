@@ -10,7 +10,7 @@ from omegaconf import OmegaConf
 
 from omni_drones import CONFIG_PATH, init_simulation_app
 from omni_drones.learning.collectors import SyncDataCollector
-from omni_drones.utils.envs.transforms import LogOnEpisode, SubPolicy
+from omni_drones.utils.envs.transforms import LogOnEpisode
 from omni_drones.utils.wandb import init_wandb
 from omni_drones.utils.math import quaternion_to_euler
 
@@ -101,32 +101,6 @@ def main(cfg):
         device=cfg.sim.device,
         return_same_td=True,
     )
-
-    camera = Camera(**env.DEFAULT_CAMERA_CONFIG)
-
-    @torch.no_grad()
-    def evaluate():
-        info = {"env_frames": collector._frames}
-        frames = []
-
-        def record_frame(*args, **kwargs):
-            env.sim.render()
-            frame = camera()["rgb"].cpu()
-            frames.append(frame)
-
-        env.enable_render = True
-        env.rollout(
-            max_steps=500,
-            policy=policy,
-            callback=record_frame,
-            auto_reset=True,
-        )
-        env.enable_render = not cfg.headless
-
-        info["recording"] = wandb.Video(
-            torch.stack(frames).permute(0, 3, 1, 2), fps=1 / cfg.sim.dt, format="mp4"
-        )
-        return info
 
     pbar = tqdm(collector)
     for i, data in enumerate(pbar):

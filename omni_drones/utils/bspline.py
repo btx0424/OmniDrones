@@ -98,10 +98,12 @@ def _splev_torch_impl(x: torch.Tensor, t: torch.Tensor, c: torch.Tensor, k: int)
     
 def init_traj(
     start_pos: torch.Tensor, 
-    start_linvel: torch.Tensor, 
     end_pos: torch.Tensor, 
-    end_linvel: Optional[torch.Tensor]=None,
-    n_ctps: int=3,
+    start_vel: Optional[torch.Tensor]=None, 
+    start_acc: Optional[torch.Tensor]=None,
+    end_vel: Optional[torch.Tensor]=None,
+    env_acc: Optional[torch.Tensor]=None,
+    n_ctps: int=10,
     k: int=3,
 ):
     """
@@ -113,23 +115,40 @@ def init_traj(
     n_ctps: number of control points
     k: degree of b-spline
     """
-    device = start_pos.device
-    if end_linvel is None:
-        end_linvel = torch.zeros_like(start_linvel)
+    assert n_ctps >= 6
 
+    device = start_pos.device
+    if start_vel is None:
+        start_vel = torch.zeros_like(start_pos)
+    if start_acc is None:
+        start_acc = torch.zeros_like(start_pos)
+    if end_vel is None:
+        end_vel = torch.zeros_like(start_vel)
+    if env_acc is None:
+        env_acc = torch.zeros_like(start_acc)
+    
+    assert start_pos.shape == end_pos.shape
+    
     ctps_0 = start_pos
-    ctps_1 = start_pos + start_linvel / k
+    ctps_1 = start_pos + start_vel / k
+    ctps_2 = start_pos + start_vel + start_acc / k
+
     ctps_n = end_pos
+    ctps_n_1 = end_pos - end_vel / k
+    ctps_n_2 = end_pos - end_vel - env_acc / k
+
     ctps_inter = (
-        ctps_1.unsqueeze(-2) 
-        + ((end_pos - end_linvel / k) - ctps_1).unsqueeze(-2) 
-        * torch.linspace(0, 1, n_ctps-2, device=device).unsqueeze(-1)
+        ctps_2.unsqueeze(-2) 
+        + (ctps_n_2 - ctps_2).unsqueeze(-2) 
+        * torch.linspace(0, 1, n_ctps-4, device=device).unsqueeze(-1)
     )
-    ctps = torch.stack([
-        ctps_0,
-        *ctps_inter,
-        ctps_n
-    ])
+    ctps = torch.cat([
+        ctps_0.unsqueeze(-2),
+        ctps_1.unsqueeze(-2),
+        ctps_inter,
+        ctps_n_1.unsqueeze(-2),
+        ctps_n.unsqueeze(-2),
+    ], dim=-2)
     knots = torch.cat([
         torch.zeros(k, device=device), 
         torch.arange(n_ctps+1-k, device=device), 
@@ -140,8 +159,8 @@ def init_traj(
 def get_ctps(
     c: torch.Tensor, 
     x: torch.Tensor, 
-    start:int=2,
-    end:int=-1,
+    start:int=3,
+    end:int=-3,
 ):
     """
     reshape the decision var x and plug it into the control points at start:end
@@ -158,3 +177,11 @@ def get_ctps(
     c_end = c[end:]
     c = torch.cat([c_start, x, c_end])
     return c
+
+def get_knots(n_ctps: int, k: int, device="cpu"):
+    knots = torch.cat([
+        torch.zeros(k, device=device), 
+        torch.arange(n_ctps+1-k, device=device), 
+        torch.full((k,), n_ctps-k, device=device),
+    ])
+    return knots

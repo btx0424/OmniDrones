@@ -17,7 +17,7 @@ from omni_drones.utils.math import quaternion_to_euler
 from setproctitle import setproctitle
 from tensordict import TensorDict
 from torchrl.data import UnboundedContinuousTensorSpec
-from torchrl.envs.transforms import TransformedEnv, InitTracker
+from torchrl.envs.transforms import TransformedEnv, InitTracker, Compose
 
 from tqdm import tqdm
 
@@ -45,7 +45,7 @@ def main(cfg):
 
     def log(info):
         for k, v in info.items():
-            print(f"train/{k}: {v}")
+            print(f"{k}: {v}")
         run.log(info)
 
     logger = LogOnEpisode(
@@ -55,41 +55,41 @@ def main(cfg):
         logger_func=log,
     )
 
-    env = TransformedEnv(env, InitTracker())
+    env = TransformedEnv(env, Compose(InitTracker(), logger)) 
     collector = SyncDataCollector(
         env,
-        policy,
-        callback=logger,
+        policy=policy,
         frames_per_batch=env.num_envs * cfg.algo.train_every,
+        total_frames=-1,
         device=cfg.sim.device,
         return_same_td=True,
     )
 
     # camera = Camera(**env.DEFAULT_CAMERA_CONFIG)
 
-    @torch.no_grad()
-    def evaluate():
-        info = {"env_frames": collector._frames}
-        frames = []
+    # @torch.no_grad()
+    # def evaluate():
+    #     info = {"env_frames": collector._frames}
+    #     frames = []
 
-        def record_frame(*args, **kwargs):
-            env.sim.render()
-            frame = camera()["rgb"].cpu()
-            frames.append(frame)
+    #     def record_frame(*args, **kwargs):
+    #         env.sim.render()
+    #         frame = camera()["rgb"].cpu()
+    #         frames.append(frame)
 
-        env.enable_render = True
-        env.rollout(
-            max_steps=500,
-            policy=policy,
-            callback=record_frame,
-            auto_reset=True,
-        )
-        env.enable_render = not cfg.headless
+    #     env.enable_render = True
+    #     env.rollout(
+    #         max_steps=500,
+    #         policy=policy,
+    #         callback=record_frame,
+    #         auto_reset=True,
+    #     )
+    #     env.enable_render = not cfg.headless
 
-        info["recording"] = wandb.Video(
-            torch.stack(frames).permute(0, 3, 1, 2), fps=1 / cfg.sim.dt, format="mp4"
-        )
-        return info
+    #     info["recording"] = wandb.Video(
+    #         torch.stack(frames).permute(0, 3, 1, 2), fps=1 / cfg.sim.dt, format="mp4"
+    #     )
+    #     return info
 
     pbar = tqdm(collector)
     for i, data in enumerate(pbar):
@@ -106,7 +106,6 @@ def main(cfg):
         pbar.set_postfix({
             "rollout_fps": collector._fps,
             "frames": collector._frames,
-            "episodes": collector._episodes,
         })
 
     simulation_app.close()

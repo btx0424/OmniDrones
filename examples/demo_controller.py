@@ -23,7 +23,6 @@ def main(cfg):
     from omni_drones.robots import RobotCfg
     from omni_drones.robots.drone import Crazyflie, Firefly, Hummingbird, MultirotorBase
     from omni_drones.sensors.camera import Camera, PinholeCameraCfg
-    from omni_drones.sensors._camera import Camera as OldCam
 
     sim = SimulationContext(
         stage_units_in_meters=1.0,

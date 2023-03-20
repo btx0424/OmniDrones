@@ -39,7 +39,6 @@ class Camera:
         self.resolution = cfg.resolution
         self.shape = (self.resolution[1], self.resolution[0])
         self.device = SimulationContext.instance().device
-        self.prim_paths = []
         self.n = 0
 
         if isinstance(self.device, str) and "cuda" in self.device:
@@ -51,26 +50,31 @@ class Camera:
         self, 
         prim_paths: Sequence[str],
         translations=None,
+        targets=None,
     ):
         n = len(prim_paths)
         if translations is None:
-            translations = [(0, 0, 2) for _ in range(n)]
+            translations = [(-1, 0, 1) for _ in range(n)]
+        if targets is None:
+            targets = [(1, 0, 0) for _ in range(n)]
 
-        if not len(translations) == len(prim_paths):
+        if not len(translations) == len(prim_paths) == len(targets):
             raise ValueError
         
-        render_products = rep.create.render_product(
-            prim_paths, resolution=self.resolution
-        )
-        for prim_path, translation, render_product in zip(prim_paths, translations, render_products):
+        for prim_path, translation, target in zip(prim_paths, translations, targets):
             if prim_utils.is_prim_path_valid(prim_path):
                 raise RuntimeError(f"Duplicate prim at {prim_path}.")
             prim = prim_utils.create_prim(
                 prim_path,
                 prim_type="Camera",
                 translation=translation,
+                orientation=orientation_from_view(translation, target)
             )
             self._define_usd_camera_attributes(prim_path)
+
+            render_product = rep.create.render_product(
+                prim_path, resolution=self.resolution
+            )
             annotators = {}
             for annotator_type in self.cfg.data_types:
                 annotator = rep.AnnotatorRegistry.get_annotator(
@@ -80,7 +84,7 @@ class Camera:
                 annotators[annotator_type] = annotator
 
             self.annotators.append(annotators)
-            self.prim_paths.append(prim_path)
+
         self.n += n
 
     def initialize(self):
@@ -92,21 +96,6 @@ class Camera:
             k: wp.to_torch(v.get_data(device=self.device))
             for k, v in annotators.items()
         }, self.shape) for annotators in self.annotators])
-
-    def set_local_pose(self, translation, orientation=None, target=None):
-        if target is not None:
-            if orientation is not None:
-                raise ValueError
-            eye_position = Gf.Vec3d(translation)
-            target_position = Gf.Vec3d(target)
-            up_axis = Gf.Vec3d(0, 0, 1)
-            matrix_gf = Gf.Matrix4d(1).SetLookAt(eye_position, target_position, up_axis)
-            matrix_gf = matrix_gf.GetInverse()
-            quat = matrix_gf.ExtractRotationQuat()
-            orientation = [quat.real, *quat.imaginary]
-            # orientation = orientation_from_view(target, translation)
-
-        self.xform.set_local_pose(translation, orientation)
 
     def _define_usd_camera_attributes(self, prim_path):
         """Creates and sets USD camera attributes.
@@ -155,10 +144,19 @@ class Camera:
             prim.GetAttribute(param).Set(param_value)
 
 
-def orientation_from_view(camera, target):
-    quat = lookat_to_quatf(Gf.Vec3f(camera), Gf.Vec3f(target), Gf.Vec3f(0.0, 0.0, 1.0))
-    return [quat.real, *quat.imaginary]
+# def orientation_from_view(camera, target):
+#     quat = lookat_to_quatf(Gf.Vec3f(camera), Gf.Vec3f(target), Gf.Vec3f(0.0, 0.0, 1.0))
+#     return [quat.real, *quat.imaginary]
 
+def orientation_from_view(camera, target):
+    camera_position = Gf.Vec3d(camera)
+    target_position = Gf.Vec3d(target)
+    up_axis = Gf.Vec3d(0, 0, 1)
+    matrix_gf = Gf.Matrix4d(1).SetLookAt(camera_position, target_position, up_axis)
+    matrix_gf = matrix_gf.GetInverse()
+    quat = matrix_gf.ExtractRotationQuat()
+    orientation = (quat.real, *quat.imaginary)
+    return orientation
 
 import math
 

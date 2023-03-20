@@ -76,6 +76,7 @@ class IsaacEnv(EnvBase):
             # physics_prim_path="/physicsScene",
             device="cuda:0",
         )
+        self.dt = self.sim.get_physics_dt()
         # set flags for simulator
         self._configure_simulation_flags(sim_params)
         # add flag for checking closing status

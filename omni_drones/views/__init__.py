@@ -4,6 +4,7 @@ from contextlib import contextmanager
 
 from omni.isaac.core.articulations import ArticulationView as _ArticulationView
 from omni.isaac.core.prims import RigidPrimView as _RigidPrimView
+from omni.isaac.core.prims import XFormPrimView
 from omni.isaac.core.simulation_context import SimulationContext
 import omni
 import functools

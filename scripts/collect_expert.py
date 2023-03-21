@@ -34,13 +34,12 @@ def main(cfg):
     OmegaConf.resolve(cfg)
     OmegaConf.set_struct(cfg, False)
     simulation_app = init_simulation_app(cfg)
-    run = init_wandb(cfg)
-    setproctitle(run.name)
-    print(OmegaConf.to_yaml(cfg))
+    # run = init_wandb(cfg)
+    # setproctitle(run.name)
+    # print(OmegaConf.to_yaml(cfg))
 
     from omni_drones.envs import Forest
-    from omni_drones.learning.mappo import MAPPOPolicy
-    from omni_drones.sensors.camera import Camera
+    from omni_drones.sensors.camera import Camera, PinholeCameraCfg
     from omni_drones.utils.bspline import splev_torch, init_traj, get_ctps
 
     from omni.isaac.debug_draw import _debug_draw
@@ -52,6 +51,25 @@ def main(cfg):
     controller = base_env.drone.DEFAULT_CONTROLLER(
         base_env.drone.dt, 9.81, base_env.drone.params
     ).to(base_env.device)
+
+    camera_cfg = PinholeCameraCfg(
+        sensor_tick=0,
+        resolution=(320, 240),
+        data_types=["rgb", "distance_to_camera"],
+        usd_params=PinholeCameraCfg.UsdCameraCfg(
+            focal_length=24.0,
+            focus_distance=400.0,
+            horizontal_aperture=20.955,
+            clipping_range=(0.3, 1.0e5),
+        ),
+    )
+    camera = Camera(camera_cfg)
+    camera.spawn(
+        [f"/World/envs/env_0/Firefly_{i}/base_link/Camera" for i in range(base_env.drone.n)],
+        targets=[(1., 0., 0.1)]
+    )
+    camera.initialize("/World/envs/.*/Firefly_*/base_link/Camera")
+    env = TransformedEnv(base_env, InitTracker())
 
     n = 12
     k = 4
@@ -99,9 +117,12 @@ def main(cfg):
         colors = [(1.0, 1.0, 1.0, 1.0) for _ in range(len(point_list_0))]
         sizes = [1 for _ in range(len(point_list_0))]
 
+        draw.clear_lines()
         draw.draw_lines(point_list_0.tolist(), point_list_1.tolist(), colors, sizes)
 
         return ctps.unsqueeze(1), knots.unsqueeze(1)
+
+    frames = []
 
     def policy(tensordict: TensorDict):
         if "ctps" not in tensordict.keys():
@@ -119,8 +140,8 @@ def main(cfg):
         ctps = tensordict["ctps"].squeeze(1)
 
         drone_state = tensordict.get("drone.obs")[..., :13].squeeze(1)
+        # compute control target by evaluating the spline
         controller_target_pos = vmap(splev_torch)(t, knots, ctps, k=k).squeeze(1)
-        print(controller_target_pos[0])
         controller_target_vel = vmap(splev_torch)(t, knots, ctps, k=k, der=1).squeeze(1)
         controller_target_yaw = torch.atan2(controller_target_vel[..., 1], controller_target_vel[..., 0]).unsqueeze(-1)
         controller_target_yaw.zero_()
@@ -129,26 +150,16 @@ def main(cfg):
         cmds, controller_state = vmap(controller)(drone_state, controller_target, controller_state)
         tensordict["drone.action"] = cmds.unsqueeze(1)
         tensordict["controller_state"] = controller_state
+
+        frames.append(camera.get_images().cpu())
         return tensordict
 
-    def log(info):
-        for k, v in info.items():
-            print(f"train/{k}: {v}")
-        run.log(info)
-
-    logger = LogOnEpisode(
-        cfg.env.num_envs,
-        in_keys=["return", "progress"],
-        log_keys=["train/return", "train/ep_length"],
-        logger_func=log,
-    )
-
-    env = TransformedEnv(base_env, InitTracker())
+    base_env.enable_render(True)
     collector = SyncDataCollector(
         env,
         policy=policy,
-        frames_per_batch=env.num_envs * cfg.env.max_episode_length,
-        total_frames=-1,
+        frames_per_batch=base_env.num_envs * base_env.max_episode_length,
+        total_frames=base_env.num_envs * base_env.max_episode_length * 2,
         device=cfg.sim.device,
         return_same_td=True,
     )
@@ -163,6 +174,16 @@ def main(cfg):
                 "frames": collector._frames,
             }
         )
+    
+    from torchvision.io import write_video
+
+    for k, v in torch.stack(frames).cpu().items():
+        for i, vv in enumerate(v.unbind(1)):
+            if vv.shape[-1] == 4:
+                write_video(f"{k}_{i}.mp4", vv[..., :3], fps=50)
+            elif vv.shape[-1] == 1:
+                vv = -torch.nan_to_num(vv, 0).expand(*vv.shape[:-1], 3)
+                write_video(f"{k}_{i}.mp4", vv[..., :3], fps=50)
 
     simulation_app.close()
 

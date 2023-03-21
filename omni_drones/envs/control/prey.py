@@ -153,7 +153,7 @@ class Prey(IsaacEnv):
         catch_reward = (target_dist < 0.2) * 1.0
         reward = catch_reward - target_dist
         self._tensordict["drone.return"] += reward.unsqueeze(-1)
-        done = (self.progress_buf >= self.max_eposode_length).unsqueeze(-1) | (
+        done = (self.progress_buf >= self.max_episode_length).unsqueeze(-1) | (
             catch_reward > 0
         )
         # done should be integrated

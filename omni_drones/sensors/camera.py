@@ -38,13 +38,14 @@ class Camera:
         self.cfg = cfg
         self.resolution = cfg.resolution
         self.shape = (self.resolution[1], self.resolution[0])
-        self.device = SimulationContext.instance().device
+        self.sim = SimulationContext.instance()
+        self.device = self.sim.device
+
         self.n = 0
 
         if isinstance(self.device, str) and "cuda" in self.device:
             self.device = self.device.split(":")[0]
         self.annotators = []
-        self.render_products = []
 
     def spawn(
         self, 
@@ -53,10 +54,14 @@ class Camera:
         targets=None,
     ):
         n = len(prim_paths)
+
         if translations is None:
-            translations = [(-1, 0, 1) for _ in range(n)]
+            translations = [(0, 0, 0) for _ in range(n)]
+        translations = torch.atleast_2d(torch.as_tensor(translations)).expand(n, 3).tolist()
+
         if targets is None:
             targets = [(1, 0, 0) for _ in range(n)]
+        targets = torch.atleast_2d(torch.as_tensor(targets)).expand(n, 3).tolist()
 
         if not len(translations) == len(prim_paths) == len(targets):
             raise ValueError
@@ -72,6 +77,18 @@ class Camera:
             )
             self._define_usd_camera_attributes(prim_path)
 
+        self.n += n
+
+    def initialize(
+        self, 
+        prim_paths_expr: str = None,
+    ):
+        if prim_paths_expr is None:
+            prim_paths_expr = f"/World/envs/.*/Camera_.*"
+
+        prim_paths = prim_utils.find_matching_prim_paths(prim_paths_expr)
+        
+        for prim_path in prim_paths:
             render_product = rep.create.render_product(
                 prim_path, resolution=self.resolution
             )
@@ -84,12 +101,11 @@ class Camera:
                 annotators[annotator_type] = annotator
 
             self.annotators.append(annotators)
-
-        self.n += n
-
-    def initialize(self):
-        # SimulationContext.instance().render()
-        pass
+        
+        self.count = len(prim_paths)
+    
+        for _ in range(2):
+            self.sim.render()
         
     def get_images(self) -> TensorDict:
         return torch.stack([TensorDict({
@@ -144,10 +160,6 @@ class Camera:
             prim.GetAttribute(param).Set(param_value)
 
 
-# def orientation_from_view(camera, target):
-#     quat = lookat_to_quatf(Gf.Vec3f(camera), Gf.Vec3f(target), Gf.Vec3f(0.0, 0.0, 1.0))
-#     return [quat.real, *quat.imaginary]
-
 def orientation_from_view(camera, target):
     camera_position = Gf.Vec3d(camera)
     target_position = Gf.Vec3d(target)
@@ -157,52 +169,6 @@ def orientation_from_view(camera, target):
     quat = matrix_gf.ExtractRotationQuat()
     orientation = (quat.real, *quat.imaginary)
     return orientation
-
-import math
-
-
-def lookat_to_quatf(camera: Gf.Vec3f, target: Gf.Vec3f, up: Gf.Vec3f) -> Gf.Quatf:
-    """[summary]
-
-    Args:
-        camera (Gf.Vec3f): [description]
-        target (Gf.Vec3f): [description]
-        up (Gf.Vec3f): [description]
-
-    Returns:
-        Gf.Quatf: Pxr quaternion object.
-    """
-    F = (target - camera).GetNormalized()
-    R = Gf.Cross(up, F).GetNormalized()
-    U = Gf.Cross(F, R)
-
-    q = Gf.Quatf()
-    trace = R[0] + U[1] + F[2]
-    if trace > 0.0:
-        s = 0.5 / math.sqrt(trace + 1.0)
-        q = Gf.Quatf(
-            0.25 / s, Gf.Vec3f((U[2] - F[1]) * s, (F[0] - R[2]) * s, (R[1] - U[0]) * s)
-        )
-    else:
-        if R[0] > U[1] and R[0] > F[2]:
-            s = 2.0 * math.sqrt(1.0 + R[0] - U[1] - F[2])
-            q = Gf.Quatf(
-                (U[2] - F[1]) / s,
-                Gf.Vec3f(0.25 * s, (U[0] + R[1]) / s, (F[0] + R[2]) / s),
-            )
-        elif U[1] > F[2]:
-            s = 2.0 * math.sqrt(1.0 + U[1] - R[0] - F[2])
-            q = Gf.Quatf(
-                (F[0] - R[2]) / s,
-                Gf.Vec3f((U[0] + R[1]) / s, 0.25 * s, (F[1] + U[2]) / s),
-            )
-        else:
-            s = 2.0 * math.sqrt(1.0 + F[2] - R[0] - U[1])
-            q = Gf.Quatf(
-                (R[1] - U[0]) / s,
-                Gf.Vec3f((F[0] + R[2]) / s, (F[1] + U[2]) / s, 0.25 * s),
-            )
-    return q
 
 
 def to_camel_case(snake_str: str, to: Optional[str] = "cC") -> str:

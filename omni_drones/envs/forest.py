@@ -125,7 +125,7 @@ class Forest(IsaacEnv):
         self._tensordict["return"] += reward.unsqueeze(-1)
 
         done = (
-            (self.progress_buf >= self.max_eposode_length).unsqueeze(-1)
+            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
         )
         return TensorDict(
             {

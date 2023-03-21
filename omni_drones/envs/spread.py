@@ -133,7 +133,7 @@ class Spread(IsaacEnv):
 
         misbehave = (pos[..., 2] < 0.25)
         done = (
-            (self.progress_buf >= self.max_eposode_length).unsqueeze(-1)
+            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
             | misbehave 
         ).all(-1, keepdim=True)
 

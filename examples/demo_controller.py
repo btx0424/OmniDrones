@@ -45,7 +45,7 @@ def main(cfg):
 
     camera_cfg = PinholeCameraCfg(
         sensor_tick=0,
-        resolution=(640, 480),
+        resolution=(320, 240),
         data_types=["rgb", "distance_to_camera"],
         usd_params=PinholeCameraCfg.UsdCameraCfg(
             focal_length=24.0,
@@ -60,7 +60,7 @@ def main(cfg):
     )
 
     sim.reset()
-    # camera.initialize()
+    camera.initialize("/World/envs/env_0/Firefly_*/base_link/Camera")
     firefly.initialize()
 
     init_poses = firefly.get_world_poses(clone=True)

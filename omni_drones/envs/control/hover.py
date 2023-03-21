@@ -91,7 +91,7 @@ class Hover(IsaacEnv):
         reward = pos_reward + pos_reward * (up_reward + spin_reward)  # + effort_reward
         self._tensordict["return"] += reward.unsqueeze(-1)
         done = (
-            (self.progress_buf >= self.max_eposode_length).unsqueeze(-1)
+            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
             | (pos[..., 2] < 0.1)
             | (target_dist > 3)
         )

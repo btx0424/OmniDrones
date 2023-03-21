@@ -34,11 +34,15 @@ def main(cfg):
     from omni_drones.envs import IsaacEnv
     from omni_drones.learning.mappo import MAPPOPolicy
     from omni_drones.sensors.camera import Camera
+    import omni
 
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
-    env = env_class(cfg, headless=cfg.headless)
+    base_env = env_class(cfg, headless=cfg.headless)
+    camera = Camera()
+    camera.spawn(["/World/Camera"], translations=[(6, 6, 3)], targets=[(0, 0, 1)])
+    camera.initialize("/World/Camera")
 
-    agent_spec = env.agent_spec["drone"]
+    agent_spec = base_env.agent_spec["drone"]
     policy = MAPPOPolicy(
         cfg.algo, agent_spec=agent_spec, device="cuda"
     )
@@ -55,7 +59,7 @@ def main(cfg):
         logger_func=log,
     )
 
-    env = TransformedEnv(env, Compose(InitTracker(), logger)) 
+    env = TransformedEnv(base_env, Compose(InitTracker(), logger)) 
     collector = SyncDataCollector(
         env,
         policy=policy,
@@ -65,43 +69,40 @@ def main(cfg):
         return_same_td=True,
     )
 
-    # camera = Camera(**env.DEFAULT_CAMERA_CONFIG)
+    @torch.no_grad()
+    def evaluate():
+        info = {"env_frames": collector._frames}
+        frames = []
 
-    # @torch.no_grad()
-    # def evaluate():
-    #     info = {"env_frames": collector._frames}
-    #     frames = []
+        def record_frame(*args, **kwargs):
+            frame = camera.get_images()["rgb"][0]
+            frames.append(frame.cpu())
 
-    #     def record_frame(*args, **kwargs):
-    #         env.sim.render()
-    #         frame = camera()["rgb"].cpu()
-    #         frames.append(frame)
+        base_env.enable_render(True)
+        env.rollout(
+            max_steps=base_env.max_episode_length,
+            policy=policy,
+            callback=record_frame,
+            auto_reset=True,
+            break_when_any_done=False,
+        )
+        base_env.enable_render(not cfg.headless)
 
-    #     env.enable_render = True
-    #     env.rollout(
-    #         max_steps=500,
-    #         policy=policy,
-    #         callback=record_frame,
-    #         auto_reset=True,
-    #     )
-    #     env.enable_render = not cfg.headless
-
-    #     info["recording"] = wandb.Video(
-    #         torch.stack(frames).permute(0, 3, 1, 2), fps=1 / cfg.sim.dt, format="mp4"
-    #     )
-    #     return info
+        info["recording"] = wandb.Video(
+            torch.stack(frames).permute(0, 3, 1, 2), fps=1 / cfg.sim.dt, format="mp4"
+        )
+        return info
 
     pbar = tqdm(collector)
     for i, data in enumerate(pbar):
         info = {"env_frames": collector._frames}
         info.update(policy.train_op(data))
 
-        if i % 2 == 0:
-            run.log(info)
+        run.log(info)
 
-        # if i % 100 == 0:
-        #     logging.info(f"Eval at {collector._frames} steps.")
-        #     run.log(evaluate())
+        if i % 100 == 0:
+            logging.info(f"Eval at {collector._frames} steps.")
+            run.log(evaluate())
 
         pbar.set_postfix({
             "rollout_fps": collector._fps,

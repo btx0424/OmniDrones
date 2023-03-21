@@ -174,7 +174,7 @@ class Formation(IsaacEnv):
 
         self._tensordict["return"] += reward
 
-        terminated = (self.progress_buf >= self.max_eposode_length).unsqueeze(-1)
+        terminated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
         crash = (pos[..., 2] < 0.2).all(-1, keepdim=True)
 
         done = terminated | crash

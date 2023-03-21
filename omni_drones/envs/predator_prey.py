@@ -76,7 +76,7 @@ class Hover(IsaacEnv):
         spin_reward = 1.0 / (1.0 + torch.square(spin))
         reward = up_reward + spin_reward  # + effort_reward
         self._tensordict["drone.return"] += reward.unsqueeze(-1)
-        done = (self.progress_buf >= self.max_eposode_length).unsqueeze(-1) | (
+        done = (self.progress_buf >= self.max_episode_length).unsqueeze(-1) | (
             pos[..., 2] < 0.1
         )
         return TensorDict(

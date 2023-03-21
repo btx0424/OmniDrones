@@ -146,8 +146,8 @@ class RobotBase(abc.ABC):
         # set the default state
         self._view.post_reset()
         self.shape = torch.arange(self._view.count).reshape(-1, self.n).shape
-        self._physics_view = self._view._physics_view
-        self._physics_sim_view = self._view._physics_sim_view
+        
+        self.prim_paths = self._view.prim_paths
 
     @abc.abstractmethod
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:

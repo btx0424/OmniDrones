@@ -1,6 +1,6 @@
 import abc
 
-from typing import Dict, List, Optional, Tuple, Type
+from typing import Dict, List, Optional, Tuple, Type, Union, Callable
 
 import omni.replicator.core as rep
 
@@ -50,10 +50,10 @@ class IsaacEnv(EnvBase):
         )
         # store inputs to class
         self.cfg = cfg
-        self.enable_render = not headless
+        self.enable_render(not headless)
         # extract commonly used parameters
         self.num_envs = self.cfg.env.num_envs
-        self.max_eposode_length = self.cfg.env.max_episode_length
+        self.max_episode_length = self.cfg.env.max_episode_length
         self.min_episode_length = self.cfg.env.min_episode_length
         # check that simulation is running
         if stage_utils.get_current_stage() is None:
@@ -197,8 +197,8 @@ class IsaacEnv(EnvBase):
 
     def _step(self, tensordict: TensorDictBase) -> TensorDictBase:
         self._pre_sim_step(tensordict)
-        for _ in range(1):
-            self.sim.step(self.enable_render)
+        for substep in range(1):
+            self.sim.step(self._should_render(substep))
         self.progress_buf += 1
         tensordict = TensorDict({"next": {}}, self.batch_size)
         tensordict["next"].update(self._compute_state_and_obs())
@@ -261,7 +261,15 @@ class IsaacEnv(EnvBase):
             return pos + self.envs_positions.unsqueeze(1), rot
         else:
             return pos + self.envs_positions, rot
-
+    
+    def enable_render(self, enable: Union[bool, Callable]=True):
+        if isinstance(enable, bool):
+            self._should_render = lambda substep: enable
+        elif callable(enable):
+            self._should_render = enable
+        else:
+            raise TypeError("enable_render must be a bool or callable.")
+    
 
 from dataclasses import dataclass
 

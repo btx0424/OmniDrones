@@ -281,7 +281,7 @@ class AgentSpec:
     observation_spec: TensorSpec
     action_spec: TensorSpec
     reward_spec: TensorSpec
-    state_spec: TensorSpec = None
+    state_spec: Optional[TensorSpec] = None
 
 
 class _AgentSpecView(Dict[str, AgentSpec]):

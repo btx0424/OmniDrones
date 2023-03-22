@@ -57,7 +57,7 @@ class TransportationGroup(RobotBase):
             payload = prim_utils.create_prim(
                 prim_path=f"{prim_path}/payload",
                 prim_type="Cube",
-                translation=(0.0, 0.0, -1),
+                translation=(0.0, 0.0, -1.1),
                 scale=(0.5, 0.5, 0.2),
             )
             script_utils.setRigidBody(payload, "convexHull", False)

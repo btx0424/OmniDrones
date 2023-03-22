@@ -48,7 +48,7 @@ class MAPPOPolicy(object):
         self.act_dim = agent_spec.action_spec.shape.numel()
 
         if cfg.reward_weights is not None:
-            self.reward_weights = torch.as_tensor(cfg.reward_weights, device=device)
+            self.reward_weights = torch.as_tensor(cfg.reward_weights, device=device).float()
         else:
             self.reward_weights = torch.ones(
                 self.agent_spec.reward_spec.shape, device=device

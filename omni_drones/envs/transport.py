@@ -27,7 +27,7 @@ class Transport(IsaacEnv):
             reset_xform_properties=False
         )
         self.payload_target_visual.initialize()
-
+        
         self.init_poses = self.group.get_world_poses(clone=True)
         self.init_velocities = torch.zeros_like(self.group.get_velocities())
         self.init_joint_pos = self.group.get_joint_positions(clone=True)
@@ -40,12 +40,12 @@ class Transport(IsaacEnv):
         observation_spec = CompositeSpec({
             "self": UnboundedContinuousTensorSpec((1, drone_state_dim)).to(self.device),
             "others": UnboundedContinuousTensorSpec((self.drone.n-1, 4)).to(self.device),
-            "payload": UnboundedContinuousTensorSpec((1, 19)).to(self.device)
+            "payload": UnboundedContinuousTensorSpec((1, 28)).to(self.device)
         })
 
         state_spec = CompositeSpec(
             drones=UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim)).to(self.device),
-            payload=UnboundedContinuousTensorSpec((1, 16)).to(self.device)
+            payload=UnboundedContinuousTensorSpec((1, 25)).to(self.device)
         )
 
         self.agent_spec["drone"] = AgentSpec(
@@ -58,13 +58,15 @@ class Transport(IsaacEnv):
         )
 
         self.payload_target_pos = torch.zeros(self.num_envs, 3, device=self.device)
-        self.payload_target_heading = torch.zeros(self.num_envs, 3, device=self.device)
-        self.target_pos_scale = torch.tensor([4., 4., 2.], device=self.device)
-        self.target_pos_translation = torch.tensor([-2., -2., .5], device=self.device)
+        self.payload_target_axis = torch.zeros(self.num_envs, 3, 3, device=self.device)
+
+        self.target_pos_scale = torch.tensor([4., 4., 1.], device=self.device)
+        self.target_pos_translation = torch.tensor([-2., -2., .1], device=self.device)
 
     def _design_scene(self):
         cfg = RobotCfg()
-        self.drone: MultirotorBase = MultirotorBase.REGISTRY["Firefly"](cfg=cfg)
+        drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
+        self.drone: MultirotorBase = drone_model(cfg=cfg)
         self.group = TransportationGroup(drone=self.drone)
 
         scene_utils.design_scene()
@@ -113,9 +115,8 @@ class Transport(IsaacEnv):
         )
 
         self.payload_target_pos[env_ids] = payload_target_pos
-        self.payload_target_heading[env_ids] = torch_utils.quat_axis(
-            payload_target_rot, axis=0
-        )
+        target_axis = functorch.vmap(get_axis)(payload_target_rot, payload_target_pos)
+        self.payload_target_axis[env_ids] = target_axis
 
         payload_target_pose = (payload_target_pos + self.envs_positions[env_ids], payload_target_rot)
         self.payload_target_visual.set_world_poses(*payload_target_pose, env_ids)
@@ -125,8 +126,8 @@ class Transport(IsaacEnv):
         self.effort = self.drone.apply_action(actions)
 
     def _compute_state_and_obs(self):
-        drone_states = self.drone.get_state()
-        drone_pos, drone_rot, drone_vels = drone_states[..., :13].split([3, 4, 6], dim=-1)
+        self.drone_states = self.drone.get_state()
+        drone_pos, drone_rot, drone_vel = self.drone_states[..., :13].split([3, 4, 6], dim=-1)
         self.payload_pos, self.payload_rot = self.get_env_poses(self.payload.get_world_poses())
         payload_vels = self.payload.get_velocities()
 
@@ -136,13 +137,16 @@ class Transport(IsaacEnv):
 
         payload_relative_pos_drone = self.payload_pos.unsqueeze(1) - drone_pos
         payload_relative_pos_target = self.payload_target_pos - self.payload_pos
+        self.payload_axis = functorch.vmap(get_axis)(self.payload_rot, self.payload_pos)
+        payload_relative_axis_target = (self.payload_target_axis - self.payload_axis).reshape(self.num_envs, 9)
 
         self.payload_heading: torch.Tensor = torch_utils.quat_axis(self.payload_rot, axis=0)
-        self.payload_up: torch.Tensor = torch_utils.quat_axis(self.payload_rot, axis=1)
+        self.payload_up: torch.Tensor = torch_utils.quat_axis(self.payload_rot, axis=2)
 
         payload_state = torch.cat(
             [
                 payload_relative_pos_target,  # 3
+                payload_relative_axis_target,  # 9
                 self.payload_rot,  # 4
                 payload_vels,  # 6
                 self.payload_heading,  # 3
@@ -152,7 +156,7 @@ class Transport(IsaacEnv):
 
         obs = TensorDict(
             {
-                "self": drone_states.unsqueeze(2),  # [num_envs, drone.n, 1, *]
+                "self": self.drone_states.unsqueeze(2),  # [num_envs, drone.n, 1, *]
                 "others": torch.cat(
                     [
                         drone_relative_pos,
@@ -166,45 +170,44 @@ class Transport(IsaacEnv):
                         payload_state.expand(-1, self.drone.n, -1)
                     ],
                     dim=-1,
-                ).unsqueeze(2),  # [num_envs, drone.n, 1, 19]
+                ).unsqueeze(2),  # [num_envs, drone.n, 1, 28]
             },
             [self.num_envs, self.drone.n],
         )
 
         state = TensorDict(
             {
+                "payload": payload_state,  # [num_envs, 1, 25]
                 "drones": torch.cat(
-                    [-payload_relative_pos_drone, drone_states[..., 3:]], dim=-1
+                    [-payload_relative_pos_drone, self.drone_states[..., 3:]], dim=-1
                 ),  # [num_envs, drone.n, *]
-                "payload": payload_state,  # [num_envs, 1, 16]
             },
             self.num_envs,
         )
-
+        assert not torch.isnan(self.drone_states).any()
         return TensorDict({"drone.obs": obs, "drone.state": state}, self.num_envs)
 
     def _compute_reward_and_done(self):
         drone_pos, drone_rot = self.get_env_poses(self.drone.get_world_poses())
 
-        distance = torch.norm(
-            self.payload_target_pos - self.payload_pos, dim=-1, keepdim=True
+        misalignment = torch.norm(self.payload_target_axis - self.payload_axis, dim=-1, keepdim=True)
+
+        reward = torch.ones(self.num_envs, self.drone.n, 1, device=self.device)
+        
+        reward_pose = torch.mean(1 / (1 + torch.square(misalignment * 2.)), dim=1)
+        reward_effort = 0.05 * torch.exp(-self.effort).mean(-1, keepdim=True)
+        reward[:] = (reward_pose + reward_effort).unsqueeze(-1)
+
+        done_hasnan = torch.isnan(self.drone_states).any(-1)
+        done_fall = drone_pos[..., 2] < 0.2
+
+        done = (
+            (self.progress_buf >= self.max_episode_length).unsqueeze(-1) 
+            | done_fall.any(-1, keepdim=True)
+            | done_hasnan.any(-1, keepdim=True)
         )
-        reward = torch.zeros(self.num_envs, self.drone.n, 1, device=self.device)
-
-        reward_pos = 1 / (1 + torch.square(distance))
-
-        alignment = (self.payload_heading * self.payload_target_heading).sum(-1, keepdim=True)
-        reward_heading = (alignment + 1) / 2
-
-        reward_up = 1 / (1 + torch.square(1 - self.payload_up[..., 2].unsqueeze(-1)))
-
-        reward[:] = (reward_pos + reward_pos * (reward_up + reward_heading)).unsqueeze(-1)
 
         self._tensordict["return"] += reward
-        done = (self.progress_buf >= self.max_episode_length).unsqueeze(-1) | (
-            drone_pos[..., 2] < 0.2
-        ).all(-1, keepdim=True)
-
         return TensorDict(
             {
                 "reward": {"drone.reward": reward},
@@ -213,3 +216,9 @@ class Transport(IsaacEnv):
             },
             self.batch_size,
         )
+
+def get_axis(rot: torch.Tensor, pos: torch.Tensor):
+    device = rot.device
+    offset = torch_utils.quat_rotate(rot.expand(3, -1), torch.eye(3, device=device)) 
+    return pos.unsqueeze(1) + offset
+

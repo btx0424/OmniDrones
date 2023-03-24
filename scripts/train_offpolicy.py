@@ -34,6 +34,7 @@ def main(cfg):
 
     from omni_drones.envs import IsaacEnv
     from omni_drones.learning.sac import MASACPolicy
+    from omni_drones.learning.qmix import QMIX
     from omni_drones.sensors.camera import Camera
 
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
@@ -43,7 +44,7 @@ def main(cfg):
     camera.initialize("/World/Camera")
 
     agent_spec = base_env.agent_spec["drone"]
-    policy = MASACPolicy(
+    policy = QMIX(
         cfg.algo, agent_spec=agent_spec, device="cuda"
     )
 

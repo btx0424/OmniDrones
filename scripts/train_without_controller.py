@@ -10,9 +10,8 @@ from omegaconf import OmegaConf
 
 from omni_drones import CONFIG_PATH, init_simulation_app
 from omni_drones.learning.collectors import SyncDataCollector
-from omni_drones.utils.envs.transforms import LogOnEpisode
+from omni_drones.utils.envs.transforms import LogOnEpisode, FromMultiDiscreteAction, FromDiscreteAction
 from omni_drones.utils.wandb import init_wandb
-from omni_drones.utils.math import quaternion_to_euler
 
 from setproctitle import setproctitle
 from tensordict import TensorDict
@@ -31,22 +30,13 @@ def main(cfg):
     setproctitle(run.name)
     print(OmegaConf.to_yaml(cfg))
 
-    from omni_drones.envs import IsaacEnv
+    from omni_drones.envs.isaac_env import IsaacEnv, AgentSpec
     from omni_drones.learning.mappo import MAPPOPolicy
     from omni_drones.sensors.camera import Camera
-    import omni
 
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
     base_env = env_class(cfg, headless=cfg.headless)
-    camera = Camera()
-    camera.spawn(["/World/Camera"], translations=[(6, 6, 3)], targets=[(0, 0, 1)])
-    camera.initialize("/World/Camera")
-
-    agent_spec = base_env.agent_spec["drone"]
-    policy = MAPPOPolicy(
-        cfg.algo, agent_spec=agent_spec, device="cuda"
-    )
-
+    
     def log(info):
         for k, v in info.items():
             print(f"{k}: {v}")
@@ -58,8 +48,36 @@ def main(cfg):
         log_keys=["train/return", "train/ep_length"],
         logger_func=log,
     )
+    transforms = [InitTracker(), logger]
 
-    env = TransformedEnv(base_env, Compose(InitTracker(), logger)) 
+    if "multidiscrete_action" in cfg.task:
+        nbins = cfg.task.discrete_action.nbins
+        transform = FromMultiDiscreteAction(("action", "drone.action"), nbins=nbins)
+        transforms.append(transform)
+    elif "discrete_action" in cfg.task:
+        nbins = cfg.task.multidiscrete_action.nbins
+        transform = FromDiscreteAction(("action", "drone.action"), nbins=nbins)
+        transforms.append(transform)
+    
+    env = TransformedEnv(base_env, Compose(*transforms)) 
+
+    camera = Camera()
+    camera.spawn(["/World/Camera"], translations=[(6, 6, 3)], targets=[(0, 0, 1)])
+    camera.initialize("/World/Camera")
+
+    # TODO: create a agent_spec view for TransformedEnv
+    agent_spec = AgentSpec(
+        name=base_env.agent_spec["drone"].name,
+        n=base_env.agent_spec["drone"].n,
+        observation_spec=env.observation_spec["drone.obs"],
+        action_spec=env.action_spec["drone.action"],
+        reward_spec=env.reward_spec["drone.reward"],
+        state_spec=env.observation_spec["drone.state"] if base_env.agent_spec["drone"].state_spec is not None else None,
+    )
+    policy = MAPPOPolicy(
+        cfg.algo, agent_spec=agent_spec, device="cuda"
+    )
+
     collector = SyncDataCollector(
         env,
         policy=policy,
@@ -87,6 +105,7 @@ def main(cfg):
             break_when_any_done=False,
         )
         base_env.enable_render(not cfg.headless)
+        env.reset()
 
         info["recording"] = wandb.Video(
             torch.stack(frames).permute(0, 3, 1, 2), fps=1 / cfg.sim.dt, format="mp4"
@@ -100,9 +119,9 @@ def main(cfg):
 
         run.log(info)
 
-        if i % 100 == 0:
-            logging.info(f"Eval at {collector._frames} steps.")
-            run.log(evaluate())
+        # if i % 100 == 0:
+        #     logging.info(f"Eval at {collector._frames} steps.")
+        #     run.log(evaluate())
 
         pbar.set_postfix({
             "rollout_fps": collector._fps,

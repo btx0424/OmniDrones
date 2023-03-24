@@ -17,7 +17,7 @@ from omni_drones.utils.math import quaternion_to_euler
 from setproctitle import setproctitle
 from tensordict import TensorDict
 from torchrl.data import UnboundedContinuousTensorSpec
-from torchrl.envs.transforms import TransformedEnv, InitTracker
+from torchrl.envs.transforms import TransformedEnv, InitTracker, Compose
 
 from tqdm import tqdm
 
@@ -36,15 +36,18 @@ def main(cfg):
     from omni_drones.sensors.camera import Camera
 
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
-    env = env_class(cfg, headless=cfg.headless)
+    base_env = env_class(cfg, headless=cfg.headless)
+    camera = Camera()
+    camera.spawn(["/World/Camera"], translations=[(6, 6, 3)], targets=[(0, 0, 1)])
+    camera.initialize("/World/Camera")
 
-    agent_spec = env.agent_spec["drone"]
-    agent_spec.action_spec = UnboundedContinuousTensorSpec(3, device=env.device)
+    agent_spec = base_env.agent_spec["drone"]
+    agent_spec.action_spec = UnboundedContinuousTensorSpec(3, device=base_env.device)
     ppo = MAPPOPolicy(
         cfg.algo, agent_spec=agent_spec, act_name="drone.target_vel", device="cuda"
     )
-    controller = env.drone.DEFAULT_CONTROLLER(env.drone.dt, 9.81, env.drone.params).to(
-        env.device
+    controller = base_env.drone.DEFAULT_CONTROLLER(base_env.drone.dt, 9.81, base_env.drone.params).to(
+        base_env.device
     )
 
     drone_state_key = "drone.obs" if isinstance(agent_spec.observation_spec, UnboundedContinuousTensorSpec) else ("drone.obs", "self")
@@ -58,8 +61,8 @@ def main(cfg):
 
         control_target = torch.cat(
             [
-                target_vel,
                 torch.zeros_like(relative_state[..., :3]),
+                target_vel,
                 torch.zeros_like(target_vel[..., [0]]),
             ],
             dim=-1,
@@ -92,16 +95,40 @@ def main(cfg):
         logger_func=log,
     )
 
-    env = TransformedEnv(env, InitTracker())
+    env = TransformedEnv(base_env, Compose(InitTracker(), logger))
     collector = SyncDataCollector(
         env,
         policy,
-        callback=logger,
-        frames_per_batch=env.num_envs * cfg.algo.train_every,
+        frames_per_batch=base_env.num_envs * cfg.algo.train_every,
+        total_frames=512000000,
         device=cfg.sim.device,
         return_same_td=True,
     )
 
+    @torch.no_grad()
+    def evaluate():
+        info = {"env_frames": collector._frames}
+        frames = []
+
+        def record_frame(*args, **kwargs):
+            frame = camera.get_images()["rgb"][0]
+            frames.append(frame.cpu())
+
+        base_env.enable_render(True)
+        env.rollout(
+            max_steps=base_env.max_episode_length,
+            policy=policy,
+            callback=record_frame,
+            auto_reset=True,
+            break_when_any_done=False,
+        )
+        base_env.enable_render(not cfg.headless)
+
+        info["recording"] = wandb.Video(
+            torch.stack(frames).permute(0, 3, 1, 2), fps=1 / cfg.sim.dt, format="mp4"
+        )
+        return info
+    
     pbar = tqdm(collector)
     for i, data in enumerate(pbar):
         info = {"env_frames": collector._frames}
@@ -110,14 +137,13 @@ def main(cfg):
         if i % 2 == 0:
             run.log(info)
 
-        # if i % 100 == 0:
-        #     logging.info(f"Eval at {collector._frames} steps.")
-        #     run.log(evaluate())
+        if i % 50 == 0:
+            logging.info(f"Eval at {collector._frames} steps.")
+            run.log(evaluate())
 
         pbar.set_postfix({
             "rollout_fps": collector._fps,
             "frames": collector._frames,
-            "episodes": collector._episodes,
         })
 
     simulation_app.close()

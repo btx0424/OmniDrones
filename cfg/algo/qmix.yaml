@@ -1,0 +1,17 @@
+# QMIX config
+
+q_net:
+  hidden_units: [128]
+  hidden_dim: 128
+
+q_mixer:
+  hidden_units: [128]
+  hidden_dim: 128
+
+gamma: 0.99
+lr: 0.005
+max_grad_norm: 10 
+buffer_size: 32768
+batch_size: 1048576
+gradiet_steps: 5
+train_every: 500

@@ -16,6 +16,10 @@ def cpos(p1: torch.Tensor, p2: torch.Tensor):
     return p1.unsqueeze(1) - p2.unsqueeze(0)
 
 
+def others(x: torch.Tensor) -> torch.Tensor:
+    return off_diag(x.expand(x.shape[0], *x.shape))
+
+
 def quaternion_to_rotation_matrix(quaternion: torch.Tensor) -> torch.Tensor:
 
     w, x, y, z = torch.unbind(quaternion, dim=-1)

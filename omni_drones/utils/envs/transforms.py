@@ -1,9 +1,16 @@
 from collections import Callable, defaultdict
-from typing import Any, Dict, Sequence
+from typing import Any, Dict, Sequence, Union
 
 import torch
 from tensordict.tensordict import TensorDictBase
 from torchrl.envs.transforms import Transform
+from torchrl.data import (
+    TensorSpec,
+    BoundedTensorSpec,
+    DiscreteTensorSpec,
+    MultiDiscreteTensorSpec,
+    CompositeSpec,
+)
 
 
 class LogOnEpisode(Transform):
@@ -28,10 +35,10 @@ class LogOnEpisode(Transform):
             self.process_func.update(process_func)
 
         self.stats = []
-    
+
     def _call(self, tensordict: TensorDictBase) -> TensorDictBase:
         return tensordict
-    
+
     def _step(self, tensordict: TensorDictBase) -> TensorDictBase:
         _reset = tensordict.get(
             ("next", "done"),
@@ -42,7 +49,9 @@ class LogOnEpisode(Transform):
             ),
         ).squeeze(-1)
         if _reset.any():
-            self.stats.extend(tensordict[_reset].select(*self.in_keys).clone().unbind(0))
+            self.stats.extend(
+                tensordict[_reset].select(*self.in_keys).clone().unbind(0)
+            )
             if len(self.stats) >= self.n_episodes:
                 stats: TensorDictBase = torch.stack(self.stats)
                 dict_to_log = {}
@@ -55,3 +64,89 @@ class LogOnEpisode(Transform):
                 self.stats.clear()
         return tensordict
 
+
+class FromDiscreteAction(Transform):
+    def __init__(
+        self,
+        action_key: Sequence[str] = None,
+        nbins: Union[int, Sequence[int]] = None,
+    ):
+        if action_key is None:
+            action_key = "action"
+        if nbins is None:
+            nbins = 2
+        super().__init__([], in_keys_inv=[action_key])
+        self.nbins = nbins
+        self.action_key = action_key
+
+    def transform_input_spec(self, input_spec: CompositeSpec) -> CompositeSpec:
+        action_spec = input_spec[self.action_key]
+        if isinstance(action_spec, BoundedTensorSpec):
+            if isinstance(self.nbins, int):
+                nbins = [self.nbins] * action_spec.shape[-1]
+            elif len(self.nbins) == action_spec.shape[-1]:
+                nbins = self.nbins
+            else:
+                raise ValueError(
+                    "nbins must be int or list of length equal to the last dimension of action space."
+                )
+            self.minimum = action_spec.space.minimum.unsqueeze(-2)
+            self.maximum = action_spec.space.maximum.unsqueeze(-2)
+            self.mapping = torch.cartesian_prod(
+                *[torch.linspace(0, 1, dim_nbins) for dim_nbins in nbins]
+            )  # [prod(nbins), len(nbins)]
+            n = self.mapping.shape[0]
+            spec = DiscreteTensorSpec(
+                n, shape=[*action_spec.shape[:-1], 1], device=action_spec.device
+            )
+            input_spec[self.action_key] = spec
+        else:
+            NotImplementedError("Only BoundedTensorSpec is supported.")
+        return input_spec
+
+    def _inv_apply_transform(self, action: torch.Tensor) -> torch.Tensor:
+        mapping = self.mapping * (self.maximum - self.minimum) + self.minimum
+        action = torch.take_along_dim(mapping, action.unsqueeze(-1), dim=-2).squeeze(-2)
+        return action
+
+
+class FromMultiDiscreteAction(Transform):
+    def __init__(
+        self,
+        action_key: Sequence[str] = None,
+        nbins: Union[int, Sequence[int]] = 2,
+    ):
+        if action_key is None:
+            action_key = "action"
+        super().__init__([], in_keys_inv=[action_key])
+        self.nbins = nbins
+        self.action_key = action_key
+
+    def transform_input_spec(self, input_spec: CompositeSpec) -> CompositeSpec:
+        action_spec = input_spec[self.action_key]
+        if isinstance(action_spec, BoundedTensorSpec):
+            if isinstance(self.nbins, int):
+                nbins = [self.nbins] * action_spec.shape[-1]
+            elif len(self.nbins) == action_spec.shape[-1]:
+                nbins = self.nbins
+            else:
+                raise ValueError(
+                    "nbins must be int or list of length equal to the last dimension of action space."
+                )
+            spec = MultiDiscreteTensorSpec(
+                nbins, shape=action_spec.shape, device=action_spec.device
+            )
+            self.nvec = spec.nvec.to(action_spec.device)
+            self.minimum = action_spec.space.minimum
+            self.maximum = action_spec.space.maximum
+            input_spec[self.action_key] = spec
+        else:
+            NotImplementedError("Only BoundedTensorSpec is supported.")
+        return input_spec
+
+    def _inv_apply_transform(self, action: torch.Tensor) -> torch.Tensor:
+        action = action / (self.nvec - 1) * (self.maximum - self.minimum) + self.minimum
+        return action
+
+    def _inv_call(self, tensordict: TensorDictBase) -> TensorDictBase:
+        return super()._inv_call(tensordict)

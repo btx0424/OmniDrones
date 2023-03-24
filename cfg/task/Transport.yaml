@@ -1,3 +1,6 @@
 name: Transport
 
 drone_model: Hummingbird
+
+discrete_action:
+  nbins: 4

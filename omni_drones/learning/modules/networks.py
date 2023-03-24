@@ -109,12 +109,10 @@ class SplitEmbedding(nn.Module):
     ) -> None:
         super().__init__()
         if any(isinstance(spec, CompositeSpec) for spec in input_spec.values()):
-            raise ValueError("Nesting is not supported yet.")
-        if not all(len(spec.shape) == 2 for spec in input_spec.values()):
-            raise ValueError
+            raise ValueError("Nesting is not supported.")
         self.input_spec = input_spec
         self.embed_dim = embed_dim
-        self.num_entities = sum(spec.shape[0] for spec in self.input_spec.values())
+        self.num_entities = sum(spec.shape[-2] for spec in self.input_spec.values())
 
         if embed_type == "linear":
             self.embed = nn.ModuleDict(

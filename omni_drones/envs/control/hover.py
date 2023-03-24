@@ -27,7 +27,7 @@ class Hover(IsaacEnv):
             self.drone.action_spec.to(self.device),
             UnboundedContinuousTensorSpec(1).to(self.device),
         )
-        self.init_pos_scale = torch.tensor([3, 3.0, 1.0], device=self.device)
+        self.init_pos_scale = torch.tensor([4.0, 4.0, 2.0], device=self.device)
 
     def _design_scene(self):
         cfg = RobotCfg()
@@ -63,7 +63,7 @@ class Hover(IsaacEnv):
         self.drone.set_velocities(self.init_vels[env_ids], env_ids)
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
-        actions = tensordict["drone.action"]
+        actions = tensordict[("action", "drone.action")]
         self.effort = self.drone.apply_action(actions)
 
     def _compute_state_and_obs(self):

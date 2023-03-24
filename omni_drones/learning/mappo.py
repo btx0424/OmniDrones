@@ -14,6 +14,7 @@ from torchrl.data import (
     BoundedTensorSpec,
     CompositeSpec,
     MultiDiscreteTensorSpec,
+    DiscreteTensorSpec,
     TensorSpec,
     UnboundedContinuousTensorSpec as UnboundedTensorSpec,
 )
@@ -55,7 +56,7 @@ class MAPPOPolicy(object):
             )
 
         self.obs_name = f"{self.agent_spec.name}.obs"
-        self.act_name = act_name or f"{self.agent_spec.name}.action"
+        self.act_name = act_name or ("action", f"{self.agent_spec.name}.action")
         self.state_name = f"{self.agent_spec.name}.state"
         self.reward_name = f"{self.agent_spec.name}.reward"
 
@@ -186,7 +187,7 @@ class MAPPOPolicy(object):
             # Empirically the performance is similar on most of the tasks.
             cls = getattr(valuenorm, cfg.value_norm["class"])
             self.value_normalizer: valuenorm.Normalizer = cls(
-                input_shape=self.agent_spec.reward_spec.shape,
+                input_shape=self.agent_spec.reward_spec.shape[-2:],
                 **cfg.value_norm["kwargs"],
             ).to(self.device)
 
@@ -215,6 +216,7 @@ class MAPPOPolicy(object):
         )
 
         tensordict.update(actor_output)
+        tensordict["action"].batch_size = tensordict.shape
         tensordict.update(self.value_op(tensordict))
         return tensordict
 
@@ -239,8 +241,7 @@ class MAPPOPolicy(object):
 
         log_probs = actor_output[self.act_logps_name]
         dist_entropy = actor_output[f"{self.agent_spec.name}.action_entropy"]
-        if advantages.shape[:-1] != 1:
-            advantages = advantages.sum(-1, keepdim=True)
+
         assert advantages.shape == log_probs.shape == dist_entropy.shape
 
         ratio = torch.exp(log_probs - log_probs_old)
@@ -307,6 +308,8 @@ class MAPPOPolicy(object):
             value_output = self.value_op(next_tensordict)
 
         rewards = tensordict.get(("next", "reward", f"{self.agent_spec.name}.reward"))
+        if rewards.shape[-1] != 1:
+            rewards = rewards.sum(-1, keepdim=True)
 
         values = tensordict["state_value"]
         next_value = value_output["state_value"].squeeze(0)
@@ -399,74 +402,49 @@ from .utils.distributions import (
 )
 
 from .utils.network import (
-    ENCODERS_MAP,
-    MLP,
     SplitEmbedding,
 )
 
 from .modules.rnn import GRU
-
+from .common import make_encoder
 
 def make_ppo_actor(cfg, observation_spec: TensorSpec, action_spec: TensorSpec):
-    if isinstance(observation_spec, (BoundedTensorSpec, UnboundedTensorSpec)):
-        if not len(observation_spec.shape) == 1:
-            raise ValueError
-        input_dim = observation_spec.shape[0]
-        base = nn.Sequential(
-            nn.LayerNorm(input_dim),
-            MLP([input_dim] + cfg.hidden_units),
-        )
-        base.output_shape = torch.Size((cfg.hidden_units[-1],))
-    elif isinstance(observation_spec, CompositeSpec):
-        encoder_cls = ENCODERS_MAP[cfg.attn_encoder]
-        base = encoder_cls(observation_spec)
-    else:
-        raise NotImplementedError(observation_spec)
+    encoder = make_encoder(cfg, observation_spec)
 
     if isinstance(action_spec, MultiDiscreteTensorSpec):
-        act_dist = MultiCategoricalModule(action_spec.nvec)
+        act_dist = MultiCategoricalModule(encoder.output_shape.numel(), action_spec.nvec)
+    elif isinstance(action_spec, DiscreteTensorSpec):
+        ...
     elif isinstance(action_spec, (UnboundedTensorSpec, BoundedTensorSpec)):
-        action_dim = action_spec.shape.numel()
-        act_dist = DiagGaussian(base.output_shape.numel(), action_dim, True, 0.01)
+        action_dim = action_spec.shape[-1]
+        act_dist = DiagGaussian(encoder.output_shape.numel(), action_dim, True, 0.01)
         # act_dist = IndependentNormalModule(inputs_dim, action_dim, True)
-        # act_dist = IndependentBetaModule(inputs_dim, action_dim)
     else:
         raise NotImplementedError(action_spec)
 
     if cfg.get("rnn", None):
         rnn_cls = {"gru": GRU}[cfg.rnn.cls.lower()]
-        rnn = rnn_cls(input_size=base.output_shape.numel(), **cfg.rnn.kwargs)
+        rnn = rnn_cls(input_size=encoder.output_shape.numel(), **cfg.rnn.kwargs)
     else:
         rnn = None
 
-    return Actor(base, act_dist, rnn)
+    return Actor(encoder, act_dist, rnn)
+
 
 def make_critic(cfg, state_spec: TensorSpec, reward_spec: TensorSpec):
-    if isinstance(state_spec, (BoundedTensorSpec, UnboundedTensorSpec)):
-        if not len(state_spec.shape) == 1:
-            raise ValueError
-        input_dim = state_spec.shape[0]
-        base = nn.Sequential(
-            nn.LayerNorm(input_dim),
-            MLP([input_dim] + cfg.hidden_units),
-        )
-        base.output_shape = torch.Size((cfg.hidden_units[-1],))
-    elif isinstance(state_spec, CompositeSpec):
-        encoder_cls = ENCODERS_MAP[cfg.attn_encoder]
-        base = encoder_cls(state_spec)
-    else:
-        raise NotImplementedError
+    encoder = make_encoder(cfg, state_spec)
     
     if cfg.get("rnn", None):
         rnn_cls = {"gru": GRU}[cfg.rnn.cls.lower()]
-        rnn = rnn_cls(input_size=base.output_shape.numel(), **cfg.rnn.kwargs)
+        rnn = rnn_cls(input_size=encoder.output_shape.numel(), **cfg.rnn.kwargs)
     else:
         rnn = None
 
-    v_out = nn.Linear(base.output_shape.numel(), reward_spec.shape.numel())
+    v_out = nn.Linear(encoder.output_shape.numel(), reward_spec.shape[-1])
     nn.init.orthogonal_(v_out.weight, cfg.gain)
 
-    return Critic(base, rnn, v_out, reward_spec.shape)
+    return Critic(encoder, rnn, v_out, reward_spec.shape[-1:])
+
 
 class Actor(nn.Module):
     def __init__(

@@ -2,5 +2,5 @@ name: Platform
 
 drone_model: Firefly
 
-discrete_action:
+multidiscrete_action:
   nbins: 4

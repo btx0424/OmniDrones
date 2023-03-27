@@ -2,5 +2,8 @@ name: Hover
 
 drone_model: Firefly
 
-discrete_action:
-  nbins: 4
+multidiscrete_action:
+  nbins: 6
+
+# discrete_action:
+#   nbins: 2

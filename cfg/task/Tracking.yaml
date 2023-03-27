@@ -1,0 +1,9 @@
+name: Tracking
+
+drone_model: Firefly
+
+traj_func: circle
+future_traj_len: 3
+
+multidiscrete_action:
+  nbins: 6

@@ -16,6 +16,7 @@ class RotorGroup(nn.Module):
         self.dt = dt
         self.time_up = 0.15
         self.time_down = 0.15
+        self.noise_scale = 0.02
 
         self.max_forces = nn.Parameter(self.MAX_ROT_VEL.square() * self.KF)
         self.max_moments = nn.Parameter(self.MAX_ROT_VEL.square() * self.KM)
@@ -40,7 +41,7 @@ class RotorGroup(nn.Module):
         tau = torch.clamp(tau, 0, 1)
         self.throttle.add_(tau * (cmds - self.throttle))
 
-        t = self.f(self.throttle)
+        t = torch.clamp(self.f(self.throttle) + torch.randn_like(self.throttle) * self.noise_scale, 0)
         thrusts = t * self.max_forces
         moments = (t * self.max_moments) * -self.directions
 

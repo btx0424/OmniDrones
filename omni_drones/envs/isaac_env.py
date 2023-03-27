@@ -108,6 +108,9 @@ class IsaacEnv(EnvBase):
         self.envs_positions = torch.tensor(
             self.envs_positions, dtype=torch.float, device=self.device
         )
+        # find the environment closest to the origin for visualization
+        self.central_env_idx = self.envs_positions.norm(dim=-1).argmin()
+        
         RobotBase._envs_positions = self.envs_positions.unsqueeze(1)
 
         # filter collisions within each environment instance

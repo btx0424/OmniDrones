@@ -94,7 +94,7 @@ class FromDiscreteAction(Transform):
             self.maximum = action_spec.space.maximum.unsqueeze(-2)
             self.mapping = torch.cartesian_prod(
                 *[torch.linspace(0, 1, dim_nbins) for dim_nbins in nbins]
-            )  # [prod(nbins), len(nbins)]
+            ).to(action_spec.device)  # [prod(nbins), len(nbins)]
             n = self.mapping.shape[0]
             spec = DiscreteTensorSpec(
                 n, shape=[*action_spec.shape[:-1], 1], device=action_spec.device
@@ -106,7 +106,8 @@ class FromDiscreteAction(Transform):
 
     def _inv_apply_transform(self, action: torch.Tensor) -> torch.Tensor:
         mapping = self.mapping * (self.maximum - self.minimum) + self.minimum
-        action = torch.take_along_dim(mapping, action.unsqueeze(-1), dim=-2).squeeze(-2)
+        action = action.unsqueeze(-1).unsqueeze(-1)
+        action = torch.take_along_dim(mapping, action, dim=-2).squeeze(-2)
         return action
 
 

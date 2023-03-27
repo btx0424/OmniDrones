@@ -1,5 +1,5 @@
 from .control.hover import Hover
-from .control.prey import Prey
+from .control.tracking import Tracking
 from .platform import Platform
 from .swarm.flocking import Flocking
 from .swarm.formation import Formation

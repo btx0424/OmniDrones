@@ -399,6 +399,7 @@ def make_dataset_naive(
 from .utils.distributions import (
     DiagGaussian,
     MultiCategoricalModule,
+    CatetoricalModule
 )
 
 from .utils.network import (
@@ -414,7 +415,7 @@ def make_ppo_actor(cfg, observation_spec: TensorSpec, action_spec: TensorSpec):
     if isinstance(action_spec, MultiDiscreteTensorSpec):
         act_dist = MultiCategoricalModule(encoder.output_shape.numel(), action_spec.nvec)
     elif isinstance(action_spec, DiscreteTensorSpec):
-        ...
+        act_dist = CatetoricalModule(encoder.output_shape.numel(), action_spec.space.n)
     elif isinstance(action_spec, (UnboundedTensorSpec, BoundedTensorSpec)):
         action_dim = action_spec.shape[-1]
         act_dist = DiagGaussian(encoder.output_shape.numel(), action_dim, True, 0.01)

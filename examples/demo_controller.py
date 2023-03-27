@@ -34,12 +34,12 @@ def main(cfg):
     )
     n = 4
 
-    firefly = Firefly(cfg=RobotCfg())
+    drone = Firefly(cfg=RobotCfg())
 
     translations = torch.zeros(n, 3)
     translations[:, 1] = torch.arange(n)
     translations[:, 2] = 0.5
-    firefly.spawn(translations=translations)
+    drone.spawn(translations=translations)
 
     scene_utils.design_scene()
 
@@ -56,26 +56,26 @@ def main(cfg):
     )
     camera = Camera(camera_cfg)
     camera.spawn(
-        [f"/World/envs/env_0/Firefly_{i}/base_link/Camera" for i in range(n)],
+        [f"/World/envs/env_0/{drone.name}_{i}/base_link/Camera" for i in range(n)],
     )
 
     sim.reset()
-    camera.initialize("/World/envs/env_0/Firefly_*/base_link/Camera")
-    firefly.initialize()
+    camera.initialize(f"/World/envs/env_0/{drone.name}_*/base_link/Camera")
+    drone.initialize()
 
-    init_poses = firefly.get_world_poses(clone=True)
-    init_vels = firefly.get_velocities(clone=True)
-    controller = LeePositionController(
-        dt=sim.get_physics_dt(), g=9.81, uav_params=firefly.params
+    init_poses = drone.get_world_poses(clone=True)
+    init_vels = drone.get_velocities(clone=True)
+    controller = drone.DEFAULT_CONTROLLER(
+        dt=sim.get_physics_dt(), g=9.81, uav_params=drone.params
     ).to(sim.device)
 
     controller_state = TensorDict({}, n, device=sim.device)
     control_target = torch.zeros(n, 7, device=sim.device)
-    control_target[:, 0] = torch.arange(n, device=sim.device).flip(-1) * 0.5
+    # control_target[:, 0] = torch.arange(n, device=sim.device).flip(-1) * 0.5
     control_target[:, 1] = torch.arange(n, device=sim.device)
     control_target[:, 2] = 1.0 + torch.arange(n, device=sim.device) * 0.2
-    # control_target[:, -1] = (torch.pi / 10) * torch.arange(n, device=sim.device)
-    action = firefly.action_spec.zero((n,))
+    control_target[:, -1] = (torch.pi / 3) * torch.arange(n, device=sim.device)
+    action = drone.action_spec.zero((n,))
 
     frames = []
     from tqdm import tqdm
@@ -85,11 +85,14 @@ def main(cfg):
             break
         if not sim.is_playing():
             continue
-        root_state = firefly.get_state(env=False)[..., :13].squeeze(0)
+        root_state = drone.get_state(env=False)[..., :13].squeeze(0)
         action, controller_state = functorch.vmap(controller)(
             root_state, control_target, controller_state
         )
-        firefly.apply_action(action)
+        # action[:], controller_state = controller(
+        #     root_state[0], control_target[0], controller_state
+        # )
+        drone.apply_action(action)
         sim.step(i % 2 == 0)
 
         if i % 2 == 0 and len(frames) < 1000:
@@ -97,8 +100,8 @@ def main(cfg):
             frames.append(frame.cpu())
 
         if i % 1000 == 0:
-            firefly.set_world_poses(*init_poses)
-            firefly.set_velocities(init_vels)
+            drone.set_world_poses(*init_poses)
+            drone.set_velocities(init_vels)
             controller_state.zero_()
             sim.step()
         

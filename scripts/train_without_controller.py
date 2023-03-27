@@ -50,12 +50,12 @@ def main(cfg):
     )
     transforms = [InitTracker(), logger]
 
-    if "multidiscrete_action" in cfg.task:
-        nbins = cfg.task.discrete_action.nbins
+    if cfg.task.get("multidiscrete_action", None):
+        nbins = cfg.task.multidiscrete_action.nbins
         transform = FromMultiDiscreteAction(("action", "drone.action"), nbins=nbins)
         transforms.append(transform)
-    elif "discrete_action" in cfg.task:
-        nbins = cfg.task.multidiscrete_action.nbins
+    elif cfg.task.get("discrete_action", None):
+        nbins = cfg.task.discrete_action.nbins
         transform = FromDiscreteAction(("action", "drone.action"), nbins=nbins)
         transforms.append(transform)
     

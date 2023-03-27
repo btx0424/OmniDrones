@@ -319,3 +319,18 @@ class MultiCategoricalModule(nn.Module):
         logits = self.operator(tensor)
         logits = logits.split(self.output_dims, dim=-1)
         return MultiCategorical(logits=logits)
+
+
+class CatetoricalModule(nn.Module):
+    def __init__(
+        self,
+        input_dim: int,
+        output_dim: int,
+    ):
+        super().__init__()
+        self.operator = nn.Linear(input_dim, output_dim)
+
+    def forward(self, tensor: torch.Tensor) -> Tuple[torch.Tensor]:
+        logits = self.operator(tensor)
+        return D.Categorical(logits=logits)
+

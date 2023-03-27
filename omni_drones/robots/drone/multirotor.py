@@ -75,7 +75,7 @@ class MultirotorBase(RobotBase):
 
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
         rotor_cmds = actions.expand(*self.shape, self.num_rotors)
-        thrusts, moments = vmap(vmap(self.rotors))(
+        thrusts, moments = vmap(vmap(self.rotors, randomness="different"), randomness="same")(
             rotor_cmds, self.rotor_params_and_states
         )
         self.forces[..., 2] = thrusts

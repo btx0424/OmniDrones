@@ -5,10 +5,7 @@ from tensordict import TensorDict
 from tensordict.nn import TensorDictModule, TensorDictSequential
 from functorch import vmap
 from torchrl.data import (
-    TensorSpec,
-    BoundedTensorSpec,
-    UnboundedContinuousTensorSpec,
-    CompositeSpec,
+    DiscreteTensorSpec,
 )
 from .modules.rnn import GRU
 from .modules.networks import ENCODERS_MAP, MLP
@@ -29,6 +26,9 @@ class QMIX:
         self.agent_name = agent_spec.name
 
         n_agents = agent_spec.n
+        if not isinstance(agent_spec.action_spec, DiscreteTensorSpec):
+            raise ValueError("Only discrete action spaces are supported for QMIX.")
+        
         num_actions = agent_spec.action_spec.shape[0]
         obs_name = f"{self.agent_name}.obs"
         state_name = f"{self.agent_name}.state"

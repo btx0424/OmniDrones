@@ -3,5 +3,5 @@ name: Spread
 drone_model: Firefly
 num_drones: 3
 
-discrete_action:
+multidiscrete_action:
   nbins: 4

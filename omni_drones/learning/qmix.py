@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from tensordict import TensorDict
+from tensordict.utils import expand_right
 from tensordict.nn import TensorDictModule, TensorDictSequential
 from functorch import vmap
 from torchrl.data import (
@@ -12,6 +13,8 @@ from .modules.networks import ENCODERS_MAP, MLP
 from .common import MyBuffer, soft_update, make_encoder
 import copy
 from tqdm import tqdm
+from omegaconf import OmegaConf
+from collections import defaultdict
 
 class QMIX:
     def __init__(
@@ -29,76 +32,109 @@ class QMIX:
         if not isinstance(agent_spec.action_spec, DiscreteTensorSpec):
             raise ValueError("Only discrete action spaces are supported for QMIX.")
         
-        num_actions = agent_spec.action_spec.shape[0]
+        num_actions = agent_spec.action_spec.space.n
         obs_name = f"{self.agent_name}.obs"
-        state_name = f"{self.agent_name}.state"
+        self.action_name = ("action", f"{self.agent_name}.action")
+        self.state_name = (
+            f"{self.agent_name}.state" 
+            if self.agent_spec.state_spec is not None 
+            else f"{self.agent_name}.obs"
+        )
 
         obs_encoder = make_encoder(cfg.q_net, agent_spec.observation_spec)
-        action_selector = EpsilonGreedyActionSelector()
         hidden_dim = cfg.q_net.hidden_dim
         self.agent_q = TensorDictSequential(
             TensorDictModule(obs_encoder, [obs_name], ["hidden"]),
             TensorDictModule(
                 GRU(obs_encoder.output_shape.numel(), hidden_dim),
-                ["hidden"],
+                ["hidden", f"{self.agent_name}.rnn_state", "is_init"],
                 ["hidden", f"{self.agent_name}.rnn_state"],
             ),
             TensorDictModule(
                 nn.Linear(hidden_dim, num_actions), ["hidden"], [f"{self.agent_name}.q"]
             ),
-            TensorDictModule(
-                action_selector, [f"{self.agent_name}.q"], [f"{self.agent_name}.action"]
-            )
-        )
+        ).to(self.device)
         self.target_agent_q = copy.deepcopy(self.agent_q)
 
-        state_encoder = make_encoder(cfg.q_mixer, agent_spec.state_spec)
+        self.action_selector = TensorDictModule(
+            EpsilonGreedyActionSelector(), 
+            [f"{self.agent_name}.q", "epsilon_t"], 
+            [self.action_name, "epsilon"]
+        )
+
+        if agent_spec.state_spec is not None:
+            state_encoder = make_encoder(cfg.q_mixer, agent_spec.state_spec)
+        else:
+            state_encoder = make_encoder(cfg.q_mixer, agent_spec.observation_spec)
         hidden_dim = cfg.q_mixer.hidden_dim
         mixer = QMIXer(n_agents, state_encoder.output_shape.numel(), hidden_dim)
         self.mixer = TensorDictSequential(
-            TensorDictModule(state_encoder, [state_name], ["mixer_hidden"]),
+            TensorDictModule(state_encoder, [self.state_name], ["mixer_hidden"]),
             TensorDictModule(mixer, [f"chosen_q", "mixer_hidden"], [f"q_tot"]),
-        )
+        ).to(self.device)
         self.target_mixer = copy.deepcopy(self.mixer)
 
         params = list(self.agent_q.parameters()) + list(self.mixer.parameters())
         self.opt = torch.optim.Adam(params, lr=cfg.lr)
 
         self.rb = MyBuffer(cfg.buffer_size, device=self.device)
+        
+        self.t = 0 # for epsilon annealing
 
     def __call__(self, tensordict: TensorDict):
-        self.agent_q(tensordict)
+        tensordict.set(
+            "epsilon_t", 
+            torch.full([*tensordict.shape, self.agent_spec.n], self.t, device=self.device)
+        )
+        tensordict.update(self._call(tensordict, self.agent_q, 1))
+        self.action_selector(tensordict)
+
+        if tensordict.get("_reset", None) is not None:
+            _reset = tensordict["_reset"]
+            self.t += _reset.sum().item()
         return tensordict
+
+    def _call(self, tensordict: TensorDict, agent_q: TensorDictSequential, vmap_dim: int):
+        q_input = tensordict.select(*agent_q.in_keys, strict=False) 
+        q_input["is_init"] = expand_right(
+            q_input["is_init"], (*q_input.batch_size, self.agent_spec.n)
+        )
+        q_input.batch_size = [*q_input.batch_size, self.agent_spec.n]
+        q_output: TensorDict = vmap(agent_q, in_dims=vmap_dim, out_dims=vmap_dim, randomness="different")(q_input)
+        return q_output
 
     def train_op(self, tensordict: TensorDict):
         reward = tensordict[("next", "reward", f"{self.agent_name}.reward")]
         if reward.dim() == 4: # [N, L, M, *]
             # force shared reward
-            tensordict[("next", "reward", f"{self.agent_name}.reward")] = reward.sum(dims=[-1, -2])
+            tensordict.set(
+                ("next", "reward", f"{self.agent_name}.reward"),
+                reward.sum(dim=(-1, -2)).unsqueeze(-1)
+            )
 
         self.rb.extend(tensordict)
 
-        infos = []
+        infos = defaultdict(list)
         t = tqdm(range(self.cfg.gradient_steps))
         for gradient_step in t:
             batch: TensorDict = self.rb.sample(self.cfg.batch_size)
-            chosen_actions = batch[f"{self.agent_name}.action"]  # [N, L, M, 1]
+            chosen_actions = batch[self.action_name]  # [N, L, M, 1]
             reward = batch[("next", "reward", f"{self.agent_name}.reward")]
             next_done = batch[("next", "done")].float()
 
-            qs = self.agent_q(batch)[f"{self.agent_name}.q"]  # [N, L, M, |A|]
+            qs = self._call(batch, self.agent_q, 2)[f"{self.agent_name}.q"]  # [N, L, M, |A|]
             chosen_action_qs = torch.gather(qs, -1, chosen_actions)
 
             with torch.no_grad():
-                target_qs: torch.Tensor = self.target_agent_q(batch["next"])[f"{self.agent_name}.q"]
-                target_max_qs = target_qs.max(dim=-1).values
+                target_qs: torch.Tensor = self._call(batch["next"], self.target_agent_q, 2)[f"{self.agent_name}.q"]
+                target_max_qs = target_qs.max(dim=-1, keepdim=True).values
 
             chosen_action_q_tot = self.mixer(
                 batch.set("chosen_q", chosen_action_qs),
-            )
+            )["q_tot"]
             target_action_q_tot = self.target_mixer(
                 batch["next"].set("chosen_q", target_max_qs),
-            )
+            )["q_tot"]
 
             loss = F.mse_loss(
                 chosen_action_q_tot,
@@ -108,23 +144,27 @@ class QMIX:
             loss.backward()
             self.opt.step()
 
-            infos.append(TensorDict({
-                "q_loss": loss.item(),
-            }))
-
+            infos["q_loss"].append(loss)
+            infos["q_taken_mean"].append(chosen_action_qs.mean())
+            infos["q_tot_taken_mean"].append(chosen_action_q_tot.mean())
+            infos["epsilon"].append(batch["epsilon"].mean())
             t.set_postfix({"q_loss": loss.item()})
 
             if gradient_step % self.cfg.target_update_interval == 0:
                 soft_update(self.agent_q, self.target_agent_q, self.cfg.tau)
                 soft_update(self.mixer, self.target_mixer, self.cfg.tau)
 
+        t.close()
+        infos = {k: torch.stack(v).mean().item() for k, v in infos.items()}
+        print(OmegaConf.to_yaml(infos))
+        return infos
 
 class EpsilonGreedyActionSelector(nn.Module):
     def __init__(
         self,
         epsilon_start: float = 1.0,
         epsilon_finish: float = 0.05,
-        anneal_time: float = 50000,
+        anneal_time: float = 5000,
         decay="linear",
     ):
         super().__init__()
@@ -135,23 +175,25 @@ class EpsilonGreedyActionSelector(nn.Module):
         self.decay = decay
         self.delta = (epsilon_start - epsilon_finish) / anneal_time
 
-    def forward(self, agent_qs: torch.Tensor, t):
+    def forward(self, agent_qs: torch.Tensor, t: torch.Tensor):
         if self.decay == "linear":
-            epsilon = max(self.epsilon_finish, self.epsilon_start - self.delta * t)
+            epsilon = torch.clamp(self.epsilon_start - self.delta * t, self.epsilon_finish)
         elif self.decay == "exp":
             raise NotImplementedError
 
         num_actions = agent_qs.shape[-1]
         random_actions = torch.randint(
             0, num_actions, agent_qs.shape[:-1], device=agent_qs.device
-        )
-        greedy_actions = agent_qs.argmax(dim=-1)
+        ).unsqueeze(-1)
+        greedy_actions = agent_qs.argmax(dim=-1, keepdim=True)
+        epsilon = epsilon.reshape_as(random_actions)
+        assert epsilon.shape == random_actions.shape == greedy_actions.shape
         actions = torch.where(
-            torch.rand_like(agent_qs.shape[:-1]) < epsilon,
+            torch.rand_like(epsilon) < epsilon,
             random_actions,
             greedy_actions,
         )
-        return actions
+        return actions, epsilon
 
 
 class QMIXer(nn.Module):
@@ -165,23 +207,36 @@ class QMIXer(nn.Module):
         self.n_agents = n_agents
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
-        self.w1 = nn.Linear(self.input_dim, self.hidden_dim * self.n_agents)
-        self.w2 = nn.Linear(self.input_dim, self.hidden_dim)
-        self.b1 = nn.Linear(self.input_dim, self.hidden_dim)
-        self.b2 = nn.Sequential(
+        
+        self.hyper_w1 = nn.Linear(self.input_dim, self.hidden_dim * self.n_agents)
+        self.hyper_b1 = nn.Linear(self.input_dim, self.hidden_dim)
+        
+        self.hyper_w2 = nn.Linear(self.input_dim, self.hidden_dim)
+        self.hyper_b2 = nn.Sequential(
             nn.Linear(self.input_dim, self.hidden_dim),
             nn.LeakyReLU(),
             nn.Linear(self.hidden_dim, 1),
         )
 
-    def forward(self, agent_qs, state):
-        assert agent_qs.shape[0] == state.shape[0]
-        assert agent_qs.shape[-1] == self.n_agents
-        w1 = torch.abs(self.w1(state))
-        b1 = self.b1(state)
-        w2 = torch.abs(self.w2(state))
-        b2 = self.b2(state)
+    def forward(self, agent_qs: torch.Tensor, state: torch.Tensor):
+        """
+        
+        agent_qs: [N, L, M, |A|]
+        state: [N, L, state_dim]
 
-        h = F.elu(F.linear(agent_qs, w1, b1))
-        q_tot = F.linear(h, w2, b2)
+        """
+        assert agent_qs.shape[-2] == self.n_agents
+        batch_shape = agent_qs.shape[:-2]
+        
+        agent_qs = agent_qs.reshape(batch_shape.numel(), 1, -1)
+        state = state.reshape(batch_shape.numel(), -1)
+
+        w1 = torch.abs(self.hyper_w1(state)).unflatten(-1, (self.n_agents, self.hidden_dim))
+        b1 = self.hyper_b1(state).unsqueeze(-2)
+        w2 = torch.abs(self.hyper_w2(state)).unsqueeze(-1)
+        b2 = self.hyper_b2(state).unsqueeze(-2)
+
+        h = F.elu(torch.bmm(agent_qs, w1) + b1)
+        q_tot = torch.bmm(h, w2) + b2
+        q_tot = q_tot.reshape(*batch_shape, 1)
         return q_tot

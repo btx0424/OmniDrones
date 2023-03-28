@@ -1,5 +1,5 @@
 import torch
-
+from typing import Sequence, Union
 
 def off_diag(a: torch.Tensor) -> torch.Tensor:
     assert a.shape[0] == a.shape[1]
@@ -92,3 +92,33 @@ def euler_to_quaternion(euler: torch.Tensor) -> torch.Tensor:
 
 def normalize(x: torch.Tensor, eps: float = 1e-6):
     return x / (torch.norm(x, dim=-1, keepdim=True) + eps)
+
+
+def make_cells(
+    range_min: Union[Sequence[float], torch.Tensor],
+    range_max: Union[Sequence[float], torch.Tensor],
+    size: Union[float, Sequence[float], torch.Tensor],
+    device="cpu"
+):
+    """Compute the cell centers of a n-d grid.
+
+    Examples:
+        >>> cells = make_cells([0, 0], [1, 1], 0.1)
+        >>> cells[:2, :2]
+        tensor([[[0.0500, 0.0500],
+                 [0.0500, 0.1500]],
+
+                [[0.1500, 0.0500],
+                 [0.1500, 0.1500]]])
+    """
+    range_min = torch.as_tensor(range_min)
+    range_max = torch.as_tensor(range_max)
+    size = torch.as_tensor(size)
+    shape = ((range_max - range_min) / size).round().int()
+
+    cells = torch.meshgrid(*[torch.linspace(l, r, n+1, device=device) for l, r, n in zip(range_min, range_max, shape)], indexing="ij")
+    cells = torch.stack(cells, dim=-1)
+    for dim in range(cells.dim()-1):
+        cells = (cells.narrow(dim, 0, cells.size(dim)-1) + cells.narrow(dim, 1, cells.size(dim)-1)) / 2
+    return cells
+

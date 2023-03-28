@@ -106,7 +106,7 @@ class FromDiscreteAction(Transform):
 
     def _inv_apply_transform(self, action: torch.Tensor) -> torch.Tensor:
         mapping = self.mapping * (self.maximum - self.minimum) + self.minimum
-        action = action.unsqueeze(-1).unsqueeze(-1)
+        action = action.unsqueeze(-1)
         action = torch.take_along_dim(mapping, action, dim=-2).squeeze(-2)
         return action
 

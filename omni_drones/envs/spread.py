@@ -12,6 +12,7 @@ from omni_drones.robots.config import RigidBodyPropertiesCfg, RobotCfg
 from omni_drones.robots.drone import MultirotorBase
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import UnboundedContinuousTensorSpec
+from omni.isaac.debug_draw import _debug_draw
 
 class Spread(IsaacEnv):
     def __init__(self, cfg, headless):
@@ -29,7 +30,7 @@ class Spread(IsaacEnv):
 
         drone_state_dim = self.drone.state_spec.shape[0]
         observation_spec = UnboundedContinuousTensorSpec(
-            drone_state_dim - 3 + self.drone.n * 6
+            drone_state_dim - 3 + self.drone.n * 7
         )
         state_spec = UnboundedContinuousTensorSpec(
             observation_spec.shape[0] * self.drone.n
@@ -46,6 +47,8 @@ class Spread(IsaacEnv):
         self.init_pos_scale = torch.tensor([4.0, 4.0, 2.0], device=self.device)
         self.init_pos_translation = torch.tensor([-2, -2, 1.5], device=self.device)
         self.target_pos = torch.zeros(self.num_envs, self.drone.n, 3, device=self.device)
+
+        self.draw = _debug_draw.acquire_debug_draw_interface()
 
     def _design_scene(self):
         cfg = RobotCfg()
@@ -96,7 +99,7 @@ class Spread(IsaacEnv):
         self.target_pos[env_ids] = new_target_pos
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
-        actions = tensordict["drone.action"]
+        actions = tensordict[("action", "drone.action")]
         self.effort = self.drone.apply_action(actions)
 
     def _compute_state_and_obs(self):
@@ -105,10 +108,12 @@ class Spread(IsaacEnv):
         drone_relative_pos = -functorch.vmap(cpos)(pos, pos)
         target_relative_pos = -functorch.vmap(cpos)(pos, self.target_pos)
 
+        identity = torch.eye(self.drone.n, device=self.device).expand(self.num_envs, -1, -1)
         obs = torch.cat([
             drone_relative_pos.flatten(2),
             drone_states[..., 3:],
-            target_relative_pos.flatten(2)
+            target_relative_pos.flatten(2),
+            identity
         ], dim=-1)
 
         state = obs.flatten(1)
@@ -122,20 +127,31 @@ class Spread(IsaacEnv):
         pos, rot = self.get_env_poses(self.drone.get_world_poses(False))
         min_dist, idx = functorch.vmap(torch.cdist)(self.target_pos, pos).min(-1, keepdim=True)
         
+        if self._should_render(0):
+            env_pos = self.envs_positions[self.central_env_idx]
+            point_list_0 = (self.target_pos[self.central_env_idx] + env_pos)
+            point_list_1 = (pos[self.central_env_idx][idx[self.central_env_idx].squeeze()] + env_pos)
+
+            colors = [(1.0, 1.0, 1.0, 1.0) for _ in range(len(point_list_0))]
+            sizes = [1 for _ in range(len(point_list_0))]
+            self.draw.clear_lines()
+            self.draw.draw_lines(point_list_0.tolist(), point_list_1.tolist(), colors, sizes)
+
         reward = torch.zeros(self.num_envs, self.drone.n, 1, device=self.device)
-        reward_occ = torch.sum(1 / (1 + torch.square(min_dist)), dim=1, keepdim=True)
+        reward_occ = torch.sum(1 / (1 + torch.square(1.6 * min_dist)), dim=1, keepdim=True)
+        
         tiltage = 1 - functorch.vmap(torch_utils.quat_axis)(rot, axis=2)[..., [2]]
         reward_up = 1.0 / (1.0 + torch.square(tiltage))
         spin = torch.square(self.vels[..., [-1]])
         reward_spin = 1.0 / (1.0 + torch.square(spin))
 
-        reward[:] = reward_occ + reward_occ * (reward_up + reward_spin)
+        reward[:] = reward_occ # + reward_occ * (reward_up + reward_spin)
 
-        misbehave = (pos[..., 2] < 0.25)
+        misbehave = (pos[..., 2] < 0.25).any(-1, keepdim=True)
         done = (
             (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
             | misbehave 
-        ).all(-1, keepdim=True)
+        )
 
         self._tensordict["return"] += reward
 

@@ -273,7 +273,9 @@ def create_frame(
     script_utils.setRigidBody(prim_xform, "convexHull", False)
 
     massAPI = UsdPhysics.MassAPI.Apply(prim_xform)
-    massAPI.CreateMassAttr().Set(0.5)
+    massAPI.CreateMassAttr().Set(0.2)
 
     for arm in arms:
         arm.GetAttribute("physics:collisionEnabled").Set(enable_collision)
+    return prim_xform
+

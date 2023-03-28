@@ -2,6 +2,7 @@ import functorch
 import omni.isaac.core.utils.prims as prim_utils
 
 import omni.isaac.core.utils.torch as torch_utils
+from omni_drones.utils.torch import euler_to_quaternion
 import torch
 from omni.isaac.core.objects import VisualSphere
 from omni.isaac.core.prims import RigidPrimView
@@ -13,7 +14,7 @@ import omni_drones.utils.scene as scene_utils
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.robots.config import RobotCfg
 from omni_drones.robots.drone import MultirotorBase
-
+from omni.isaac.debug_draw import _debug_draw
 
 class Platform(IsaacEnv):
     def __init__(self, cfg, headless):
@@ -33,16 +34,21 @@ class Platform(IsaacEnv):
         self.agent_spec["drone"] = AgentSpec(
             "drone",
             4,
-            UnboundedContinuousTensorSpec(drone_state_dim+10).to(self.device),
+            UnboundedContinuousTensorSpec(drone_state_dim+12 + self.drone.n).to(self.device),
             self.drone.action_spec.to(self.device),
             UnboundedContinuousTensorSpec(1).to(self.device),
-            state_spec=UnboundedContinuousTensorSpec(drone_state_dim*self.drone.n+7).to(self.device)
+            state_spec=UnboundedContinuousTensorSpec(drone_state_dim*self.drone.n+9).to(self.device)
         )
 
         self.init_pos_scale = torch.tensor([4.0, 4.0, 1.0], device=self.device)
+        self.init_rpy_scale = self.init_rpy_scale = torch.tensor([0.6, 0.6, 2.0], device=self.device) * torch.pi
+        self.target_pos = torch.tensor([0., 0., 2.], device=self.device)
+        self.target_heading =  torch.zeros(self.num_envs, 3, device=self.device)
+
+        self.draw = _debug_draw.acquire_debug_draw_interface()
 
     def _design_scene(self):
-        drone_model = "Firefly"
+        drone_model = self.cfg.task.drone_model
         self.drone: MultirotorBase = MultirotorBase.REGISTRY[drone_model]()
         n = 4
         translations = torch.tensor(
@@ -51,17 +57,16 @@ class Platform(IsaacEnv):
         arm_angles = [torch.pi * 2 / n * i for i in range(n)]
         arm_lengths = [1.0 for _ in range(n)]
 
-        self.target_pos = torch.tensor([(0, 0, 2)], device=self.device)
         self.target = VisualSphere(
             prim_path="/World/envs/env_0/target",
             name="target",
-            translation=self.target_pos,
+            translation=(0., 0., 2.),
             radius=0.05,
             color=torch.tensor([1.0, 0.0, 0.0]),
         )
 
         platform = prim_utils.create_prim(
-            "/World/envs/env_0/platform", translation=self.target_pos
+            "/World/envs/env_0/platform", translation=(0., 0., 2.)
         )
         self.drone.spawn(
             translations=translations,
@@ -99,38 +104,69 @@ class Platform(IsaacEnv):
         self.drone.set_world_poses(*new_poses, env_ids)
         self.drone.set_velocities(self.init_drone_vels[env_ids], env_ids)
 
+        target_rpy = torch.zeros(len(env_ids), 3, device=self.device)
+        # target_rpy[..., 2] = torch.rand(len(env_ids), device=self.device) * torch.pi - torch.pi / 2
+        target_rot = euler_to_quaternion(target_rpy)
+        self.target_heading[env_ids] = torch_utils.quat_axis(target_rot, 0)
+
+
     def _pre_sim_step(self, tensordict: TensorDictBase):
-        actions = tensordict["drone.action"]
+        actions = tensordict[("action", "drone.action")]
         self.effort = self.drone.apply_action(actions)
 
     def _compute_state_and_obs(self):
         drone_state = self.drone.get_state()
+
         frame_pos, frame_rot = self.get_env_poses(self.frame_view.get_world_poses(clone=True))
+        frame_heading = torch_utils.quat_axis(frame_rot, 0)
+        self.frame_up = torch_utils.quat_axis(frame_rot, 1)
 
-        target_rel_pos = self.target_pos - frame_pos
+        self.target_frame_rpos = self.target_pos - frame_pos
+        self.target_frame_rheading = self.target_frame_rpos + self.target_heading - frame_heading
 
-        drone_rel_state = torch.cat(
-            [
-                self.target_pos - drone_state[..., :3],
-                drone_state[..., 3:],
-            ],
-            dim=-1,
-        )
+        target_drone_rpos = self.target_pos - drone_state[..., :3]
+        frame_drone_rpos = frame_pos.unsqueeze(1) - drone_state[..., :3]
 
+        identity = torch.eye(self.drone.n, device=self.device).expand(self.num_envs, -1, -1)
         obs = torch.cat(
             [
-                drone_rel_state,
-                frame_pos.unsqueeze(1) - drone_state[..., :3],
-                frame_rot.unsqueeze(1).expand(self.num_envs, 4, 4),
-                target_rel_pos.unsqueeze(1).expand(self.num_envs, 4, 3),
+                frame_drone_rpos, # 3
+                target_drone_rpos, # 3
+                drone_state[..., 3:], # drone_state_dim - 3
+                self.target_frame_rpos.unsqueeze(1).expand(-1, self.drone.n, -1), # 3
+                self.target_frame_rheading.unsqueeze(1).expand(-1, self.drone.n, -1), # 3
+                self.frame_up.unsqueeze(1).expand(-1, self.drone.n, -1), # 3
+                identity
             ],
             dim=-1,
         )
 
         state = torch.cat(
-            [drone_rel_state.flatten(-2), target_rel_pos, frame_rot], dim=-1
+            [
+                frame_drone_rpos.flatten(1), # 3 * drone.n
+                drone_state[..., 3:].flatten(1), # (drone_state_dim - 3) * drone.n
+                self.target_frame_rpos, # 3
+                self.target_frame_rheading, # 3
+                self.frame_up # 3
+            ], dim=-1
         )
 
+        if self._should_render(0):
+            env_pos = self.envs_positions[self.central_env_idx]
+            _frame_pos = frame_pos[self.central_env_idx] + env_pos
+            _target_pos = self.target_pos + env_pos
+            point_list_0 = []
+            point_list_1 = []
+            point_list_0.append(_frame_pos.tolist())
+            point_list_0.append((_frame_pos + frame_heading[self.central_env_idx]).tolist())
+            point_list_1.append(_target_pos.tolist())
+            point_list_1.append((_target_pos + self.target_heading[self.central_env_idx]).tolist())
+            colors = [(1.0, 1.0, 1.0, 1.0) for _ in range(len(point_list_0))]
+            sizes = [1 for _ in range(len(point_list_0))]
+
+            self.draw.clear_lines()
+            self.draw.draw_lines(point_list_0, point_list_1, colors, sizes)
+            
         return TensorDict(
             {
                 "drone.obs": obs,
@@ -140,26 +176,28 @@ class Platform(IsaacEnv):
         )
 
     def _compute_reward_and_done(self):
-        frame_pos, frame_rot = self.get_env_poses(self.frame_view.get_world_poses(clone=True))
+        drone_pos, drone_rot = self.get_env_poses(self.drone.get_world_poses(clone=True))
 
-        linvel, angvel = self.frame_view.get_velocities().split([3, 3], dim=-1)
-
-        distance = torch.norm(frame_pos - self.target_pos, dim=-1, keepdim=True)
+        vels = self.frame_view.get_velocities()
+    
+        distance = torch.norm(
+            torch.cat([self.target_frame_rpos, self.target_frame_rheading], dim=-1)
+        , dim=-1, keepdim=True)
 
         reward = torch.zeros(self.num_envs, 4, 1, device=self.device)
         reward_pos = 1 / (1 + torch.square(distance))
-        reward_rot = 1 / (1 + torch.square(angvel).sum(-1, keepdim=True))
-        reward_up = torch_utils.quat_axis(frame_rot, 2)[:, 2].unsqueeze(1)
+        reward_rot = 1 / (1 + torch.square(vels[..., -1].unsqueeze(-1)))
+        reward_up = 1 / (1 + torch.square(1-self.frame_up[:, 2]).unsqueeze(1))
 
         reward[:] = (reward_pos + reward_pos * (reward_rot + reward_up)).unsqueeze(1)
 
         self._tensordict["return"] += reward
 
-        misbehave = (frame_pos[..., 2] < 0.2).unsqueeze(-1) | (distance > 5.0)
+        misbehave = (drone_pos[..., 2] < 0.2).any(-1, keepdim=True) | (distance > 5.0)
 
-        done = (self.progress_buf >= self.max_eposode_length).unsqueeze(-1) | (
+        done = (self.progress_buf >= self.max_episode_length).unsqueeze(-1) | (
             misbehave & (self.progress_buf >= self.min_episode_length).unsqueeze(-1)
-        ).all(-1, keepdim=True)
+        )
 
         return TensorDict(
             {
@@ -169,3 +207,11 @@ class Platform(IsaacEnv):
             },
             self.batch_size,
         )
+
+class PlatformTracking(Platform):
+    def _compute_state_and_obs(self):
+        return super()._compute_state_and_obs()
+    
+    def _compute_reward_and_done(self):
+        return super()._compute_reward_and_done()
+

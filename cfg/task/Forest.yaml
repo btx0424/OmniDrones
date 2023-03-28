@@ -1,3 +1,9 @@
 name: Forest
 
 drone_model: Firefly
+
+multidiscrete_action:
+  nbins: 4
+
+# discrete_action:
+#   nbins: 2

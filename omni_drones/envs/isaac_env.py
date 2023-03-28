@@ -139,8 +139,9 @@ class IsaacEnv(EnvBase):
         if cls.__name__ in IsaacEnv.REGISTRY:
             raise ValueError
         super().__init_subclass__(**kwargs)
-        IsaacEnv.REGISTRY[cls.__name__] = cls
-        IsaacEnv.REGISTRY[cls.__name__.lower()] = cls
+        if not cls.__name__.startswith("_"):
+            IsaacEnv.REGISTRY[cls.__name__] = cls
+            IsaacEnv.REGISTRY[cls.__name__.lower()] = cls
 
     @property
     def agent_spec(self):

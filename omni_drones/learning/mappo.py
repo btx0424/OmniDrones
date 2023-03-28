@@ -142,7 +142,7 @@ class MAPPOPolicy(object):
                 self.critic_out_keys.append(f"{self.agent_spec.name}.critic_rnn_state")
             reward_spec = self.agent_spec.reward_spec
             reward_spec = reward_spec.expand(self.agent_spec.n, *reward_spec.shape)
-            critic = make_critic(cfg, self.agent_spec.state_spec, reward_spec)
+            critic = make_critic(cfg, self.agent_spec.state_spec, reward_spec, centralized=True)
             self.critic = TensorDictModule(
                 critic,
                 in_keys=self.critic_in_keys,
@@ -158,7 +158,7 @@ class MAPPOPolicy(object):
                     f"{self.agent_spec.name}.critic_rnn_state", "is_init"
                 ])
                 self.critic_out_keys.append(f"{self.agent_spec.name}.critic_rnn_state")
-            critic = make_critic(cfg, self.agent_spec.observation_spec, self.agent_spec.reward_spec)
+            critic = make_critic(cfg, self.agent_spec.observation_spec, self.agent_spec.reward_spec, centralized=False)
             self.critic = TensorDictModule(
                 critic,
                 in_keys=self.critic_in_keys,
@@ -415,7 +415,7 @@ def make_ppo_actor(cfg, observation_spec: TensorSpec, action_spec: TensorSpec):
     if isinstance(action_spec, MultiDiscreteTensorSpec):
         act_dist = MultiCategoricalModule(encoder.output_shape.numel(), action_spec.nvec)
     elif isinstance(action_spec, DiscreteTensorSpec):
-        act_dist = CatetoricalModule(encoder.output_shape.numel(), action_spec.space.n)
+        act_dist = MultiCategoricalModule(encoder.output_shape.numel(), [action_spec.space.n])
     elif isinstance(action_spec, (UnboundedTensorSpec, BoundedTensorSpec)):
         action_dim = action_spec.shape[-1]
         act_dist = DiagGaussian(encoder.output_shape.numel(), action_dim, True, 0.01)
@@ -432,7 +432,7 @@ def make_ppo_actor(cfg, observation_spec: TensorSpec, action_spec: TensorSpec):
     return Actor(encoder, act_dist, rnn)
 
 
-def make_critic(cfg, state_spec: TensorSpec, reward_spec: TensorSpec):
+def make_critic(cfg, state_spec: TensorSpec, reward_spec: TensorSpec, centralized=False):
     encoder = make_encoder(cfg, state_spec)
     
     if cfg.get("rnn", None):
@@ -441,10 +441,14 @@ def make_critic(cfg, state_spec: TensorSpec, reward_spec: TensorSpec):
     else:
         rnn = None
 
-    v_out = nn.Linear(encoder.output_shape.numel(), reward_spec.shape[-1])
-    nn.init.orthogonal_(v_out.weight, cfg.gain)
-
-    return Critic(encoder, rnn, v_out, reward_spec.shape[-1:])
+    if centralized:
+        v_out = nn.Linear(encoder.output_shape.numel(), reward_spec.shape[-2:].numel())
+        nn.init.orthogonal_(v_out.weight, cfg.gain)
+        return Critic(encoder, rnn, v_out, reward_spec.shape[-2:])
+    else:
+        v_out = nn.Linear(encoder.output_shape.numel(), reward_spec.shape[-1])
+        nn.init.orthogonal_(v_out.weight, cfg.gain)
+        return Critic(encoder, rnn, v_out, reward_spec.shape[-1:])
 
 
 class Actor(nn.Module):

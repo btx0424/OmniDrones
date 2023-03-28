@@ -9,9 +9,14 @@ q_mixer:
   hidden_dim: 128
 
 gamma: 0.99
-lr: 0.005
+lr: 0.0005
 max_grad_norm: 10 
-buffer_size: 32768
-batch_size: 1048576
-gradiet_steps: 5
-train_every: 500
+num_envs: ${..env.num_envs}
+buffer_size: 2048
+batch_size: 128
+gradient_steps: 100
+train_every: 200
+
+# target network
+target_update_interval: 4
+tau: 0.005

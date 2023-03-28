@@ -1,6 +1,9 @@
 name: Platform
 
-drone_model: Firefly
+drone_model: Hummingbird
 
-multidiscrete_action:
-  nbins: 4
+# multidiscrete_action:
+#   nbins: 4
+
+discrete_action:
+  nbins: 2

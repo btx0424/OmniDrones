@@ -10,14 +10,11 @@ from omegaconf import OmegaConf
 
 from omni_drones import CONFIG_PATH, init_simulation_app
 from omni_drones.learning.collectors import SyncDataCollector
-from omni_drones.utils.envs.transforms import LogOnEpisode
+from omni_drones.utils.envs.transforms import LogOnEpisode, FromDiscreteAction
 from omni_drones.utils.wandb import init_wandb
-from omni_drones.utils.math import quaternion_to_euler
 
 from setproctitle import setproctitle
 from tensordict import TensorDict
-from torchrl.data import TensorDictReplayBuffer
-from torchrl.data.replay_buffers.samplers import RandomSampler
 from torchrl.envs.transforms import TransformedEnv, InitTracker, Compose
 
 from tqdm import tqdm
@@ -32,21 +29,13 @@ def main(cfg):
     setproctitle(run.name)
     print(OmegaConf.to_yaml(cfg))
 
-    from omni_drones.envs import IsaacEnv
+    from omni_drones.envs.isaac_env import IsaacEnv, AgentSpec
     from omni_drones.learning.sac import MASACPolicy
     from omni_drones.learning.qmix import QMIX
     from omni_drones.sensors.camera import Camera
 
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
     base_env = env_class(cfg, headless=cfg.headless)
-    camera = Camera()
-    camera.spawn(["/World/Camera"], translations=[(6, 6, 3)], targets=[(0, 0, 1)])
-    camera.initialize("/World/Camera")
-
-    agent_spec = base_env.agent_spec["drone"]
-    policy = QMIX(
-        cfg.algo, agent_spec=agent_spec, device="cuda"
-    )
 
     def log(info):
         for k, v in info.items():
@@ -60,7 +49,30 @@ def main(cfg):
         logger_func=log,
     )
 
-    env = TransformedEnv(base_env, Compose(InitTracker(), logger)) 
+    transforms = [InitTracker(), logger]
+    if cfg.task.get("discrete_action", None):
+        nbins = cfg.task.discrete_action.nbins
+        transform = FromDiscreteAction(("action", "drone.action"), nbins=nbins)
+        transforms.append(transform)
+
+    env = TransformedEnv(base_env, Compose(*transforms)) 
+
+    camera = Camera()
+    camera.spawn(["/World/Camera"], translations=[(6, 6, 3)], targets=[(0, 0, 1)])
+    camera.initialize("/World/Camera")
+
+    # TODO: create a agent_spec view for TransformedEnv
+    agent_spec = AgentSpec(
+        name=base_env.agent_spec["drone"].name,
+        n=base_env.agent_spec["drone"].n,
+        observation_spec=env.observation_spec["drone.obs"],
+        action_spec=env.action_spec["drone.action"],
+        reward_spec=env.reward_spec["drone.reward"],
+        state_spec=env.observation_spec["drone.state"] if base_env.agent_spec["drone"].state_spec is not None else None,
+    )
+    policy = QMIX(
+        cfg.algo, agent_spec=agent_spec, device="cuda"
+    )
 
     collector = SyncDataCollector(
         env,
@@ -68,7 +80,7 @@ def main(cfg):
         frames_per_batch=env.num_envs * cfg.algo.train_every,
         total_frames=-1,
         device=cfg.sim.device,
-        return_same_td=True,
+        return_same_td=False,
     )
 
     @torch.no_grad()

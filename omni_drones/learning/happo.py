@@ -27,7 +27,7 @@ from .utils.gae import compute_gae
 LR_SCHEDULER = lr_scheduler._LRScheduler
 
 
-class MAPPOPolicy(object):
+class HAPPO(object):
     def __init__(
         self, cfg, agent_spec: AgentSpec, act_name: str = None, device="cuda"
     ) -> None:
@@ -346,7 +346,7 @@ class MAPPOPolicy(object):
         for ppo_epoch in range(self.ppo_epoch):
             dataset = make_dataset_naive(
                 tensordict,
-                int(self.cfg.num_minibatches),
+                self.cfg.num_minibatches,
                 self.minibatch_seq_len if hasattr(self, "minibatch_seq_len") else 1,
             )
             for minibatch in dataset:

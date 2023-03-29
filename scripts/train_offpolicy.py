@@ -34,6 +34,8 @@ def main(cfg):
     from omni_drones.learning.qmix import QMIX
     from omni_drones.sensors.camera import Camera
 
+    policies = {"qmix": QMIX, "sac": MASACPolicy}
+
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
     base_env = env_class(cfg, headless=cfg.headless)
 
@@ -70,7 +72,8 @@ def main(cfg):
         reward_spec=env.reward_spec["drone.reward"],
         state_spec=env.observation_spec["drone.state"] if base_env.agent_spec["drone"].state_spec is not None else None,
     )
-    policy = QMIX(
+
+    policy = policies[cfg.algo.name](
         cfg.algo, agent_spec=agent_spec, device="cuda"
     )
 
@@ -112,7 +115,7 @@ def main(cfg):
         info = {"env_frames": collector._frames}
         info.update(policy.train_op(data))
 
-        # run.log(info)
+        run.log(info)
 
         # if i % 100 == 0:
         #     logging.info(f"Eval at {collector._frames} steps.")

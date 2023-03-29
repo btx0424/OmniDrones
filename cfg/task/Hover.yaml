@@ -1,5 +1,9 @@
 name: Hover
 
+defaults:
+  - /env_base
+  - /sim_base
+
 drone_model: Firefly
 
 # multidiscrete_action:

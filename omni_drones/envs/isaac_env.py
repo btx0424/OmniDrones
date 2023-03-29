@@ -13,7 +13,7 @@ from omni.isaac.core.utils.carb import set_carb_setting
 from omni.isaac.core.utils.extensions import disable_extension
 from omni.isaac.core.utils.viewports import set_camera_view
 from tensordict.tensordict import TensorDict, TensorDictBase
-from torchrl.data import CompositeSpec, TensorSpec
+from torchrl.data import CompositeSpec, TensorSpec, DiscreteTensorSpec
 from torchrl.envs import EnvBase
 
 from omni_drones.robots.robot import RobotBase
@@ -133,6 +133,9 @@ class IsaacEnv(EnvBase):
         self.observation_spec = CompositeSpec(shape=self.batch_size)
         self.action_spec = CompositeSpec(shape=self.batch_size)
         self.reward_spec = CompositeSpec(shape=self.batch_size)
+        self.done_spec = DiscreteTensorSpec(
+            n=2, shape=(*self.batch_size, 1), dtype=torch.bool, device=self.device
+        )
 
     @classmethod
     def __init_subclass__(cls, **kwargs):

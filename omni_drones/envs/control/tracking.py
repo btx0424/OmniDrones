@@ -104,8 +104,9 @@ class Tracking(IsaacEnv):
         # pos reward
         rpos = self.target_pos[:, 0, :].unsqueeze(1) - pos
         target_dist = torch.norm(rpos, dim=-1)
-
-        pose_reward = 1.0 / (1.0 + torch.square(target_dist))
+        
+        k = 2.
+        pose_reward = 1.0 / (1.0 + torch.square(k * target_dist))
         
         # uprightness
         tiltage = torch.abs(1 - up[..., 2])
@@ -126,7 +127,7 @@ class Tracking(IsaacEnv):
             (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
             | (pos[..., 2] < 0.1)
             | (target_dist > 1)
-        )
+        ) & (self.progress_buf >= self.min_episode_length).unsqueeze(-1)
         return TensorDict(
             {
                 "reward": {"drone.reward": reward.unsqueeze(-1)},

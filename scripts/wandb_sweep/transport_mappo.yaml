@@ -11,17 +11,17 @@ metric:
 parameters:
 
   task: 
-    value: Hover
+    value: Transport
 
   total_frames: 
     value: 500_000_000
 
+  task.drone_model:
+    values: [Crazyflie, Firefly, Hummingbird, Neo11]
+
   headless:
     value: true
   
-  task.drone_model:
-    values: [Crazyflie, Firefly, Hummingbird]
-
   algo.num_minibatches:
     distribution: log_uniform_values
     min: 2

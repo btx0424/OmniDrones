@@ -35,26 +35,25 @@ class LogOnEpisode(Transform):
             self.process_func.update(process_func)
 
         self.stats = []
+        self._frames = 0
 
     def _call(self, tensordict: TensorDictBase) -> TensorDictBase:
         return tensordict
 
     def _step(self, tensordict: TensorDictBase) -> TensorDictBase:
-        _reset = tensordict.get(
-            ("next", "done"),
-            torch.ones(
-                tensordict.batch_size,
-                dtype=torch.bool,
-                device=tensordict.device,
-            ),
-        ).squeeze(-1)
+        _reset = tensordict.get(("next", "done"), None)
+        if _reset is None:
+            _reset = torch.ones(
+                tensordict.batch_size, dtype=torch.bool, device=tensordict.device
+            )
         if _reset.any():
+            _reset = _reset.squeeze(-1)
             self.stats.extend(
                 tensordict[_reset].select(*self.in_keys).clone().unbind(0)
             )
             if len(self.stats) >= self.n_episodes:
                 stats: TensorDictBase = torch.stack(self.stats)
-                dict_to_log = {}
+                dict_to_log = {"env_frames": self._frames}
                 for in_key, log_key in zip(self.in_keys, self.log_keys):
                     if in_key in stats.keys():
                         process_func = self.process_func[in_key]
@@ -62,6 +61,7 @@ class LogOnEpisode(Transform):
                 if self.logger_func is not None:
                     self.logger_func(dict_to_log)
                 self.stats.clear()
+        self._frames += tensordict.numel()
         return tensordict
 
 

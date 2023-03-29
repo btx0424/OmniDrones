@@ -1,5 +1,9 @@
 name: Tracking
 
+defaults:
+  - /env_base
+  - /sim_base
+
 drone_model: Firefly
 
 traj_func: circle

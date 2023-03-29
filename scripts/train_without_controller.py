@@ -78,11 +78,13 @@ def main(cfg):
         cfg.algo, agent_spec=agent_spec, device="cuda"
     )
 
+    frames_per_batch = env.num_envs * int(cfg.algo.train_every)
+    total_frames = cfg.get("total_frames", -1) // frames_per_batch * frames_per_batch
     collector = SyncDataCollector(
         env,
         policy=policy,
-        frames_per_batch=env.num_envs * cfg.algo.train_every,
-        total_frames=-1,
+        frames_per_batch=frames_per_batch,
+        total_frames=total_frames,
         device=cfg.sim.device,
         return_same_td=True,
     )
@@ -97,7 +99,7 @@ def main(cfg):
             frames.append(frame.cpu())
 
         base_env.enable_render(True)
-        env.rollout(
+        base_env.rollout(
             max_steps=base_env.max_episode_length,
             policy=policy,
             callback=record_frame,

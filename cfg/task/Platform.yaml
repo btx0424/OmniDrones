@@ -1,5 +1,12 @@
 name: Platform
 
+defaults:
+  - /env_base
+  - /sim_base
+
+env:
+  num_envs: 1024
+
 drone_model: Hummingbird
 
 # multidiscrete_action:

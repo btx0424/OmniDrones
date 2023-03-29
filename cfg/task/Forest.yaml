@@ -1,5 +1,13 @@
 name: Forest
 
+defaults:
+  - /env_base
+  - /sim_base
+
+env:
+  num_envs: 4
+  env_spacing: 30
+  
 drone_model: Firefly
 
 multidiscrete_action:

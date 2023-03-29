@@ -1,6 +1,16 @@
 name: Transport
 
+defaults:
+  - /env_base
+  - /sim_base
+
+env:
+  num_envs: 1024
+
 drone_model: Hummingbird
+
+payload_mass_min: 1.5
+payload_mass_max: 2.5
 
 multidiscrete_action:
   nbins: 4

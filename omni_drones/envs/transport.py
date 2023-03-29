@@ -22,6 +22,10 @@ class Transport(IsaacEnv):
         super().__init__(cfg, headless)
         self.group.initialize()
         self.payload = self.group.payload_view
+        self.payload_mass_dist = torch.distributions.Uniform(
+            torch.as_tensor(self.cfg.task.payload_mass_min, device=self.device),
+            torch.as_tensor(self.cfg.task.payload_mass_max, device=self.device)
+        )
         self.payload_target_visual = RigidPrimView(
             "/World/envs/.*/payloadTargetVis",
             reset_xform_properties=False
@@ -117,6 +121,9 @@ class Transport(IsaacEnv):
         self.payload_target_pos[env_ids] = payload_target_pos
         target_axis = functorch.vmap(get_axis)(payload_target_rot, payload_target_pos)
         self.payload_target_axis[env_ids] = target_axis
+
+        payload_masses = self.payload_mass_dist.sample(env_ids.shape)
+        self.payload.set_masses(payload_masses, env_ids)
 
         payload_target_pose = (payload_target_pos + self.envs_positions[env_ids], payload_target_rot)
         self.payload_target_visual.set_world_poses(*payload_target_pose, env_ids)

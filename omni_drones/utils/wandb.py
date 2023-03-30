@@ -81,6 +81,4 @@ def init_wandb(cfg):
     else:
         cfg_dict = dict_flatten(OmegaConf.to_container(cfg))
         run.config.update(cfg_dict)
-    if wandb_cfg.log_code is not None:
-        run.log_code()
     return run

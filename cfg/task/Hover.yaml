@@ -6,6 +6,9 @@ defaults:
 
 drone_model: Firefly
 
+env:
+  num_envs: 2048
+
 # multidiscrete_action:
 #   nbins: 6
 

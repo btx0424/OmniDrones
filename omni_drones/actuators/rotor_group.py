@@ -21,7 +21,7 @@ class RotorGroup(nn.Module):
         self.max_forces = nn.Parameter(self.MAX_ROT_VEL.square() * self.KF)
         self.max_moments = nn.Parameter(self.MAX_ROT_VEL.square() * self.KM)
         self.throttle = nn.Parameter(torch.zeros(self.num_rotors))
-        self.directions = nn.Parameter(torch.as_tensor(rotor_config["directions"]))
+        self.directions = nn.Parameter(torch.as_tensor(rotor_config["directions"]).float())
 
         self.tau_up = nn.Parameter(4 * dt / self.time_up * torch.ones(self.num_rotors))
         self.tau_down = nn.Parameter(

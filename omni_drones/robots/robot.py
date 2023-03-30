@@ -157,25 +157,25 @@ class RobotBase(abc.ABC):
     def _reset_idx(self, env_ids: torch.Tensor):
         raise NotImplementedError
 
-    def get_world_poses(self, clone=True):
+    def get_world_poses(self, clone: bool=False):
         return self._view.get_world_poses(clone=clone)
 
     def set_world_poses(self, positions: torch.Tensor=None, orientations: torch.Tensor=None, env_indices: torch.Tensor = None):
         return self._view.set_world_poses(positions, orientations, env_indices=env_indices)
 
-    def get_velocities(self, clone=True):
+    def get_velocities(self, clone: bool=False):
         return self._view.get_velocities(clone=clone)
 
     def set_velocities(self, velocities: torch.Tensor, env_indices: torch.Tensor = None):
         return self._view.set_velocities(velocities, env_indices=env_indices)
 
-    def get_joint_positions(self, clone=True):
+    def get_joint_positions(self, clone: bool=False):
         return self._view.get_joint_positions(clone=clone)
 
     def set_joint_positions(self, pos: torch.Tensor, env_indices: torch.Tensor = None):
         return self._view.set_joint_positions(pos, env_indices=env_indices)
 
-    def get_joint_velocities(self, clone=True):
+    def get_joint_velocities(self, clone: bool=False):
         return self._view.get_joint_velocities(clone=clone)
 
     def set_joint_velocities(self, vel: torch.Tensor, env_indices: torch.Tensor = None):

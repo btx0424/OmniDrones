@@ -19,7 +19,6 @@ wandb:
   run_id: 
   run_path:
   monitor_gym: True
-  log_code: True
   tags: 
 
 defaults:

@@ -114,13 +114,11 @@ class MAPPOPolicy(object):
         if self.cfg.share_actor:
             self.actor = create_actor_fn()
             self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=cfg.lr)
-            self.actor_params_list = self.actor.parameters() # for grad clipping
             self.actor_params = make_functional(self.actor).expand(self.agent_spec.n)
         else:
             actors = nn.ModuleList([create_actor_fn() for _ in range(self.agent_spec.n)])
             self.actor = actors[0]
             self.actor_opt = torch.optim.Adam(actors.parameters(), lr=cfg.lr)
-            self.actor_params_list = actors.parameters()
             self.actor_params = torch.stack([make_functional(actor) for actor in actors])
 
     def make_critic(self):
@@ -239,12 +237,12 @@ class MAPPOPolicy(object):
                 actor_input, self.actor_params, eval_action=True
             )
 
-        log_probs = actor_output[self.act_logps_name]
+        log_probs_new = actor_output[self.act_logps_name]
         dist_entropy = actor_output[f"{self.agent_spec.name}.action_entropy"]
 
-        assert advantages.shape == log_probs.shape == dist_entropy.shape
+        assert advantages.shape == log_probs_new.shape == dist_entropy.shape
 
-        ratio = torch.exp(log_probs - log_probs_old)
+        ratio = torch.exp(log_probs_new - log_probs_old)
         surr1 = ratio * advantages
         surr2 = (
             torch.clamp(ratio, 1.0 - self.clip_param, 1.0 + self.clip_param)
@@ -255,15 +253,15 @@ class MAPPOPolicy(object):
 
         self.actor_opt.zero_grad()
         (policy_loss - entropy_loss * self.cfg.entropy_coef).backward()
-        grad_norm = torch.nn.utils.clip_grad_norm_(self.actor_params_list, self.cfg.max_grad_norm)
+        grad_norm = torch.nn.utils.clip_grad_norm_(
+            self.actor_opt.param_groups[0]["params"], self.cfg.max_grad_norm
+        )
         self.actor_opt.step()
 
         return {
             "policy_loss": policy_loss.item(),
             "actor_grad_norm": grad_norm.item(),
-            "dist_entropy": entropy_loss.item(),
-            # "clip_fraction": clip_frac.mean(),
-            # "approx_kl": approx_kl.mean(),
+            "entropy": - entropy_loss.item(),
         }
 
     def update_critic(self, batch: TensorDict) -> Dict[str, Any]:

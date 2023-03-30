@@ -14,7 +14,7 @@ parameters:
     value: Hover
 
   total_frames: 
-    value: 500_000_000
+    value: 100_000_000
 
   headless:
     value: true
@@ -29,8 +29,8 @@ parameters:
   
   algo.train_every:
     distribution: log_uniform_values
-    min: 8
-    max: 64
+    min: 32
+    max: 512
   
   algo.ppo_epochs:
     values: [2, 4, 8]

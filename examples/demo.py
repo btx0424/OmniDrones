@@ -34,10 +34,10 @@ def main(cfg):
     for i, model in enumerate(
         [
             # "Crazyflie",
-            "Firefly",
-            "Hummingbird",
+            # "Firefly",
+            # "Hummingbird",
             # "Neo11",
-            # "Omav"
+            "Omav"
         ]
     ):
         drones[model] = MultirotorBase.REGISTRY[model]()
@@ -52,18 +52,31 @@ def main(cfg):
 
     for drone in drones.values():
         drone.initialize()
-
+    
+    iter = 0
+    iter_max = 1000
+        
     while simulation_app.is_running():
-        if sim.is_stopped():
-            break
-        if not sim.is_playing():
-            sim.step(render=not cfg.headless)
-            continue
-        for drone in drones.values():
-            actions = drone.action_spec.zero((drone.n,))
-            actions.fill_(0.0)
-            drone.apply_action(actions)
-        sim.step()
+        while iter < iter_max:
+            try:
+                if sim.is_stopped():
+                    break
+                if not sim.is_playing():
+                    sim.step(render=not cfg.headless)
+                    continue
+                for drone in drones.values():
+                    actions = drone.action_spec.rand((drone.n,))
+                    actions.fill_(0.0)
+                    drone.apply_action(actions)
+                sim.step()
+                iter += 1         
+            except KeyboardInterrupt:
+                break
+        else:
+            # reset
+            for drone in drones.values():
+                pass # TODO: reset drone
+            iter = 0
 
     simulation_app.close()
 

@@ -122,15 +122,46 @@ class ArticulationView(_ArticulationView):
         self,
         positions: Optional[torch.Tensor],
         env_indices: Optional[torch.Tensor] = None,
+        joint_indices: Optional[torch.Tensor] = None,
     ) -> None:
         indices = self._resolve_env_indices(env_indices)
-        super().set_joint_positions(positions.reshape(-1, self.num_dof), indices)
+        super().set_joint_positions(
+            positions.flatten(end_dim=-2), 
+            indices,
+            joint_indices
+        )
+
+    def set_joint_position_targets(
+        self, 
+        positions: Optional[torch.Tensor], 
+        env_indices: Optional[torch.Tensor] = None, 
+        joint_indices: Optional[torch.Tensor] = None,
+    ) -> None:
+        indices = self._resolve_env_indices(env_indices)
+        super().set_joint_position_targets(
+            positions.flatten(end_dim=-2), 
+            indices,
+            joint_indices
+        )
+    
+    def set_joint_efforts(
+        self, 
+        efforts: Optional[torch.Tensor], 
+        env_indices: Optional[torch.Tensor] = None, 
+        joint_indices: Optional[torch.Tensor] = None
+    ) -> None:
+        indices = self._resolve_env_indices(env_indices)
+        super().set_joint_efforts(
+            efforts.flatten(end_dim=-2), 
+            indices, 
+            joint_indices
+        )
 
     def get_body_masses(
         self, env_indices: Optional[torch.Tensor] = None, clone: bool = True
     ) -> torch.Tensor:
         indices = self._resolve_env_indices(env_indices)
-        return super().get_body_masses(indices, clone).unflatten(0, self.shape)
+        return super().get_body_masses(indices, clone=clone).unflatten(0, self.shape)
 
     def set_body_masses(
         self,

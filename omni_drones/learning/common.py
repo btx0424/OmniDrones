@@ -57,15 +57,23 @@ def sample_sub_traj(traj, seq_len):
 
 from torchrl.data import BoundedTensorSpec, UnboundedContinuousTensorSpec, CompositeSpec, TensorSpec
 from .modules.networks import MLP, ENCODERS_MAP
+from functools import partial
 
 def make_encoder(cfg, input_spec: TensorSpec) -> nn.Module:
     if isinstance(input_spec, (BoundedTensorSpec, UnboundedContinuousTensorSpec)):
         input_dim = input_spec.shape[-1]
         encoder = nn.Sequential(
             nn.LayerNorm(input_dim),
-            MLP([input_dim] + cfg.hidden_units),
+            MLP(
+                num_units=[input_dim] + cfg.hidden_units, 
+                normalization=nn.LayerNorm if cfg.get("layer_norm", False) else None
+            ),
         )
         encoder.output_shape = torch.Size((cfg.hidden_units[-1],))
+        if cfg.get("init", None) is not None:
+            init = getattr(nn.init, cfg.init.type)
+            init = partial(init, **cfg.init.get("kwargs", {}))
+            encoder.apply(lambda m: init_linear(m, init))
     elif isinstance(input_spec, CompositeSpec):
         encoder_cls = ENCODERS_MAP[cfg.attn_encoder]
         encoder = encoder_cls(input_spec)
@@ -73,4 +81,9 @@ def make_encoder(cfg, input_spec: TensorSpec) -> nn.Module:
         raise NotImplementedError(input_spec)
 
     return encoder
+
+@torch.no_grad()
+def init_linear(module: nn.Module, weight_init):
+    if isinstance(module, nn.Linear):
+        weight_init(module.weight)
 

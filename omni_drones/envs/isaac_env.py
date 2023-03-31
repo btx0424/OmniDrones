@@ -18,6 +18,7 @@ from torchrl.envs import EnvBase
 
 from omni_drones.robots.robot import RobotBase
 from omni_drones.sensors.camera import PinholeCameraCfg
+from omni_drones.utils.torchrl import AgentSpec
 
 
 class IsaacEnv(EnvBase):
@@ -276,19 +277,6 @@ class IsaacEnv(EnvBase):
             self._should_render = enable
         else:
             raise TypeError("enable_render must be a bool or callable.")
-    
-
-from dataclasses import dataclass
-
-
-@dataclass
-class AgentSpec:
-    name: str
-    n: int
-    observation_spec: TensorSpec
-    action_spec: TensorSpec
-    reward_spec: TensorSpec
-    state_spec: Optional[TensorSpec] = None
 
 
 class _AgentSpecView(Dict[str, AgentSpec]):

@@ -15,10 +15,11 @@ class Omav(MultirotorBase):
         self.action_spec = BoundedTensorSpec(-1, 1, 12 + 6, device=self.device)
         self.tilt_dof_indices = torch.arange(0, 6, device=self.device)
         self.rotor_dof_indices = torch.arange(6, 18, device=self.device)
+        self.max_tilt_velocity = 20
 
     def initialize(self, prim_paths_expr: str = None):
         super().initialize(prim_paths_expr)
-        self.init_tilt_positions = self.get_joint_positions()[..., self.rotor_dof_indices]
+        self.init_tilt_positions = self.get_joint_positions()[..., self.tilt_dof_indices]
     
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
         rotor_cmds, tilt_cmds = actions.expand(*self.shape, 18).split([12, 6], dim=-1)
@@ -28,10 +29,12 @@ class Omav(MultirotorBase):
         )(rotor_cmds, self.rotor_params_and_states)
 
         _, rotor_rot = self.rotors_view.get_world_poses()
-        torque_directions = vmap(torch_utils.quat_axis)(rotor_rot, axis=2) * self.directions.unsqueeze(-1)
+        torque_axis = torch_utils.quat_axis(
+            rotor_rot.flatten(end_dim=-2), axis=2
+        ).unflatten(0, (*self.shape, self.num_rotors))
 
         self.forces[..., 2] = thrusts # local z axis
-        self.torques[:] = (moments.unsqueeze(-1) * torque_directions).sum(-2) # world x, y, z axis
+        self.torques[:] = (moments.unsqueeze(-1) * torque_axis).sum(-2) # world x, y, z axis
 
         self.rotors_view.apply_forces(
             self.forces.reshape(-1, 3), is_global=False
@@ -41,8 +44,9 @@ class Omav(MultirotorBase):
             None, self.torques.reshape(-1, 3), is_global=True
         )
 
-        # self._view.set_joint_efforts(
-        #     tilt_cmds, joint_indices=self.tilt_dof_indices
+        # velocity_targets = tilt_cmds.clamp(-1, 1) * self.max_tilt_velocity
+        # self._view.set_joint_velocity_targets(
+        #     velocity_targets, joint_indices=self.tilt_dof_indices
         # )
 
         return self.throttle.sum(-1)

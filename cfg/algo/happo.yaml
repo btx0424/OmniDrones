@@ -1,4 +1,4 @@
-name: mappo
+name: happo
 
 # ppo
 train_every: 32
@@ -20,13 +20,11 @@ actor:
   lr_scheduler: 
   lr_scheduler_kwargs: 
   
-  # mlp
   hidden_units: [128, 128]
-  layer_norm: true
-
   weight_decay: 0.0
   gain: 0.01
 
+  use_attn: false
   attn_encoder: PartialAttentionEncoder
   use_orthogonal: true
 
@@ -47,13 +45,9 @@ critic:
   lr_scheduler: 
   lr_scheduler_kwargs: 
 
-  # mlp
   hidden_units: [128, 128]
-  layer_norm: true
-
   weight_decay: 0.0
   gain: 0.01
-
   use_huber_loss: true
   huber_delta: 10
 
@@ -63,6 +57,7 @@ critic:
   #     hidden_size: 128
   #   train_seq_len: 8
 
+  use_attn: false
   attn_encoder: PartialAttentionEncoder
   use_feature_normalization: true
   use_orthogonal: true

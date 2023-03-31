@@ -9,7 +9,7 @@ from functorch import vmap
 from omegaconf import OmegaConf
 
 from omni_drones import CONFIG_PATH, init_simulation_app
-from omni_drones.learning.collectors import SyncDataCollector
+from omni_drones.utils.torchrl import SyncDataCollector, AgentSpec
 from omni_drones.utils.envs.transforms import LogOnEpisode, FromDiscreteAction
 from omni_drones.utils.wandb import init_wandb
 
@@ -29,7 +29,7 @@ def main(cfg):
     setproctitle(run.name)
     print(OmegaConf.to_yaml(cfg))
 
-    from omni_drones.envs.isaac_env import IsaacEnv, AgentSpec
+    from omni_drones.envs.isaac_env import IsaacEnv
     from omni_drones.learning.sac import MASACPolicy
     from omni_drones.learning.qmix import QMIX
     from omni_drones.sensors.camera import Camera
@@ -116,6 +116,7 @@ def main(cfg):
         info.update(policy.train_op(data))
 
         run.log(info)
+        print(OmegaConf.to_yaml(info))
 
         # if i % 100 == 0:
         #     logging.info(f"Eval at {collector._frames} steps.")

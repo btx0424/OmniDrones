@@ -105,7 +105,7 @@ class Platform(IsaacEnv):
         self.drone.set_velocities(self.init_drone_vels[env_ids], env_ids)
 
         target_rpy = torch.zeros(len(env_ids), 3, device=self.device)
-        # target_rpy[..., 2] = torch.rand(len(env_ids), device=self.device) * torch.pi - torch.pi / 2
+        target_rpy[..., 2] = torch.rand(len(env_ids), device=self.device) * torch.pi - torch.pi / 2
         target_rot = euler_to_quaternion(target_rpy)
         self.target_heading[env_ids] = torch_utils.quat_axis(target_rot, 0)
 

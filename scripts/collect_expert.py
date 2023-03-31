@@ -166,8 +166,6 @@ def main(cfg):
 
     pbar = tqdm(collector)
     for i, data in enumerate(pbar):
-        info = {"env_frames": collector._frames}
-
         pbar.set_postfix(
             {
                 "rollout_fps": collector._fps,

@@ -42,7 +42,7 @@ class MASACPolicy(object):
         self.batch_size = int(cfg.batch_size)
 
         self.obs_name = f"{self.agent_spec.name}.obs"
-        self.act_name = f"{self.agent_spec.name}.action"
+        self.act_name = ("action", f"{self.agent_spec.name}.action")
         if agent_spec.state_spec is not None:
             self.state_name = f"{self.agent_spec.name}.state"
         else:
@@ -52,14 +52,14 @@ class MASACPolicy(object):
         self.make_actor()
         self.make_critic()
         
-        self.action_dim = self.agent_spec.action_spec.shape.numel()
+        self.action_dim = self.agent_spec.action_spec.shape[-1]
         self.target_entropy = - torch.tensor(self.action_dim, device=self.device)
         init_entropy = 1.0
         self.log_alpha = nn.Parameter(torch.tensor(init_entropy, device=self.device).log())
         self.alpha_opt = torch.optim.Adam([self.log_alpha], lr=self.cfg.alpha_lr)
 
         self.replay_buffer = TensorDictReplayBuffer(
-            storage=LazyTensorStorage(max_size=self.cfg.buffer_size),
+            storage=LazyTensorStorage(max_size=self.cfg.buffer_size, device=self.device),
             sampler=RandomSampler(),
         )
     
@@ -121,14 +121,15 @@ class MASACPolicy(object):
         actor_input = tensordict.select(*self.policy_in_keys)
         actor_input.batch_size = [*actor_input.batch_size, self.agent_spec.n]
         actor_output = self.actor(actor_input)
+        actor_output["action"].batch_size = tensordict.batch_size
         tensordict.update(actor_output)
         return tensordict
 
     def train_op(self, data: TensorDict):
         self.replay_buffer.extend(data.reshape(-1))
 
-        if len(self.replay_buffer) < self.batch_size:
-            print(f"{len(self.replay_buffer)} < {self.batch_size}")
+        if len(self.replay_buffer) < self.cfg.buffer_size:
+            print(f"{len(self.replay_buffer)} < {self.cfg.buffer_size}")
             return {}
         
         infos_critic = []
@@ -139,69 +140,75 @@ class MASACPolicy(object):
 
                 transition = self.replay_buffer.sample(self.batch_size)
 
-                obs     = transition[self.obs_name]
                 state   = transition[self.state_name]
                 actions = transition[self.act_name]
 
                 reward  = transition[("next", "reward", f"{self.agent_spec.name}.reward")]
-                next_dones  = transition[("next", "done")].float()
-                next_obs    = transition[("next", self.obs_name)]
+                next_dones  = transition[("next", "done")].float().unsqueeze(-1)
                 next_state  = transition[("next", self.state_name)]
 
+                # TODO@btx0424 optimize this part
+                with torch.no_grad():
+                    actor_output = self.actor(transition["next"], deterministic=False)
+                    next_act = actor_output[self.act_name]
+                    next_logp = actor_output[f"{self.agent_spec.name}.logp"]
+                    next_qs = self.critic_target(next_state, next_act)
+                    next_q = torch.min(next_qs, dim=-1, keepdim=True).values
+                    next_q = next_q - self.log_alpha.exp() * next_logp
+                    target_q = (reward + self.cfg.gamma * (1 - next_dones) * next_q).detach().squeeze(-1)
+                    assert not torch.isinf(target_q).any()
+                    assert not torch.isnan(target_q).any()
 
-                for i in range(self.agent_spec.n):
-                    # TODO@btx0424 optimize this part
-                    with torch.no_grad():
-                        next_act, next_logp = self.actor(next_obs[:, i], deterministic=False)
-                        next_qs = self.critic_target(next_state, next_act)
-                        next_q = torch.min(next_qs, dim=-1)[0]
-                        next_q = next_q - self.log_alpha.exp() * next_logp
-                        target_q = (reward[:, i] + self.cfg.gamma * (1 - next_dones[:, i]) * next_q).detach()
-                        assert not torch.isinf(target_q).any()
-                        assert not torch.isnan(target_q).any()
+                qs = self.critic(state, actions)
+                critic_loss = sum(F.mse_loss(q, target_q) for q in qs.unbind(-1))
+                self.critic_opt.zero_grad()
+                critic_loss.backward()
+                critic_grad_norm = nn.utils.clip_grad_norm_(self.critic.parameters(), self.cfg.max_grad_norm)
+                self.critic_opt.step()
+                infos_critic.append(TensorDict({
+                    "critic_loss": critic_loss,
+                    "critic_grad_norm": critic_grad_norm,
+                    "q_taken": qs.mean()
+                }, []))
 
-                    qs = self.critic(state[:, i], actions[:, i])
-                    critic_loss = sum(F.mse_loss(q, target_q) for q in qs.unbind(-1))
-                    self.critic_opt.zero_grad()
-                    critic_loss.backward()
-                    critic_grad_norm = nn.utils.clip_grad_norm_(self.critic.parameters(), self.cfg.max_grad_norm)
-                    self.critic_opt.step()
-                    infos_critic.append(TensorDict({
-                        "critic_loss": critic_loss,
-                        "critic_grad_norm": critic_grad_norm
-                    }))
+                if (gradient_step + 1) % self.cfg.actor_delay == 0:
 
-                    if (gradient_step + 1) % self.cfg.actor_delay == 0:
+                    with freeze(self.critic):
+                        actor_output = self.actor(transition, deterministic=False)
+                        act = actor_output[self.act_name]
+                        logp = actor_output[f"{self.agent_spec.name}.logp"]
+                        qs = self.critic(state, act)
+                        q = torch.min(qs, dim=-1)[0]
+                        actor_loss = (self.log_alpha.exp() * logp - q).mean()
+                        self.actor_opt.zero_grad()
+                        actor_loss.backward()
+                        actor_grad_norm = nn.utils.clip_grad_norm_(self.actor.parameters(), self.cfg.max_grad_norm)
+                        self.actor_opt.step()
 
-                        with freeze(self.critic):
-                            act, logp = self.actor(obs[:, i], deterministic=False)
-                            qs = self.critic(state[:, i], act)
-                            q = torch.min(qs, dim=-1)[0]
-                            actor_loss = (self.log_alpha.exp() * logp - q).mean()
-                            self.actor_opt.zero_grad()
-                            actor_loss.backward()
-                            actor_grad_norm = nn.utils.clip_grad_norm_(self.actor.parameters(), self.cfg.max_grad_norm)
-                            self.actor_opt.step()
+                        self.alpha_opt.zero_grad()
+                        alpha_loss = (self.log_alpha * (-logp - self.target_entropy).detach()).mean()
+                        alpha_loss.backward()
+                        self.alpha_opt.step()
 
-                            self.alpha_opt.zero_grad()
-                            alpha_loss = (self.log_alpha * (-logp - self.target_entropy).detach()).mean()
-                            alpha_loss.backward()
-                            self.alpha_opt.step()
+                        infos_actor.append(TensorDict({
+                            "actor_loss": actor_loss,
+                            "actor_grad_norm": actor_grad_norm,
+                            "alpha": self.log_alpha.exp().detach(),
+                            "alpha_loss": alpha_loss,
+                        }, []))
 
-                            infos_actor.append(TensorDict({
-                                "actor_loss": actor_loss,
-                                "actor_grad_norm": actor_grad_norm,
-                                "alpha": self.log_alpha.exp().detach(),
-                                "alpha_loss": alpha_loss,
-                            }))
+                t.set_postfix({"critic_loss": critic_loss.item()})
 
                 if (gradient_step + 1) % self.cfg.target_update_interval == 0:
                     soft_update(self.critic_target, self.critic, self.cfg.tau)
-
-        return {**torch.stack(infos_actor).mean(), **torch.stack(infos_critic).mean()}
+        
+        infos = {**torch.stack(infos_actor), **torch.stack(infos_critic)}
+        infos = {k: torch.mean(v).item() for k, v in infos.items()}
+        return infos
 
 from .modules.networks import MLP
 from .modules.distributions import TanhIndependentNormalModule
+from .common import make_encoder
 
 class Actor(nn.Module):
     def __init__(self, 
@@ -211,26 +218,15 @@ class Actor(nn.Module):
     ) -> None:
         super().__init__()
         self.cfg = cfg
-        if isinstance(observation_spec, (BoundedTensorSpec, UnboundedTensorSpec)):
-            num_units = [observation_spec.shape.numel(), *cfg["hidden_units"]]
-            self.base = MLP(num_units)
-        elif isinstance(observation_spec, CompositeSpec):
-            ...
-        else:
-            raise NotImplementedError(observation_spec)
-        
-        self.feature_norm = nn.LayerNorm(observation_spec.shape.numel())
+        self.encoder = make_encoder(cfg, observation_spec)
         
         self.act = TanhIndependentNormalModule(
-            cfg["hidden_units"][-1], 
-            action_spec.shape.numel(), 
+            self.encoder.output_shape.numel(), 
+            action_spec.shape[-1], 
         )
 
     def forward(self, obs: torch.Tensor, deterministic: bool=False):
-        if hasattr(self, "feature_norm"):
-            obs = self.feature_norm(obs)
-            
-        x = self.base(obs)
+        x = self.encoder(obs)
         act_dist = self.act(x)
 
         if deterministic:
@@ -263,8 +259,8 @@ class Critic(nn.Module):
 
     def _make_critic(self):
         if isinstance(self.state_space, (BoundedTensorSpec, UnboundedTensorSpec)):
-            action_dim = self.act_space.shape.numel()
-            state_dim = self.state_space.shape.numel()
+            action_dim = self.act_space.shape[-1]
+            state_dim = self.state_space.shape[-1]
             num_units = [
                 action_dim * self.num_agents + state_dim, 
                 *self.cfg["hidden_units"]

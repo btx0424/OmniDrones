@@ -106,9 +106,23 @@ class ArticulationView(_ArticulationView):
         self,
         velocities: Optional[torch.Tensor],
         env_indices: Optional[torch.Tensor] = None,
+        joint_indices: Optional[torch.Tensor] = None,
     ) -> None:
         indices = self._resolve_env_indices(env_indices)
         super().set_joint_velocities(velocities.reshape(-1, self.num_dof), indices)
+
+    def set_joint_velocity_targets(
+        self, 
+        velocities: Optional[torch.Tensor], 
+        env_indices: Optional[torch.Tensor] = None, 
+        joint_indices: Optional[torch.Tensor] = None
+    ) -> None:
+        indices = self._resolve_env_indices(env_indices)
+        super().set_joint_velocity_targets(
+            velocities.flatten(end_dim=-2), 
+            indices, 
+            joint_indices
+        )
 
     def get_joint_positions(
         self, env_indices: Optional[torch.Tensor] = None, clone: bool = True

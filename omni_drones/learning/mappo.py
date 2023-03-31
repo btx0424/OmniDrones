@@ -19,7 +19,7 @@ from torchrl.data import (
     UnboundedContinuousTensorSpec as UnboundedTensorSpec,
 )
 
-from omni_drones.envs.isaac_env import AgentSpec
+from omni_drones.utils.torchrl import AgentSpec
 
 from .utils import valuenorm
 from .utils.gae import compute_gae
@@ -46,7 +46,7 @@ class MAPPOPolicy(object):
         self.gae_gamma = cfg.gamma
         self.gae_lambda = cfg.gae_lambda
 
-        self.act_dim = agent_spec.action_spec.shape.numel()
+        self.act_dim = agent_spec.action_spec.shape[-1]
 
         if cfg.reward_weights is not None:
             self.reward_weights = torch.as_tensor(cfg.reward_weights, device=device).float()
@@ -125,9 +125,9 @@ class MAPPOPolicy(object):
         cfg = self.cfg.critic
 
         if cfg.use_huber_loss:
-            self.critic_loss_fn = nn.HuberLoss(reduction="none", delta=cfg.huber_delta)
+            self.critic_loss_fn = nn.HuberLoss(delta=cfg.huber_delta)
         else:
-            self.critic_loss_fn = nn.MSELoss(reduction="none")
+            self.critic_loss_fn = nn.MSELoss()
 
         
         if self.cfg.critic_input == "state":
@@ -258,10 +258,12 @@ class MAPPOPolicy(object):
         )
         self.actor_opt.step()
 
+        ess = (2 * ratio.logsumexp(0) - (2 * ratio).logsumexp(0)).exp().mean() / ratio.shape[0]
         return {
             "policy_loss": policy_loss.item(),
             "actor_grad_norm": grad_norm.item(),
             "entropy": - entropy_loss.item(),
+            "ESS": ess.item()
         }
 
     def update_critic(self, batch: TensorDict) -> Dict[str, Any]:
@@ -279,15 +281,17 @@ class MAPPOPolicy(object):
 
         value_loss = torch.max(value_loss_original, value_loss_clipped)
 
-        value_loss.sum(-1).mean().backward()  # do not multiply weights here
+        value_loss.backward()  # do not multiply weights here
         grad_norm = nn.utils.clip_grad_norm_(
             self.critic.parameters(), self.cfg.max_grad_norm
         )
         self.critic_opt.step()
         self.critic_opt.zero_grad(set_to_none=True)
+        explained_var = 1 - F.mse_loss(values, b_returns) / b_returns.var()
         return {
             "value_loss": value_loss.mean(),
-            "critic_grad_norm": grad_norm,
+            "critic_grad_norm": grad_norm.item(),
+            "explained_var": explained_var.item()
         }
 
     def _get_dones(self, tensordict: TensorDict):
@@ -358,8 +362,7 @@ class MAPPOPolicy(object):
                     )
                 )
 
-        train_info: TensorDict = torch.stack(train_info)
-        train_info = train_info.apply(lambda x: x.mean(0), batch_size=[])
+        train_info = {k: v.mean().item() for k, v in torch.stack(train_info).items()}
         train_info["advantages_mean"] = advantages_mean
         train_info["advantages_std"] = advantages_std
         train_info["action_norm"] = (

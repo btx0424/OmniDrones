@@ -1,4 +1,4 @@
-name: masac
+name: sac
 
 buffer_size: 204800
 train_every: 80

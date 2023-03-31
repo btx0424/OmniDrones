@@ -53,7 +53,7 @@ class MultirotorBase(RobotBase):
             # prim_paths_expr=f"{self.prim_paths_expr}/rotor_[0-{self.num_rotors-1}]",
             prim_paths_expr=f"{self.prim_paths_expr}/rotor_*",
             name="rotors",
-            shape=(-1, self.num_rotors)
+            shape=(*self.shape, self.num_rotors)
         )
         self.rotors_view.initialize()
 

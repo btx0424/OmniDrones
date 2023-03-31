@@ -52,31 +52,23 @@ def main(cfg):
 
     for drone in drones.values():
         drone.initialize()
-    
-    iter = 0
-    iter_max = 1000
         
     while simulation_app.is_running():
-        while iter < iter_max:
-            try:
-                if sim.is_stopped():
-                    break
-                if not sim.is_playing():
-                    sim.step(render=not cfg.headless)
-                    continue
-                for drone in drones.values():
-                    actions = drone.action_spec.rand((drone.n,))
-                    actions.fill_(0.0)
-                    drone.apply_action(actions)
-                sim.step()
-                iter += 1         
-            except KeyboardInterrupt:
+        try:
+            if sim.is_stopped():
                 break
-        else:
-            # reset
+            if not sim.is_playing():
+                sim.step(render=not cfg.headless)
+                continue
             for drone in drones.values():
-                pass # TODO: reset drone
-            iter = 0
+                actions = drone.action_spec.rand((drone.n,))
+                actions[:, :12] = -1
+                actions[:, 12:-1] = 0.
+                actions[:, -1] = 1
+                drone.apply_action(actions)
+            sim.step()
+        except KeyboardInterrupt:
+            break
 
     simulation_app.close()
 

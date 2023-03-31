@@ -7,13 +7,14 @@ from .utils.gae import compute_gae
 
 class HAPPOPolicy(MAPPOPolicy):
 
-    def update_actor(self, batch: TensorDict, agent_id: int):
+    def update_actor(self, batch: TensorDict, factor: torch.Tensor, agent_id: int):
         advantages = batch["advantages"]
-        factor = batch["factor"]
+        actor_input = batch.select(*self.actor_in_keys)
         actor_params = self.actor_params[agent_id]
 
         log_probs_old = batch[self.act_logps_name]
-        actor_output = self.actor()
+        actor_output = self.actor(actor_input, actor_params, eval_action=True)
+
         log_probs_new = actor_output[self.act_logps_name]
         dist_entropy = actor_output[f"{self.agent_spec.name}.action_entropy"]
 
@@ -30,14 +31,19 @@ class HAPPOPolicy(MAPPOPolicy):
 
         self.actor_opt.zero_grad()
         (policy_loss - entropy_loss * self.cfg.entropy_coef).backward()
-        # grad_norm = torch.nn.utils.clip_grad_norm_(self.actor_params_list, self.cfg.max_grad_norm)
+        grad_norm = torch.nn.utils.clip_grad_norm_(
+            self.actor_opt.param_groups[0]["params"], self.cfg.max_grad_norm
+        )
         self.actor_opt.step()
 
-        batch["factor"] = factor * ratio.detach()
-        return {
-            "policy_loss": policy_loss,
-            "entropy": - entropy_loss.item()
-        }
+        ess = (2 * ratio.logsumexp(0) - (2 * ratio).logsumexp(0)).exp().mean() / ratio.shape[0]
+        info = TensorDict({
+            "policy_loss": policy_loss.item(),
+            "actor_grad_norm": grad_norm.item(),
+            "entropy": - entropy_loss.item(),
+            "ESS": ess.item()
+        }, [])
+        return info, factor * ratio.detach()
     
     def train_op(self, tensordict: TensorDict):
         tensordict = tensordict.select(*self.train_in_keys, strict=False)
@@ -89,10 +95,19 @@ class HAPPOPolicy(MAPPOPolicy):
                 self.minibatch_seq_len if hasattr(self, "minibatch_seq_len") else 1,
             )
             for minibatch in dataset:
-                minibatch["factor"] = torch.ones()
+                factor = torch.ones(minibatch[self.act_logps_name].shape[0], 1, device=minibatch.device)
+                actor_batch = minibatch.select(*self.actor_in_keys, "advantages", self.act_logps_name)
+                actor_batch.batch_size = [*minibatch.shape, self.agent_spec.n]
+                critic_batch = minibatch.select(*self.critic_in_keys, "returns", "state_value")
+                agent_info = []
                 for agent_id in torch.randperm(self.agent_spec.n):
-                    self.update_actor(minibatch, agent_id)
-                self.update_critic()
+                    info, factor = self.update_actor(actor_batch[:, agent_id], factor, agent_id.item())
+                    agent_info.append(info)
+                {}
+                train_info.append(TensorDict({
+                    **torch.stack(agent_info).apply(torch.mean, batch_size=[]),
+                    **self.update_critic(critic_batch)
+                }, []))
         
         train_info = {k: v.mean().item() for k, v in torch.stack(train_info).items()}
         train_info["advantages_mean"] = advantages_mean

@@ -9,8 +9,8 @@ drone_model: Firefly
 env:
   num_envs: 2048
 
-# multidiscrete_action:
-#   nbins: 6
+multidiscrete_action:
+  nbins: 4
 
-discrete_action:
-  nbins: 2
+# discrete_action:
+#   nbins: 2

@@ -9,9 +9,10 @@ from functorch import vmap
 from omegaconf import OmegaConf
 
 from omni_drones import CONFIG_PATH, init_simulation_app
-from omni_drones.learning.collectors import SyncDataCollector
+from omni_drones.utils.torchrl import SyncDataCollector, AgentSpec
 from omni_drones.utils.envs.transforms import LogOnEpisode, FromMultiDiscreteAction, FromDiscreteAction
 from omni_drones.utils.wandb import init_wandb
+from omni_drones.learning import MAPPOPolicy, HAPPOPolicy
 
 from setproctitle import setproctitle
 from tensordict import TensorDict
@@ -30,9 +31,9 @@ def main(cfg):
     setproctitle(run.name)
     print(OmegaConf.to_yaml(cfg))
 
-    from omni_drones.envs.isaac_env import IsaacEnv, AgentSpec
-    from omni_drones.learning.mappo import MAPPOPolicy
+    from omni_drones.envs.isaac_env import IsaacEnv
     from omni_drones.sensors.camera import Camera
+    algos = {"mappo": MAPPOPolicy, "happo": HAPPOPolicy}
 
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
     base_env = env_class(cfg, headless=cfg.headless)
@@ -74,7 +75,7 @@ def main(cfg):
         reward_spec=env.reward_spec["drone.reward"],
         state_spec=env.observation_spec["drone.state"] if base_env.agent_spec["drone"].state_spec is not None else None,
     )
-    policy = MAPPOPolicy(
+    policy = algos[cfg.algo.name.lower()](
         cfg.algo, agent_spec=agent_spec, device="cuda"
     )
 

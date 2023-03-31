@@ -35,8 +35,8 @@ class Hover(IsaacEnv):
             UnboundedContinuousTensorSpec(1).to(self.device),
         )
         self.init_pos_scale = torch.tensor([4.0, 4.0, 2.0], device=self.device)
-        self.init_rpy_scale = torch.tensor([0.6, 0.6, 2.0], device=self.device) * torch.pi
-        self.target_pos = torch.tensor([[0.0, 0.0, 1.5]], device=self.device)
+        self.init_rpy_scale = torch.tensor([0.4, 0.4, 2.0], device=self.device) * torch.pi
+        self.target_pos = torch.tensor([[0.0, 0.0, 2.]], device=self.device)
         self.target_heading = torch.zeros(self.num_envs, 1, 3, device=self.device)
 
     def _design_scene(self):
@@ -47,7 +47,7 @@ class Hover(IsaacEnv):
         target_vis_prim = prim_utils.create_prim(
             prim_path="/World/envs/env_0/target",
             usd_path=self.drone.usd_path,
-            translation=(0.0, 0.0, 1.5),
+            translation=(0.0, 0.0, 2.),
         )
 
         kit_utils.set_nested_collision_properties(
@@ -74,7 +74,7 @@ class Hover(IsaacEnv):
             dynamic_friction=1.0,
             restitution=0.0,
         )
-        self.drone.spawn(translations=[(0.0, 0.0, 1.5)])
+        self.drone.spawn(translations=[(0.0, 0.0, 2.)])
         return ["/World/defaultGroundPlane"]
 
     def _reset_idx(self, env_ids: torch.Tensor):
@@ -138,7 +138,7 @@ class Hover(IsaacEnv):
         self._tensordict["return"] += reward.unsqueeze(-1)
         done = (
             (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-            | (pos[..., 2] < 0.1)
+            | (pos[..., 2] < 0.2)
             | (distance > 4)
         )
         return TensorDict(

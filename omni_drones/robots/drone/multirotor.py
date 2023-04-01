@@ -102,10 +102,16 @@ class MultirotorBase(RobotBase):
         return torch.cat([pos, rot, vel, heading, up, thr], dim=-1)
 
     def _reset_idx(self, env_ids: torch.Tensor):
+        if env_ids is None:
+            env_ids = torch.arange(self.shape[0], device=self.device)
         self.forces[env_ids] = 0.0
         self.torques[env_ids] = 0.0
-        self.throttle[env_ids] = 0.0
-
+        self.throttle[env_ids] = self.rotors.f_inv(1 / self.get_thrust_to_weight_ratio()[env_ids])
+        return env_ids
+    
+    def get_thrust_to_weight_ratio(self):
+        return self.max_forces.sum(-1, keepdim=True) / (self.mass * 9.81)
+    
     @staticmethod
     def downwash(
         p0: torch.Tensor, 

@@ -16,7 +16,7 @@ class RotorGroup(nn.Module):
         self.dt = dt
         self.time_up = 0.15
         self.time_down = 0.15
-        self.noise_scale = 0.02
+        self.noise_scale = 0.002
 
         self.max_forces = nn.Parameter(self.MAX_ROT_VEL.square() * self.KF)
         self.max_moments = nn.Parameter(self.MAX_ROT_VEL.square() * self.KM)
@@ -35,11 +35,11 @@ class RotorGroup(nn.Module):
             p.requires_grad_(False)
 
     def forward(self, cmds: torch.Tensor):
-        cmds = self.f_inv(torch.clamp((cmds + 1) / 2, 0, 1))
+        target_throttle = self.f_inv(torch.clamp((cmds + 1) / 2, 0, 1))
 
-        tau = torch.where(cmds > self.throttle, self.tau_up, self.tau_down)
+        tau = torch.where(target_throttle > self.throttle, self.tau_up, self.tau_down)
         tau = torch.clamp(tau, 0, 1)
-        self.throttle.add_(tau * (cmds - self.throttle))
+        self.throttle.add_(tau * (target_throttle - self.throttle))
 
         t = torch.clamp(self.f(self.throttle) + torch.randn_like(self.throttle) * self.noise_scale, 0)
         thrusts = t * self.max_forces

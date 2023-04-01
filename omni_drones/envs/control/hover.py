@@ -17,6 +17,9 @@ from torchrl.data import UnboundedContinuousTensorSpec
 class Hover(IsaacEnv):
     def __init__(self, cfg, headless):
         super().__init__(cfg, headless)
+        self.reward_effort_weight = self.cfg.task.get("reward_effort_weight", 0.1)
+        self.reward_distance_scale = self.cfg.task.get("reward_distance_scale", 1.0)
+
         self.drone.initialize()
         self.target_vis = ArticulationView(
             "/World/envs/env_*/target",
@@ -120,14 +123,14 @@ class Hover(IsaacEnv):
         # pose reward
         distance = torch.norm(torch.cat([self.rpos, self.rpos+self.rheading], dim=-1), dim=-1)
 
-        pose_reward = 1.0 / (1.0 + torch.square(distance))
+        pose_reward = 1.0 / (1.0 + torch.square(self.reward_distance_scale * distance))
         
         # uprightness
         tiltage = torch.abs(1 - up[..., 2])
         up_reward = 1.0 / (1.0 + torch.square(tiltage))
 
         # effort
-        effort_reward = 0.1 * torch.exp(-self.effort)
+        effort_reward = self.reward_effort_weight * torch.exp(-self.effort)
 
         # spin reward
         spin = torch.square(vels[..., -1])
@@ -135,12 +138,17 @@ class Hover(IsaacEnv):
 
         assert pose_reward.shape == up_reward.shape == spin_reward.shape
         reward = pose_reward + pose_reward * (up_reward + spin_reward) + effort_reward
-        self._tensordict["return"] += reward.unsqueeze(-1)
+        
+        done_misbehave = (pos[..., 2] < 0.2) | (distance > 4)
+        done_hasnan = torch.isnan(self.root_state).any(-1)
+
         done = (
             (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-            | (pos[..., 2] < 0.2)
-            | (distance > 4)
+            | done_misbehave.unsqueeze(-1)
+            | done_hasnan.unsqueeze(-1)
         )
+
+        self._tensordict["rSeturn"] += reward.unsqueeze(-1)
         return TensorDict(
             {
                 "reward": {"drone.reward": reward.unsqueeze(-1)},

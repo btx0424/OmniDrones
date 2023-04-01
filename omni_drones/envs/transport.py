@@ -1,4 +1,4 @@
-import functorch
+from functorch import vmap
 
 import omni.isaac.core.utils.torch as torch_utils
 import torch
@@ -20,6 +20,10 @@ from omni_drones.robots.drone import MultirotorBase
 class Transport(IsaacEnv):
     def __init__(self, cfg, headless):
         super().__init__(cfg, headless)
+        self.reward_effort_weight = self.cfg.task.get("reward_effort_weight", 0.1)
+        self.reward_distance_scale = self.cfg.task.get("reward_distance_scale", 0.5)
+        self.safe_distance = self.cfg.task.get("safe_distance", 0.5)
+
         self.group.initialize()
         self.payload = self.group.payload_view
         self.payload_mass_dist = torch.distributions.Uniform(
@@ -119,7 +123,7 @@ class Transport(IsaacEnv):
         )
 
         self.payload_target_pos[env_ids] = payload_target_pos
-        target_axis = functorch.vmap(get_axis)(payload_target_rot, payload_target_pos)
+        target_axis = vmap(get_axis)(payload_target_rot, payload_target_pos)
         self.payload_target_axis[env_ids] = target_axis
 
         payload_masses = self.payload_mass_dist.sample(env_ids.shape)
@@ -134,17 +138,17 @@ class Transport(IsaacEnv):
 
     def _compute_state_and_obs(self):
         self.drone_states = self.drone.get_state()
-        drone_pos, drone_rot, drone_vel = self.drone_states[..., :13].split([3, 4, 6], dim=-1)
+        drone_pos = self.drone_states[..., :3]
         self.payload_pos, self.payload_rot = self.get_env_poses(self.payload.get_world_poses())
         payload_vels = self.payload.get_velocities()
 
-        drone_relative_pos = functorch.vmap(cpos)(drone_pos, drone_pos)
-        drone_relative_pos = functorch.vmap(off_diag)(drone_relative_pos)
-        drone_pdist = torch.norm(drone_relative_pos, dim=-1, keepdim=True)
+        self.drone_rpos = vmap(cpos)(drone_pos, drone_pos)
+        self.drone_rpos = vmap(off_diag)(self.drone_rpos)
+        self.drone_pdist = torch.norm(self.drone_rpos, dim=-1, keepdim=True)
 
         payload_drone_rpos = self.payload_pos.unsqueeze(1) - drone_pos
         self.target_payload_rpos = self.payload_target_pos - self.payload_pos
-        self.payload_axis = functorch.vmap(get_axis)(self.payload_rot, self.payload_pos)
+        self.payload_axis = vmap(get_axis)(self.payload_rot, self.payload_pos)
         self.target_payload_raxis = (self.payload_target_axis - self.payload_axis).reshape(self.num_envs, 9)
 
         self.payload_heading: torch.Tensor = torch_utils.quat_axis(self.payload_rot, axis=0)
@@ -167,8 +171,8 @@ class Transport(IsaacEnv):
                 "self": self.drone_states.unsqueeze(2),  # [num_envs, drone.n, 1, *]
                 "others": torch.cat(
                     [
-                        drone_relative_pos,
-                        drone_pdist,
+                        self.drone_rpos,
+                        self.drone_pdist,
                     ],
                     dim=-1,
                 ),  # [num_envs, drone.n, drone.n-1, *]
@@ -199,20 +203,20 @@ class Transport(IsaacEnv):
         return TensorDict({"drone.obs": obs, "drone.state": state}, self.num_envs)
 
     def _compute_reward_and_done(self):
-        drone_pos, drone_rot = self.get_env_poses(self.drone.get_world_poses())
-
-        misalignment = torch.norm(
+        distance = torch.norm(
             torch.cat([self.target_payload_rpos, self.target_payload_raxis], dim=-1)
         , dim=-1, keepdim=True)
+        separation = self.drone_pdist.min(dim=-2).values.min(dim=-2).values
 
         reward = torch.ones(self.num_envs, self.drone.n, 1, device=self.device)
-        
-        reward_pose = 1 / (1 + torch.square(misalignment / 2))
-        reward_effort = 0.05 * torch.exp(-self.effort).mean(-1, keepdim=True)
-        reward[:] = (reward_pose + reward_effort).unsqueeze(-1)
+        reward_pose = 1 / (1 + torch.square(distance * self.reward_distance_scale))
+        reward_effort = self.reward_effort_weight * torch.exp(-self.effort).mean(-1, keepdim=True)
+        reward_separation = torch.square(separation / self.safe_distance).clamp(0, 1)
+
+        reward[:] = (reward_separation * (reward_pose + reward_effort)).unsqueeze(-1)
 
         done_hasnan = torch.isnan(self.drone_states).any(-1)
-        done_fall = drone_pos[..., 2] < 0.2
+        done_fall = self.drone_states[..., 2] < 0.2
 
         done = (
             (self.progress_buf >= self.max_episode_length).unsqueeze(-1) 

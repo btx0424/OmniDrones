@@ -109,7 +109,11 @@ class ArticulationView(_ArticulationView):
         joint_indices: Optional[torch.Tensor] = None,
     ) -> None:
         indices = self._resolve_env_indices(env_indices)
-        super().set_joint_velocities(velocities.reshape(-1, self.num_dof), indices)
+        super().set_joint_velocities(
+            velocities.reshape(-1, self.num_dof), 
+            indices,
+            joint_indices
+        )
 
     def set_joint_velocity_targets(
         self, 

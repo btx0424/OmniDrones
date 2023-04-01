@@ -158,12 +158,12 @@ class Formation(IsaacEnv):
         states[..., :3] = self.target_pos - pos
 
         relative_pos = vmap(cpos)(pos, pos)
-        pdist = vmap(off_diag)(torch.norm(relative_pos, dim=-1, keepdim=True))
+        self.pdist = vmap(off_diag)(torch.norm(relative_pos, dim=-1, keepdim=True))
         relative_pos = vmap(off_diag)(relative_pos)
 
         state_others = torch.cat([
             relative_pos,
-            pdist,
+            self.pdist,
             vmap(others)(states[..., 3:])
         ], dim=-1)
 
@@ -195,7 +195,8 @@ class Formation(IsaacEnv):
 
         reward_formation =  1 / (1 + torch.square(cost_h * 1.6)) 
         reward_pos = 1 / (1 + cost_pos)
-        reward[:] = (reward_formation + reward_formation * reward_pos).unsqueeze(-1)
+        reward_separation = torch.square(self.pdist.min(dim=-2).values.min(dim=-2).values / 0.5).clamp(0, 1)
+        reward[:] = reward_separation * (reward_formation + reward_formation * reward_pos).unsqueeze(-1)
 
         self.last_cost_l[:] = cost_l
         self.last_cost_h[:] = cost_h

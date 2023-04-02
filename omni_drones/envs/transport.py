@@ -128,7 +128,7 @@ class Transport(IsaacEnv):
         payload_masses = self.payload_mass_dist.sample(env_ids.shape)
 
         self.payload_target_pos[env_ids] = payload_target_pos
-        self.payload_target_heading[env_ids] = torch_utils.quat_axis(payload_target_rot, 2)
+        self.payload_target_heading[env_ids] = torch_utils.quat_axis(payload_target_rot, 0)
 
         self.payload.set_masses(payload_masses, env_ids)
         self.payload_target_visual.set_world_poses(

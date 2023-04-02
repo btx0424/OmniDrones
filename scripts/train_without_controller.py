@@ -76,8 +76,6 @@ def main(cfg):
             nbins = int(action_transform.split(":")[1])
             transform = FromDiscreteAction(("action", "drone.action"), nbins=nbins)
             transforms.append(transform)
-        else:
-            raise NotImplementedError
     
     env = TransformedEnv(base_env, Compose(*transforms)) 
 

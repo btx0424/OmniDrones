@@ -24,7 +24,7 @@ parameters:
 
   task.action_transform:
     values:
-      - null
+      - None # sweep does not support passing "null"
       - multidiscrete:2
       - multidiscrete:4
       - discrete:2

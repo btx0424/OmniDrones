@@ -14,14 +14,14 @@ parameters:
     value: Transport
 
   total_frames: 
-    value: 150_000_000
+    value: 100_000_000
 
   task.drone_model:
     values: [Firefly, Hummingbird]
 
   task.action_transform:
     values:
-      - null
+      - None # sweep does not support passing "null"
       - multidiscrete:2
       - multidiscrete:4
       - discrete:2

@@ -94,7 +94,7 @@ class Spread(IsaacEnv):
 
         new_target_pos = torch.rand(len(env_ids), self.drone.n, 3, device=self.device) * self.init_pos_scale + self.init_pos_translation
         self.targets.set_world_poses(
-            new_target_pos + self.envs_positions[env_ids].unsqueeze(1), rot[env_ids], env_ids
+            new_target_pos + self.envs_positions[env_ids].unsqueeze(1), env_indices=env_ids
         )
         self.target_pos[env_ids] = new_target_pos
 

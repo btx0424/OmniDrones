@@ -6,9 +6,14 @@ defaults:
 
 env:
   num_envs: 4
-  env_spacing: 30
+  env_spacing: 40
+  max_episode_length: 800
   
 drone_model: Firefly
+
+forest_length: 20
+forest_width: 12
+forest_spacing: 1.8
 
 multidiscrete_action:
   nbins: 4

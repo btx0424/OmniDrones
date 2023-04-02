@@ -144,11 +144,11 @@ class Hover(IsaacEnv):
 
         done = (
             (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-            | done_misbehave.unsqueeze(-1)
-            | done_hasnan.unsqueeze(-1)
+            | done_misbehave
+            | done_hasnan
         )
 
-        self._tensordict["rSeturn"] += reward.unsqueeze(-1)
+        self._tensordict["return"] += reward.unsqueeze(-1)
         return TensorDict(
             {
                 "reward": {"drone.reward": reward.unsqueeze(-1)},

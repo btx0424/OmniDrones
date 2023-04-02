@@ -17,7 +17,7 @@ class Omav(MultirotorBase):
         self.action_spec = BoundedTensorSpec(-1, 1, 12 + 6, device=self.device)
         self.tilt_dof_indices = torch.arange(0, 6, device=self.device)
         self.rotor_dof_indices = torch.arange(6, 18, device=self.device)
-        self.max_tilt_velocity = 20
+        self.max_tilt_velocity = 10
 
         self.action_spec = BoundedTensorSpec(-1, 1, self.num_rotors + 6, device=self.device)
         self.state_spec = UnboundedContinuousTensorSpec(

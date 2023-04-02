@@ -14,7 +14,7 @@ parameters:
     value: Transport
 
   total_frames: 
-    value: 500_000_000
+    value: 200_000_000
 
   task.drone_model:
     values: [Firefly, Hummingbird]
@@ -24,17 +24,23 @@ parameters:
   
   algo.num_minibatches:
     distribution: log_uniform_values
-    min: 2
+    min: 8
     max: 64
   
   algo.train_every:
     distribution: log_uniform_values
-    min: 8
-    max: 64
+    min: 32
+    max: 512
   
   algo.ppo_epochs:
     values: [2, 4, 8]
 
+  algo.critic_input:
+    values: [obs, state]
+  
+  algo.share_actor:
+    values: [true, false]
+  
   algo.actor.lr:
     distribution: log_uniform_values
     max: 0.01

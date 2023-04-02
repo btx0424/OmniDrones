@@ -9,10 +9,9 @@ from functorch import vmap
 from omegaconf import OmegaConf
 
 from omni_drones import CONFIG_PATH, init_simulation_app
-from omni_drones.utils.torchrl import SyncDataCollector, AgentSpec
-from omni_drones.utils.envs.transforms import LogOnEpisode, FromMultiDiscreteAction, FromDiscreteAction
+from omni_drones.utils.envs.transforms import LogOnEpisode
 from omni_drones.utils.wandb import init_wandb
-from omni_drones.learning import MAPPOPolicy, HAPPOPolicy
+from omni_drones.utils.math import quaternion_to_euler
 
 from setproctitle import setproctitle
 from tensordict import TensorDict
@@ -31,16 +30,58 @@ def main(cfg):
     setproctitle(run.name)
     print(OmegaConf.to_yaml(cfg))
 
-    from omni_drones.envs.isaac_env import IsaacEnv
+    from omni_drones.envs import Forest
+    from omni_drones.learning.mappo import MAPPOPolicy
     from omni_drones.sensors.camera import Camera
-    algos = {"mappo": MAPPOPolicy, "happo": HAPPOPolicy}
 
-    env_class = IsaacEnv.REGISTRY[cfg.task.name]
-    base_env = env_class(cfg, headless=cfg.headless)
+    base_env = Forest(cfg, headless=cfg.headless)
+    camera = Camera()
+    camera.spawn(["/World/Camera"], translations=[(6, 6, 3)], targets=[(0, 0, 1)])
+    camera.initialize("/World/Camera")
+
+    agent_spec = base_env.agent_spec["drone"]
+    agent_spec.action_spec = UnboundedContinuousTensorSpec(3, device=base_env.device)
+    ppo = MAPPOPolicy(
+        cfg.algo, agent_spec=agent_spec, act_name="drone.target_vel", device="cuda"
+    )
+    controller = base_env.drone.DEFAULT_CONTROLLER(base_env.drone.dt, 9.81, base_env.drone.params).to(
+        base_env.device
+    )
     
+    def policy(tensordict: TensorDict):
+        tensordict = ppo(tensordict)
+        relative_state = tensordict[drone_state_key][..., :13].clone()
+        if relative_state.dim() > 3:
+            relative_state = relative_state.squeeze(2)
+        target_vel = tensordict["drone.target_vel"]
+
+        control_target = torch.cat(
+            [
+                torch.zeros_like(relative_state[..., :3]),
+                target_vel,
+                torch.zeros_like(target_vel[..., [0]]),
+            ],
+            dim=-1,
+        )
+        controller_state = tensordict.get(
+            "controller_state", TensorDict({}, relative_state.shape[:2])
+        )
+        state = torch.cat([
+            torch.zeros_like(relative_state[..., :3]),
+            relative_state[..., 3:]
+        ], dim=-1)
+        cmds, controller_state = vmap(vmap(controller))(
+            state, control_target, controller_state
+        )
+        torch.nan_to_num_(cmds, 0.0)
+        assert not torch.isnan(cmds).any()
+        tensordict["drone.action"] = cmds
+        tensordict["controller_state"] = controller_state
+        return tensordict
+
     def log(info):
         for k, v in info.items():
-            print(f"{k}: {v}")
+            print(f"train/{k}: {v}")
         run.log(info)
 
     logger = LogOnEpisode(
@@ -49,43 +90,13 @@ def main(cfg):
         log_keys=["train/return", "train/ep_length"],
         logger_func=log,
     )
-    transforms = [InitTracker(), logger]
 
-    if cfg.task.get("multidiscrete_action", None):
-        nbins = cfg.task.multidiscrete_action.nbins
-        transform = FromMultiDiscreteAction(("action", "drone.action"), nbins=nbins)
-        transforms.append(transform)
-    elif cfg.task.get("discrete_action", None):
-        nbins = cfg.task.discrete_action.nbins
-        transform = FromDiscreteAction(("action", "drone.action"), nbins=nbins)
-        transforms.append(transform)
-    
-    env = TransformedEnv(base_env, Compose(*transforms)) 
-
-    camera = Camera()
-    camera.spawn(["/World/Camera"], translations=[(6, 6, 3)], targets=[(0, 0, 1)])
-    camera.initialize("/World/Camera")
-
-    # TODO: create a agent_spec view for TransformedEnv
-    agent_spec = AgentSpec(
-        name=base_env.agent_spec["drone"].name,
-        n=base_env.agent_spec["drone"].n,
-        observation_spec=env.observation_spec["drone.obs"],
-        action_spec=env.action_spec["drone.action"],
-        reward_spec=env.reward_spec["drone.reward"],
-        state_spec=env.observation_spec["drone.state"] if base_env.agent_spec["drone"].state_spec is not None else None,
-    )
-    policy = algos[cfg.algo.name.lower()](
-        cfg.algo, agent_spec=agent_spec, device="cuda"
-    )
-
-    frames_per_batch = env.num_envs * int(cfg.algo.train_every)
-    total_frames = cfg.get("total_frames", -1) // frames_per_batch * frames_per_batch
+    env = TransformedEnv(base_env, Compose(InitTracker(), logger))
     collector = SyncDataCollector(
         env,
-        policy=policy,
-        frames_per_batch=frames_per_batch,
-        total_frames=total_frames,
+        policy,
+        frames_per_batch=base_env.num_envs * cfg.algo.train_every,
+        total_frames=512000000,
         device=cfg.sim.device,
         return_same_td=True,
     )
@@ -100,7 +111,7 @@ def main(cfg):
             frames.append(frame.cpu())
 
         base_env.enable_render(True)
-        base_env.rollout(
+        env.rollout(
             max_steps=base_env.max_episode_length,
             policy=policy,
             callback=record_frame,
@@ -108,21 +119,21 @@ def main(cfg):
             break_when_any_done=False,
         )
         base_env.enable_render(not cfg.headless)
-        env.reset()
 
         info["recording"] = wandb.Video(
             torch.stack(frames).permute(0, 3, 1, 2), fps=1 / cfg.sim.dt, format="mp4"
         )
         return info
-
+    
     pbar = tqdm(collector)
     for i, data in enumerate(pbar):
         info = {"env_frames": collector._frames}
-        info.update(policy.train_op(data))
+        info.update(ppo.train_op(data))
 
-        run.log(info)
+        if i % 2 == 0:
+            run.log(info)
 
-        if i % 100 == 0:
+        if i % 50 == 0:
             logging.info(f"Eval at {collector._frames} steps.")
             run.log(evaluate())
 

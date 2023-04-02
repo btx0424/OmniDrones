@@ -15,5 +15,8 @@ payload_mass_max: 2.5
 reward_effort_weight: 0.1
 reward_distance_scale: 0.5
 
-multidiscrete_action:
-  nbins: 4
+# multidiscrete_action:
+#   nbins: 4
+
+discrete_action:
+  nbins: 2

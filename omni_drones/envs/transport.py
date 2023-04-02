@@ -67,9 +67,16 @@ class Transport(IsaacEnv):
 
         self.payload_target_pos = torch.zeros(self.num_envs, 3, device=self.device)
         self.payload_target_axis = torch.zeros(self.num_envs, 3, 3, device=self.device)
+        self.payload_mass = torch.zeros(self.num_envs, 1, device=self.device)
 
         self.target_pos_scale = torch.tensor([4., 4., 1.], device=self.device)
         self.target_pos_translation = torch.tensor([-2., -2., .1], device=self.device)
+
+        info_spec = CompositeSpec(
+            payload_mass=UnboundedContinuousTensorSpec((1,)),
+        ).expand(self.num_envs).to(self.device)
+
+        self.observation_spec["info"] = info_spec
 
     def _design_scene(self):
         cfg = RobotCfg()

@@ -109,11 +109,11 @@ class Hover(IsaacEnv):
         self.root_state = self.drone.get_state()
         # relative position and heading
         self.rpos = self.target_pos - self.root_state[..., :3]
-        self.rheading = self.target_heading - self.root_state[..., 13:16]
+        self.rheading = self.rpos + self.target_heading - self.root_state[..., 13:16]
         obs = torch.cat([
             self.rpos,
             self.root_state[..., 3:],
-            self.rpos + self.rheading,
+            self.rheading,
         ], dim=-1)
         return TensorDict({"drone.obs": obs}, self.batch_size)
 
@@ -121,7 +121,7 @@ class Hover(IsaacEnv):
         pos, rot, vels, heading, up = self.root_state[..., :19].split([3, 4, 6, 3, 3], dim=-1)
 
         # pose reward
-        distance = torch.norm(torch.cat([self.rpos, self.rpos+self.rheading], dim=-1), dim=-1)
+        distance = torch.norm(torch.cat([self.rpos, self.rheading], dim=-1), dim=-1)
 
         pose_reward = 1.0 / (1.0 + torch.square(self.reward_distance_scale * distance))
         

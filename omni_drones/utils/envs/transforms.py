@@ -3,7 +3,12 @@ from typing import Any, Dict, Sequence, Union
 
 import torch
 from tensordict.tensordict import TensorDictBase
-from torchrl.envs.transforms import Transform
+from torchrl.envs.transforms import (
+    Transform,
+    Compose,
+    FlattenObservation,
+    CatTensors
+)
 from torchrl.data import (
     TensorSpec,
     BoundedTensorSpec,
@@ -53,15 +58,24 @@ class LogOnEpisode(Transform):
             )
             if len(self.stats) >= self.n_episodes:
                 stats: TensorDictBase = torch.stack(self.stats)
-                dict_to_log = {"env_frames": self._frames}
+                dict_to_log = {}
                 for in_key, log_key in zip(self.in_keys, self.log_keys):
                     if in_key in stats.keys():
                         process_func = self.process_func[in_key]
                         dict_to_log[log_key] = process_func(stats[in_key])
+                
+                if self.training:
+                    dict_to_log = {f"train/{k}": v for k, v in dict_to_log.items()}
+                else:
+                    dict_to_log = {f"eval/{k}": v for k, v in dict_to_log.items()}
+                
                 if self.logger_func is not None:
+                    dict_to_log["env_frames"] = self._frames
                     self.logger_func(dict_to_log)
                 self.stats.clear()
-        self._frames += tensordict.numel()
+        
+        if self.training:
+            self._frames += tensordict.numel()
         return tensordict
 
 
@@ -151,3 +165,15 @@ class FromMultiDiscreteAction(Transform):
 
     def _inv_call(self, tensordict: TensorDictBase) -> TensorDictBase:
         return super()._inv_call(tensordict)
+
+
+def flatten_composite(spec: CompositeSpec, key: str):
+    composite_spec = spec[key]
+    if isinstance(composite_spec, CompositeSpec):
+        in_keys = [k for k in spec.keys(True, True) if k[0] == key]
+        return Compose(
+            FlattenObservation(-2, -1, in_keys),
+            CatTensors(in_keys, out_key=key)
+        )
+    else:
+        raise TypeError

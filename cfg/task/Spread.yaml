@@ -7,5 +7,5 @@ defaults:
 drone_model: Firefly
 num_drones: 3
 
-multidiscrete_action:
-  nbins: 4
+action_transform: null
+

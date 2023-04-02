@@ -99,7 +99,9 @@ class MultirotorBase(RobotBase):
         thr = self.throttle * 2 - 1
         heading = vmap(torch_utils.quat_axis)(rot, axis=0)
         up = vmap(torch_utils.quat_axis)(rot, axis=2)
-        return torch.cat([pos, rot, vel, heading, up, thr], dim=-1)
+        state = torch.cat([pos, rot, vel, heading, up, thr], dim=-1)
+        assert not torch.isnan(state).any()
+        return state
 
     def _reset_idx(self, env_ids: torch.Tensor):
         if env_ids is None:

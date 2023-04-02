@@ -186,12 +186,12 @@ class Platform(IsaacEnv):
         , dim=-1, keepdim=True)
 
         reward = torch.zeros(self.num_envs, 4, 1, device=self.device)
-        reward_pos = 1 / (1 + torch.square(distance * self.reward_distance_scale))
+        reward_pose = 1 / (1 + torch.square(distance * self.reward_distance_scale))
         reward_rot = 1 / (1 + torch.square(vels[..., -1].unsqueeze(-1)))
         reward_up = 1 / (1 + torch.square(1-self.frame_up[:, 2]).unsqueeze(1))
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort).mean(-1, keepdim=True)
 
-        reward[:] = (reward_pos + reward_pos * (reward_rot + reward_up) + reward_effort).unsqueeze(1)
+        reward[:] = (reward_pose + reward_pose * (reward_rot + reward_up) + reward_effort).unsqueeze(1)
 
         done_misbehave = (self.drone_states[..., 2] < 0.2).any(-1, keepdim=True) | (distance > 5.0)
         done_hasnan = done_hasnan = torch.isnan(self.drone_states).any(-1)

@@ -10,14 +10,22 @@ from omegaconf import OmegaConf
 
 from omni_drones import CONFIG_PATH, init_simulation_app
 from omni_drones.utils.torchrl import SyncDataCollector, AgentSpec
-from omni_drones.utils.envs.transforms import LogOnEpisode, FromMultiDiscreteAction, FromDiscreteAction
+from omni_drones.utils.envs.transforms import (
+    LogOnEpisode, 
+    FromMultiDiscreteAction, 
+    FromDiscreteAction,
+    flatten_composite
+)
 from omni_drones.utils.wandb import init_wandb
 from omni_drones.learning import MAPPOPolicy, HAPPOPolicy
 
 from setproctitle import setproctitle
 from tensordict import TensorDict
-from torchrl.data import UnboundedContinuousTensorSpec
-from torchrl.envs.transforms import TransformedEnv, InitTracker, Compose
+from torchrl.envs.transforms import (
+    TransformedEnv, 
+    InitTracker, 
+    Compose,
+)
 
 from tqdm import tqdm
 
@@ -39,26 +47,37 @@ def main(cfg):
     base_env = env_class(cfg, headless=cfg.headless)
     
     def log(info):
-        for k, v in info.items():
-            print(f"{k}: {v}")
+        print(OmegaConf.to_yaml(info))
         run.log(info)
 
     logger = LogOnEpisode(
         cfg.env.num_envs,
         in_keys=["return", "progress"],
-        log_keys=["train/return", "train/ep_length"],
+        log_keys=["return", "ep_length"],
         logger_func=log,
     )
     transforms = [InitTracker(), logger]
 
-    if cfg.task.get("multidiscrete_action", None):
-        nbins = cfg.task.multidiscrete_action.nbins
-        transform = FromMultiDiscreteAction(("action", "drone.action"), nbins=nbins)
-        transforms.append(transform)
-    elif cfg.task.get("discrete_action", None):
-        nbins = cfg.task.discrete_action.nbins
-        transform = FromDiscreteAction(("action", "drone.action"), nbins=nbins)
-        transforms.append(transform)
+    # a CompositeSpec is by deafault processed by a entity-based encoder
+    # flatten it to use a MLP encoder instead
+    if cfg.task.get("flatten_obs", False):
+        transforms.append(flatten_composite(base_env.observation_spec, "drone.obs"))
+    if cfg.task.get("flatten_state", False):
+        transforms.append(flatten_composite(base_env.observation_spec, "drone.state"))
+    
+    # optionally discretize the action space
+    action_transform = cfg.task.get("action_transform", None)
+    if action_transform is not None:
+        if action_transform.startswith("multidiscrete"):
+            nbins = int(action_transform.split(":")[1])
+            transform = FromMultiDiscreteAction(("action", "drone.action"), nbins=nbins)
+            transforms.append(transform)
+        elif action_transform.startswith("discrete"):
+            nbins = int(action_transform.split(":")[1])
+            transform = FromDiscreteAction(("action", "drone.action"), nbins=nbins)
+            transforms.append(transform)
+        else:
+            raise NotImplementedError
     
     env = TransformedEnv(base_env, Compose(*transforms)) 
 
@@ -82,7 +101,7 @@ def main(cfg):
     frames_per_batch = env.num_envs * int(cfg.algo.train_every)
     total_frames = cfg.get("total_frames", -1) // frames_per_batch * frames_per_batch
     collector = SyncDataCollector(
-        env,
+        env.train(),
         policy=policy,
         frames_per_batch=frames_per_batch,
         total_frames=total_frames,
@@ -92,7 +111,6 @@ def main(cfg):
 
     @torch.no_grad()
     def evaluate():
-        info = {"env_frames": collector._frames}
         frames = []
 
         def record_frame(*args, **kwargs):
@@ -100,7 +118,8 @@ def main(cfg):
             frames.append(frame.cpu())
 
         base_env.enable_render(True)
-        base_env.rollout(
+        env.eval()
+        env.rollout(
             max_steps=base_env.max_episode_length,
             policy=policy,
             callback=record_frame,
@@ -109,6 +128,7 @@ def main(cfg):
         )
         base_env.enable_render(not cfg.headless)
         env.reset()
+        env.train()
 
         info["recording"] = wandb.Video(
             torch.stack(frames).permute(0, 3, 1, 2), fps=1 / cfg.sim.dt, format="mp4"
@@ -120,11 +140,11 @@ def main(cfg):
         info = {"env_frames": collector._frames}
         info.update(policy.train_op(data))
 
-        run.log(info)
-
-        if i % 100 == 0:
+        if i % cfg.get("eval_interval", 50) == 0:
             logging.info(f"Eval at {collector._frames} steps.")
-            run.log(evaluate())
+            info.update(evaluate())
+
+        run.log(info)
 
         pbar.set_postfix({
             "rollout_fps": collector._fps,

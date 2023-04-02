@@ -22,6 +22,13 @@ parameters:
   task.drone_model:
     values: [Crazyflie, Firefly, Hummingbird]
 
+  task.action_transform:
+    values:
+      - null
+      - multidiscrete:2
+      - multidiscrete:4
+      - discrete:2
+
   algo.num_minibatches:
     distribution: log_uniform_values
     min: 2
@@ -35,15 +42,15 @@ parameters:
   algo.ppo_epochs:
     values: [2, 4, 8]
 
-  algo.actor.lr:
-    distribution: log_uniform_values
-    max: 0.01
-    min: 0.0001
+  # algo.actor.lr:
+  #   distribution: log_uniform_values
+  #   max: 0.01
+  #   min: 0.0001
   
-  algo.critic.lr:
-    distribution: log_uniform_values
-    max: 0.01
-    min: 0.0001
+  # algo.critic.lr:
+  #   distribution: log_uniform_values
+  #   max: 0.01
+  #   min: 0.0001
 
   algo.entropy_coef:
     distribution: log_uniform_values

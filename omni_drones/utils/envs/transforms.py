@@ -2,7 +2,7 @@ from collections import Callable, defaultdict
 from typing import Any, Dict, Sequence, Union
 
 import torch
-from tensordict.tensordict import TensorDictBase
+from tensordict.tensordict import TensorDictBase, TensorDict
 from torchrl.envs.transforms import (
     Transform,
     Compose,
@@ -60,8 +60,10 @@ class LogOnEpisode(Transform):
                 stats: TensorDictBase = torch.stack(self.stats)
                 dict_to_log = {}
                 for in_key, log_key in zip(self.in_keys, self.log_keys):
-                    if in_key in stats.keys():
+                    if in_key in stats.keys(True, True):
                         process_func = self.process_func[in_key]
+                        if isinstance(log_key, tuple):
+                            log_key = ".".join(log_key)
                         dict_to_log[log_key] = process_func(stats[in_key])
                 
                 if self.training:

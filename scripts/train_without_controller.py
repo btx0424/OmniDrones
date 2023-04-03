@@ -50,10 +50,14 @@ def main(cfg):
         print(OmegaConf.to_yaml(info))
         run.log(info)
 
+    info_keys = [
+        k for k in base_env.observation_spec.keys(True, True) 
+        if isinstance(k, tuple) and k[0]=="info"
+    ]
     logger = LogOnEpisode(
         cfg.env.num_envs,
-        in_keys=["return", "progress"],
-        log_keys=["return", "ep_length"],
+        in_keys=["return", "progress", *info_keys],
+        log_keys=["return", "ep_length", *info_keys],
         logger_func=log,
     )
     transforms = [InitTracker(), logger]
@@ -80,7 +84,7 @@ def main(cfg):
     env = TransformedEnv(base_env, Compose(*transforms)) 
 
     camera = Camera()
-    camera.spawn(["/World/Camera"], translations=[(6, 6, 3)], targets=[(0, 0, 1)])
+    camera.spawn(["/World/Camera"], translations=[(7.5, 7.5, 7.5)], targets=[(0, 0, 1.5)])
     camera.initialize("/World/Camera")
 
     # TODO: create a agent_spec view for TransformedEnv

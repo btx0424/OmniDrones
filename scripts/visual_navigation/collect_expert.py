@@ -158,10 +158,9 @@ def main(cfg):
         for env_id, video_array in enumerate(rgb[:, :, 0].unbind(0)):
             write_video(f"rgb_{env_id}.mp4", video_array[..., :3], fps=50)
         
-    # depth = data.get(("drone.obs", "distance_to_camera"), None)
-    # if depth is not None:
-    #     for env_id, video_array in enumerate(depth.unbind(0)):
-    #         write_video(f"depth_{env_id}.mp4", video_array[..., :3], fps=50)
+    depth = data.get(("drone.obs", "distance_to_camera"), None)
+    if depth is not None:
+        torch.save(depth, "depth.pt")
 
     simulation_app.close()
 

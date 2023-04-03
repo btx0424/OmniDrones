@@ -1,7 +1,7 @@
 name: mappo
 
 # ppo
-train_every: 32
+train_every: 64
 num_minibatches: 16
 ppo_epochs: 4
 clip_param: 0.2

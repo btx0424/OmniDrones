@@ -13,7 +13,8 @@ payload_mass_min: 1.5
 payload_mass_max: 2.5
 
 reward_effort_weight: 0.1
-reward_distance_scale: 1.0
+reward_distance_scale: 1.2
+safe_distance: 0.5
 
 flatten_obs: true
 flatten_state: true

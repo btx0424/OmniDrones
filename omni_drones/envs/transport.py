@@ -22,8 +22,8 @@ from omni_drones.robots.drone import MultirotorBase
 class Transport(IsaacEnv):
     def __init__(self, cfg, headless):
         super().__init__(cfg, headless)
-        self.reward_effort_weight = self.cfg.task.get("reward_effort_weight", 0.1)
-        self.reward_distance_scale = self.cfg.task.get("reward_distance_scale", 1.0)
+        self.reward_effort_weight = self.cfg.task.get("reward_effort_weight")
+        self.reward_distance_scale = self.cfg.task.get("reward_distance_scale")
         self.safe_distance = self.cfg.task.get("safe_distance", 0.5)
 
         self.group.initialize()
@@ -64,26 +64,38 @@ class Transport(IsaacEnv):
             state_spec=state_spec
         )
 
-        self.payload_target_pos = torch.zeros(self.num_envs, 3, device=self.device)
+        self.payload_target_pos = torch.tensor([0., 0., 2.], device=self.device)
         self.payload_target_heading = torch.zeros(self.num_envs, 3, device=self.device)
         self.payload_mass = torch.zeros(self.num_envs, 1, device=self.device)
-        self.payload_target_pos_dist = D.Uniform(
-            torch.tensor([-2., -2., 1.], device=self.device),
-            torch.tensor([2., 2., 2.], device=self.device)
-        )
+        
         self.payload_target_rpy_dist = D.Uniform(
-            torch.tensor([0., 0., -1.], device=self.device) * torch.pi,
-            torch.tensor([0., 0., 1.], device=self.device) * torch.pi
+            torch.tensor([0., 0., 0.], device=self.device) * torch.pi,
+            torch.tensor([0., 0., 2.], device=self.device) * torch.pi
         )
         self.payload_mass_dist = D.Uniform(
             torch.as_tensor(self.cfg.task.payload_mass_min, device=self.device),
             torch.as_tensor(self.cfg.task.payload_mass_max, device=self.device)
         )
+        self.init_pos_dist = D.Uniform(
+            torch.tensor([-2.5, -2.5, 1.], device=self.device),
+            torch.tensor([2.5, 2.5, 2.5], device=self.device)
+        )
+        self.init_rpy_dist = D.Uniform(
+            torch.tensor([0., 0., 0.], device=self.device) * torch.pi,
+            torch.tensor([0., 0., 2.], device=self.device) * torch.pi
+        )
 
-        info_spec = CompositeSpec(
-            payload_mass=UnboundedContinuousTensorSpec((1,)),
-        ).expand(self.num_envs).to(self.device)
-
+        self.pos_error = torch.zeros(self.num_envs, 1, device=self.device)
+        self.heading_alignment = torch.zeros(self.num_envs, 1, device=self.device)
+        self.uprightness = torch.zeros(self.num_envs, 1, device=self.device)
+        self.alpha = 0.7
+        
+        info_spec = CompositeSpec({
+            "payload_mass": UnboundedContinuousTensorSpec((1,)),
+            "pos_error": UnboundedContinuousTensorSpec((1,)),
+            "heading_alignment": UnboundedContinuousTensorSpec((1,)),
+            "uprightness": UnboundedContinuousTensorSpec((1,)),
+        }).expand(self.num_envs).to(self.device)
         self.observation_spec["info"] = info_spec
 
     def _design_scene(self):
@@ -97,6 +109,7 @@ class Transport(IsaacEnv):
         self.group.spawn(translations=[(0, 0, 2.0)])
         DynamicCuboid(
             "/World/envs/env_0/payloadTargetVis",
+            translation=torch.tensor([0., 0., 2.]),
             scale=torch.tensor([0.5, 0.5, 0.2]),
             color=torch.tensor([0.8, 0.1, 0.1]),
             size=2.01,
@@ -113,29 +126,39 @@ class Transport(IsaacEnv):
         return ["/World/defaultGroundPlane"]
 
     def _reset_idx(self, env_ids: torch.Tensor):
-        pos, rot = self.init_poses
+        pos = self.init_pos_dist.sample(env_ids.shape)
+        rpy = self.init_rpy_dist.sample(env_ids.shape)
+        rot = euler_to_quaternion(rpy)
+        heading = torch_utils.quat_axis(rot, 0)
+        up = torch_utils.quat_axis(rot, 2)
 
         self.group._reset_idx(env_ids)
-        self.group.set_world_poses(pos[env_ids], rot[env_ids], env_ids)
+        self.group.set_world_poses(pos + self.envs_positions[env_ids], rot, env_ids)
         self.group.set_velocities(self.init_velocities[env_ids], env_ids)
 
         self.group.set_joint_positions(self.init_joint_pos[env_ids], env_ids)
         self.group.set_joint_velocities(self.init_joint_vel[env_ids], env_ids)
 
-        payload_target_pos = self.payload_target_pos_dist.sample(env_ids.shape)
         payload_target_rpy = self.payload_target_rpy_dist.sample(env_ids.shape)
         payload_target_rot = euler_to_quaternion(payload_target_rpy)
         payload_masses = self.payload_mass_dist.sample(env_ids.shape)
 
-        self.payload_target_pos[env_ids] = payload_target_pos
         self.payload_target_heading[env_ids] = torch_utils.quat_axis(payload_target_rot, 0)
 
+        self.payload_mass[env_ids] = payload_masses.unsqueeze(-1)
         self.payload.set_masses(payload_masses, env_ids)
         self.payload_target_visual.set_world_poses(
-            payload_target_pos + self.envs_positions[env_ids],
-            payload_target_rot,
-            env_ids
+            orientations=payload_target_rot,
+            env_indices=env_ids
         )
+
+        self.pos_error[env_ids] = torch.norm(
+            self.payload_target_pos - pos, dim=-1, keepdim=True
+        )
+        self.heading_alignment[env_ids] = torch.sum(
+            self.payload_target_heading[env_ids] * heading, dim=-1, keepdim=True
+        )
+        self.uprightness[env_ids] = up[:, 2].unsqueeze(-1)
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("action", "drone.action")]
@@ -156,7 +179,7 @@ class Transport(IsaacEnv):
         payload_drone_rpos = self.payload_pos.unsqueeze(1) - drone_pos
 
         self.target_payload_rpos = self.payload_target_pos - self.payload_pos
-        self.target_payload_rheading = self.target_payload_rpos + (self.payload_target_heading - self.payload_heading)
+        self.target_payload_rheading = self.payload_target_heading - self.payload_heading
 
         payload_state = torch.cat(
             [
@@ -183,7 +206,24 @@ class Transport(IsaacEnv):
         state["payload"] = payload_state # [..., 1, 22]
         state["drones"] = obs["self"].squeeze(2) # [..., n, state_dim]
 
-        return TensorDict({"drone.obs": obs, "drone.state": state}, self.num_envs)
+        pos_error = torch.norm(self.target_payload_rpos, dim=-1, keepdim=True)
+        heading_alignment = torch.sum(
+            self.payload_heading * self.payload_target_heading, dim=-1, keepdim=True
+        )
+        self.pos_error.mul_(self.alpha).add_((1-self.alpha) * pos_error)
+        self.heading_alignment.mul_(self.alpha).add_((1-self.alpha) * heading_alignment)
+        self.uprightness.mul_(self.alpha).add_((1-self.alpha) * self.payload_up[:, 2].unsqueeze(-1))
+
+        return TensorDict({
+            "drone.obs": obs, 
+            "drone.state": state,
+            "info":{
+                "payload_mass": self.payload_mass,
+                "pos_error": self.pos_error,
+                "heading_alignment": self.heading_alignment,
+                "uprightness": self.uprightness
+            }
+        }, self.num_envs)
 
     def _compute_reward_and_done(self):
         distance = torch.norm(
@@ -193,11 +233,13 @@ class Transport(IsaacEnv):
 
         reward = torch.zeros(self.num_envs, self.drone.n, 1, device=self.device)
         reward_pose = 1 / (1 + torch.square(distance * self.reward_distance_scale))
-        reward_up = 1 / (1 + torch.square(1 - self.payload_up[:, 2]).unsqueeze(-1))
+        # reward_pose = torch.exp(-distance * self.reward_distance_scale)
+        reward_up = torch.square((self.payload_up[:, 2] + 1) / 2).unsqueeze(-1)
+
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort).mean(-1, keepdim=True)
         reward_separation = torch.square(separation / self.safe_distance).clamp(0, 1)
 
-        reward[:] = (reward_separation * (reward_pose + reward_pose * (reward_up) + reward_effort)).unsqueeze(-1)
+        reward[:] = (reward_separation * (reward_pose + reward_pose * reward_up + reward_effort)).unsqueeze(-1)
 
         done_hasnan = torch.isnan(self.drone_states).any(-1)
         done_fall = self.drone_states[..., 2] < 0.2

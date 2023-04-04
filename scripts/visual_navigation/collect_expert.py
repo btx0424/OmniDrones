@@ -17,7 +17,8 @@ from omni_drones.utils.bspline import splev_torch, init_traj, get_ctps
 from setproctitle import setproctitle
 from tensordict import TensorDict
 from tensordict.nn import TensorDictModule
-from torchrl.envs.transforms import TransformedEnv, InitTracker
+from torchrl.envs.transforms import TransformedEnv, InitTracker, Compose
+from omni_drones.utils.envs.transforms import DepthImageNorm
 
 from tqdm import tqdm
 from functools import partial
@@ -92,7 +93,11 @@ def main(cfg):
         base_env.drone.dt, 9.81, base_env.drone.params
     ).to(base_env.device)
 
-    env = TransformedEnv(base_env, InitTracker())
+    transforms = Compose(
+        InitTracker(), 
+        DepthImageNorm([("drone.obs", "distance_to_camera")], 0, 50)
+    )
+    env = TransformedEnv(base_env, transforms)
 
     n = 16
     k = 4
@@ -128,7 +133,6 @@ def main(cfg):
         tensordict["drone.action"] = cmds.unsqueeze(1)
         tensordict["controller_state"] = controller_state
 
-        # frames.append(tensordict[("drone.obs", "rgb")])
         return tensordict
 
     base_env.enable_render(True)
@@ -136,31 +140,31 @@ def main(cfg):
         env,
         policy=policy,
         frames_per_batch=base_env.num_envs * base_env.max_episode_length,
-        total_frames=base_env.num_envs * base_env.max_episode_length * 2,
+        total_frames=base_env.num_envs * base_env.max_episode_length * 10,
         device=cfg.sim.device,
         storing_device="cpu",
         return_same_td=True,
     )
 
     pbar = tqdm(collector)
-    for i, data in enumerate(pbar):
+    trajectories = []
+    for i, batch in enumerate(pbar):
+        trajectories.append(batch.exclude(("drone.obs", "rgb")))
         pbar.set_postfix(
             {
                 "rollout_fps": collector._fps,
                 "frames": collector._frames,
             }
         )
-    
+    trajectories = torch.cat(trajectories, dim=1)
+    torch.save(trajectories, "trajectories.pth")
+
     from torchvision.io import write_video
 
-    rgb = data.get(("drone.obs", "rgb"), None) # [env, T, agent, H, W, C]
+    rgb = batch.get(("drone.obs", "rgb"), None) # [env, T, agent, H, W, C]
     if rgb is not None:
         for env_id, video_array in enumerate(rgb[:, :, 0].unbind(0)):
             write_video(f"rgb_{env_id}.mp4", video_array[..., :3], fps=50)
-        
-    depth = data.get(("drone.obs", "distance_to_camera"), None)
-    if depth is not None:
-        torch.save(depth, "depth.pt")
 
     simulation_app.close()
 

@@ -145,7 +145,7 @@ class Transport(IsaacEnv):
 
         self.payload_target_heading[env_ids] = torch_utils.quat_axis(payload_target_rot, 0)
 
-        self.payload_mass[env_ids] = payload_masses.unsqueeze(-1)
+        self.payload_mass[env_ids] = payload_masses.unsqueeze(-1).clone()
         self.payload.set_masses(payload_masses, env_ids)
         self.payload_target_visual.set_world_poses(
             orientations=payload_target_rot,
@@ -218,7 +218,7 @@ class Transport(IsaacEnv):
             "drone.obs": obs, 
             "drone.state": state,
             "info":{
-                "payload_mass": self.payload_mass,
+                "payload_mass": self.payload_mass.clone(),
                 "pos_error": self.pos_error,
                 "heading_alignment": self.heading_alignment,
                 "uprightness": self.uprightness

@@ -102,6 +102,8 @@ def main(cfg):
 
     frames_per_batch = env.num_envs * int(cfg.algo.train_every)
     total_frames = cfg.get("total_frames", -1) // frames_per_batch * frames_per_batch
+    eval_interval = cfg.get("eval_interval", 50)
+
     collector = SyncDataCollector(
         env.train(),
         policy=policy,
@@ -142,7 +144,7 @@ def main(cfg):
         info = {"env_frames": collector._frames}
         info.update(policy.train_op(data))
 
-        if i % cfg.get("eval_interval", 50) == 0:
+        if eval_interval > 0 and i % eval_interval == 0:
             logging.info(f"Eval at {collector._frames} steps.")
             info.update(evaluate())
 

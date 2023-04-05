@@ -5,5 +5,6 @@ from .formation import Formation
 from .transport import Transport
 from .spread import Spread
 from .forest import Forest
+from .gate import Gate
 
 from .isaac_env import IsaacEnv

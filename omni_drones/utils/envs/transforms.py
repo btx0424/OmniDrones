@@ -35,7 +35,7 @@ class LogOnEpisode(Transform):
 
         self.n_episodes = n_episodes
         self.logger_func = logger_func
-        self.process_func = defaultdict(lambda: lambda x: torch.mean(x).item())
+        self.process_func = defaultdict(lambda: lambda x: torch.mean(x.float()).item())
         if process_func is not None:
             self.process_func.update(process_func)
 

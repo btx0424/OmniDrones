@@ -50,7 +50,8 @@ class ArticulationView(_ArticulationView):
     
     @require_sim_initialized
     def initialize(self, physics_sim_view: omni.physics.tensors.SimulationView = None) -> None:
-        return super().initialize(physics_sim_view)
+        super().initialize(physics_sim_view)
+        return self
 
     def get_world_poses(
         self, env_indices: Optional[torch.Tensor] = None, clone: bool = True
@@ -247,7 +248,8 @@ class RigidPrimView(_RigidPrimView):
 
     @require_sim_initialized
     def initialize(self, physics_sim_view: omni.physics.tensors.SimulationView = None) -> None:
-        return super().initialize(physics_sim_view)
+        super().initialize(physics_sim_view)
+        return self
 
     def get_world_poses(
         self, env_indices: Optional[torch.Tensor] = None, clone: bool = True
@@ -286,7 +288,7 @@ class RigidPrimView(_RigidPrimView):
     def get_net_contact_forces(
         self,
         env_indices: Optional[torch.Tensor] = None,
-        clone: bool = True,
+        clone: bool = False,
         dt: float = 1,
     ) -> torch.Tensor:
         indices = self._resolve_env_indices(env_indices)

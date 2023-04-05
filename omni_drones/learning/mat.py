@@ -2,9 +2,11 @@ import torch
 import torch.nn as nn
 from tensordict.nn import TensorDictModule, TensorDictSequential
 from tensordict import TensorDict
+from torchrl.data import BoundedTensorSpec
 
 from omni_drones.utils.torchrl import AgentSpec
 from .utils.distributions import IndependentNormalModule, MultiCategoricalModule
+from .mappo import make_dataset_naive
 
 class ParallelAct(nn.Module):
     def __init__(self, 
@@ -45,8 +47,35 @@ class MATPolicy(object):
 
         self.opt = torch.optim.Adam()
 
+    def ppo_update(self, minibatch: TensorDict):
+
+        self.opt.zero_grad()
+
+        self.opt.step()
+        return TensorDict({
+
+        }, [])
+    
     def train_op(self, batch: TensorDict):
-        ...
+        
+        train_info = []
+        for epoch in range(self.cfg.ppo_epochs):
+            for minibatch in make_dataset_naive(
+                batch, int(self.cfg.num_minibatches)
+            ):
+                train_info.append(self.ppo_update(minibatch))
+        
+        train_info = {k: v.mean().item() for k, v in torch.stack(train_info).items()}
+        # train_info["advantages_mean"] = advantages_mean
+        # train_info["advantages_std"] = advantages_std
+        if isinstance(self.agent_spec.action_spec, BoundedTensorSpec):
+            train_info["action_norm"] = (
+                batch[self.act_name].float().norm(dim=-1).mean()
+            )
+        if hasattr(self, "value_normalizer"):
+            train_info["value_running_mean"] = self.value_normalizer.running_mean.mean()
+        
+        return {f"{self.agent_spec.name}/{k}": v for k, v in train_info.items()}
 
 
 class SelfAttention(nn.Module):

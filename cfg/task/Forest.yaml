@@ -6,7 +6,7 @@ defaults:
 
 env:
   num_envs: 4
-  env_spacing: 40
+  env_spacing: 60
   max_episode_length: 800
   
 drone_model: Firefly

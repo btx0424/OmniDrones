@@ -17,45 +17,22 @@ from omni_drones.robots.config import RobotCfg
 from omni_drones.robots.drone import MultirotorBase
 from omni_drones.views import RigidPrimView
 
-def create_gate(
+def create_obstacles(
     prim_path: str,
     translation=(0., 0., 1.5),
-    height: float=2,
     width: float=5,
 ):
     prim = prim_utils.create_prim(
         prim_path=prim_path,
-        translation=translation
-    )
-    upper = prim_utils.create_prim(
-        prim_path=prim_path + "/upper",
         prim_type="Capsule",
-        translation=(0., 0., height / 2.),
+        translation=translation,
         attributes={"axis":"Y", "radius":0.05, "height": width}
     )
-    middle = prim_utils.create_prim(
-        prim_path=prim_path + "/middle",
-        prim_type="Capsule",
-        translation=(0., 0., 0.),
-        attributes={"axis":"Y", "radius":0.05, "height": width}
-    )
-    lower = prim_utils.create_prim(
-        prim_path=prim_path + "/lower",
-        prim_type="Capsule",
-        translation=(0., 0., -height / 2.),
-        attributes={"axis":"Y", "radius":0.05, "height": width}
-    )
-    UsdPhysics.RigidBodyAPI.Apply(upper)
-    UsdPhysics.RigidBodyAPI.Apply(middle)
-    UsdPhysics.RigidBodyAPI.Apply(lower)
-    UsdPhysics.CollisionAPI.Apply(upper)
-    UsdPhysics.CollisionAPI.Apply(middle)
-    UsdPhysics.CollisionAPI.Apply(lower)
+    UsdPhysics.RigidBodyAPI.Apply(prim)
+    UsdPhysics.CollisionAPI.Apply(prim)
 
     stage = prim_utils.get_current_stage()
-    script_utils.createJoint(stage, "Fixed", prim, upper)
-    script_utils.createJoint(stage, "Fixed", prim, middle)
-    script_utils.createJoint(stage, "Fixed", prim, lower)
+    script_utils.createJoint(stage, "Fixed", prim.GetParent(), prim)
     return prim
 
 def create_payload(
@@ -101,10 +78,24 @@ class Gate(IsaacEnv):
         self.reward_distance_scale = self.cfg.task.get("reward_distance_scale")
 
         self.drone.initialize()
+
+        # self.bar = RigidPrimView(
+        #     f"/World/envs/env_*/{self.drone.name}_*/bar",
+        #     reset_xform_properties=False,
+        #     track_contact_forces=True
+        # )
+        # self.bar.initialize()
+        self.obstacles = RigidPrimView(
+            "/World/envs/env_*/obstacle_*",
+            reset_xform_properties=False,
+            shape=[self.num_envs, 3],
+            track_contact_forces=True
+        )
+        self.obstacles.initialize()
         self.payload = RigidPrimView(
             f"/World/envs/env_*/{self.drone.name}_*/payload",
             reset_xform_properties=False,
-            shape=self.drone.shape
+            # track_contact_forces=True,
         )
         self.payload.initialize()
         self.payload_target_vis = RigidPrimView(
@@ -117,12 +108,13 @@ class Gate(IsaacEnv):
         self.init_vels = torch.zeros_like(self.drone.get_velocities())
         self.init_joint_pos = self.drone.get_joint_positions(True)
         self.init_joint_vels = torch.zeros_like(self.drone.get_joint_velocities())
+        self.obstacle_pos = self.get_env_poses(self.obstacles.get_world_poses())[0]
 
         drone_state_dim = self.drone.state_spec.shape[-1]
         self.agent_spec["drone"] = AgentSpec(
             "drone",
             1,
-            UnboundedContinuousTensorSpec(drone_state_dim + 9).to(self.device),
+            UnboundedContinuousTensorSpec(drone_state_dim + 9 + 6).to(self.device),
             self.drone.action_spec.to(self.device),
             UnboundedContinuousTensorSpec(1).to(self.device),
         )
@@ -135,14 +127,22 @@ class Gate(IsaacEnv):
             torch.tensor([-.2, -.2, 0.], device=self.device) * torch.pi,
             torch.tensor([.2, .2, 2], device=self.device) * torch.pi
         )
+        self.payload_target_pos_dist = D.Uniform(
+            torch.tensor([1., 0., 1.0], device=self.device),
+            torch.tensor([1.5, 0., 1.5], device=self.device)
+        )
+        self.payload_mass_dist = D.Uniform(
+            torch.as_tensor(self.cfg.task.payload_mass_min, device=self.device),
+            torch.as_tensor(self.cfg.task.payload_mass_max, device=self.device)
+        )
 
-        self.payload_target_pos = torch.tensor([[1.5, 0.0, 1.0]], device=self.device)
+        self.payload_target_pos = torch.zeros(self.num_envs, 3, device=self.device)
         self.alpha = 0.7
 
         info_spec = CompositeSpec({
-            "payload_pos_error": UnboundedContinuousTensorSpec((self.drone.n, 1)),
-            "drone_uprightness": UnboundedContinuousTensorSpec((self.drone.n, 1)),
-            "collision": UnboundedContinuousTensorSpec((self.drone.n, 1)),
+            "payload_pos_error": UnboundedContinuousTensorSpec(1),
+            "drone_uprightness": UnboundedContinuousTensorSpec(1),
+            # "collision": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["info"] = info_spec
         self.info = info_spec.zero()
@@ -158,7 +158,11 @@ class Gate(IsaacEnv):
             dynamic_friction=1.0,
             restitution=0.0,
         )
-        create_gate("/World/envs/env_0/gate", translation=(0., 0., 1.5))
+        
+        create_obstacles("/World/envs/env_0/obstacle_0", translation=(0., 0., 0.5))
+        create_obstacles("/World/envs/env_0/obstacle_1", translation=(0., 0., 1.5))
+        create_obstacles("/World/envs/env_0/obstacle_2", translation=(0., 0., 2.5))
+
         self.drone.spawn(translations=[(0.0, 0.0, 2.)])
         create_payload(f"/World/envs/env_0/{self.drone.name}_0", 1.)
 
@@ -185,9 +189,18 @@ class Gate(IsaacEnv):
         self.drone.set_joint_positions(self.init_joint_pos[env_ids], env_ids)
         self.drone.set_joint_velocities(self.init_joint_vels[env_ids], env_ids)
 
+        payload_target_pos = self.payload_target_pos_dist.sample(env_ids.shape)
+        self.payload_target_pos[env_ids] = payload_target_pos
+        self.payload_target_vis.set_world_poses(
+            payload_target_pos + self.envs_positions[env_ids], 
+            env_indices=env_ids
+        )
+        payload_mass = self.payload_mass_dist.sample(env_ids.shape)
+        self.payload.set_masses(payload_mass, env_ids)
+
         self.info["payload_pos_error"][env_ids] = 0
         self.info["drone_uprightness"][env_ids] = 0
-        self.info["collision"][env_ids] = False
+        # self.info["collision"][env_ids] = False
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("action", "drone.action")]
@@ -202,18 +215,21 @@ class Gate(IsaacEnv):
         # self.collision.bitwise_or_(collision.any(-1, keepdim=True))
 
         # relative position and heading
-        self.drone_payload_rpos = self.payload_target_pos - self.drone_state[..., :3]
-        self.target_payload_rpos = self.payload_target_pos - payload_pos
+        self.drone_payload_rpos = self.payload_target_pos.unsqueeze(1) - self.drone_state[..., :3]
+        self.target_payload_rpos = (self.payload_target_pos - payload_pos).unsqueeze(1)
+        obstacle_drone_rpos = self.obstacle_pos[..., [0, 2]] - self.drone_state[..., [0, 2]]
+        
         obs = torch.cat([
             self.drone_payload_rpos,
             self.drone_state[..., 3:],
             self.target_payload_rpos, # 3
-            self.payload_vels, # 6
+            self.payload_vels.unsqueeze(1), # 6
+            obstacle_drone_rpos.flatten(start_dim=-2).unsqueeze(1), # 3 * 2
         ], dim=-1)
 
-        payload_pos_error = torch.norm(self.target_payload_rpos, dim=-1, keepdim=True)
+        payload_pos_error = torch.norm(self.target_payload_rpos, dim=-1)
         self.info["payload_pos_error"].mul_(self.alpha).add_((1-self.alpha) * payload_pos_error)
-        self.info["drone_uprightness"].mul_(self.alpha).add_((1-self.alpha) * self.drone_up[..., 2].unsqueeze(-1))
+        self.info["drone_uprightness"].mul_(self.alpha).add_((1-self.alpha) * self.drone_up[..., 2])
         
         return TensorDict({
             "drone.obs": obs,
@@ -236,25 +252,28 @@ class Gate(IsaacEnv):
         spin = torch.square(vels[..., -1])
         spin_reward = 0.5 / (1.0 + torch.square(spin))
 
-        swing = torch.norm(self.payload_vels[..., :3], dim=-1)
+        swing = torch.norm(self.payload_vels[..., :3], dim=-1, keepdim=True)
         swing_reward = 0.5 * torch.exp(-swing)
 
-        assert pose_reward.shape == up_reward.shape == spin_reward.shape
+        # collision_payload = self.payload.get_net_contact_forces().any(-1, keepdim=True)
+        # collision_bar = self.bar.get_net_contact_forces().any(-1, keepdim=True)
+        # collision_reward = (collision_payload | collision_bar).float()
+
+        assert pose_reward.shape == up_reward.shape == spin_reward.shape == swing_reward.shape
         reward = (
             pose_reward 
             + pose_reward * (up_reward + spin_reward + swing_reward) 
             + effort_reward
+            # - 0.5 * collision_reward
         )
         
         done_misbehave = (self.drone_state[..., 2] < 0.2) | (distance > 5)
-        # done_collision = self.collision.any(-1)
         done_hasnan = torch.isnan(self.drone_state).any(-1)
 
         done = (
             (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
             | done_misbehave
             | done_hasnan
-            # | done_collision
         )
 
         self._tensordict["return"] += reward.unsqueeze(-1)

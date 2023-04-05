@@ -123,13 +123,14 @@ def main(cfg):
 
         drone_state = tensordict[("drone.obs", "state")][..., :13].squeeze(1)
         # compute control target by evaluating the spline
-        controller_target_pos = vmap(splev_torch)(t, knots, ctps, k=k).squeeze(1)
-        controller_target_vel = vmap(splev_torch)(t, knots, ctps, k=k, der=1).squeeze(1)
-        controller_target_yaw = torch.atan2(controller_target_vel[..., 1], controller_target_vel[..., 0]).unsqueeze(-1)
-        controller_target_yaw.zero_()
-        controller_target = torch.cat([controller_target_pos, controller_target_vel, controller_target_yaw], dim=-1)
+        control_target_pos = vmap(splev_torch)(t, knots, ctps, k=k).squeeze(1)
+        control_target_vel = vmap(splev_torch)(t, knots, ctps, k=k, der=1).squeeze(1)
+        control_target_yaw = torch.atan2(control_target_vel[..., 1], control_target_vel[..., 0]).unsqueeze(-1)
+        control_target_yaw.zero_()
+        control_target = torch.cat([control_target_pos, control_target_vel, control_target_yaw], dim=-1)
         controller_state = tensordict.get("controller_state", TensorDict({}, tensordict.shape))
-        cmds, controller_state = vmap(controller)(drone_state, controller_target, controller_state)
+        cmds, controller_state = vmap(controller)(drone_state, control_target, controller_state)
+        tensordict["control_target"] = control_target
         tensordict["drone.action"] = cmds.unsqueeze(1)
         tensordict["controller_state"] = controller_state
 
@@ -140,31 +141,43 @@ def main(cfg):
         env,
         policy=policy,
         frames_per_batch=base_env.num_envs * base_env.max_episode_length,
-        total_frames=base_env.num_envs * base_env.max_episode_length * 10,
+        total_frames=base_env.num_envs * base_env.max_episode_length * 20,
         device=cfg.sim.device,
         storing_device="cpu",
         return_same_td=True,
     )
 
+    if not os.path.isdir("trajectories"):
+        os.mkdir("trajectories")
+    
     pbar = tqdm(collector)
-    trajectories = []
     for i, batch in enumerate(pbar):
-        trajectories.append(batch.exclude(("drone.obs", "rgb")))
+        batch = batch.select(
+            ("drone.obs", "distance_to_camera"),
+            ("drone.obs", "state"),
+            "control_target",
+            "drone.action",
+        )
+        torch.save(batch, f"trajectories/{i}.pth")
         pbar.set_postfix(
             {
                 "rollout_fps": collector._fps,
                 "frames": collector._frames,
             }
         )
-    trajectories = torch.cat(trajectories, dim=1)
-    torch.save(trajectories, "trajectories.pth")
 
     from torchvision.io import write_video
 
     rgb = batch.get(("drone.obs", "rgb"), None) # [env, T, agent, H, W, C]
     if rgb is not None:
-        for env_id, video_array in enumerate(rgb[:, :, 0].unbind(0)):
+        for env_id, video_array in tqdm(enumerate(rgb[:, :, 0].unbind(0))):
             write_video(f"rgb_{env_id}.mp4", video_array[..., :3], fps=50)
+    
+    depth = batch.get(("drone.obs", "distance_to_camera"), None)
+    if depth is not None:
+        for env_id, video_array in tqdm(enumerate(depth[:, :, 0].unbind(0))):
+            video_array =  video_array.expand(*video_array.shape[:-1], 3)
+            write_video(f"depth_{env_id}.mp4", video_array, fps=50)
 
     simulation_app.close()
 

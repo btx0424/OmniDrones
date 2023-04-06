@@ -34,7 +34,12 @@ class TransportationGroup(RobotBase):
         self.drone = drone
         self.translations = []
 
-    def spawn(self, translations=..., prim_paths: Sequence[str] = None):
+    def spawn(
+        self, 
+        translations=..., 
+        prim_paths: Sequence[str] = None,
+        enable_collision: bool = False,
+    ):
 
         translations = torch.atleast_2d(
             torch.as_tensor(translations, device=self.device)
@@ -49,7 +54,7 @@ class TransportationGroup(RobotBase):
         for prim_path, translation in zip(prim_paths, translations):
             if prim_utils.is_prim_path_valid(prim_path):
                 raise RuntimeError(f"Duplicate prim at {prim_path}.")
-            prim = prim_utils.create_prim(
+            xform = prim_utils.create_prim(
                 prim_path,
                 translation=translation,
             )
@@ -60,10 +65,17 @@ class TransportationGroup(RobotBase):
                 translation=(0.0, 0.0, -1.1),
                 scale=(0.5, 0.5, 0.2),
             )
+
             script_utils.setRigidBody(payload, "convexHull", False)
             UsdPhysics.MassAPI.Apply(payload)
             payload.GetAttribute("physics:mass").Set(2.0)
-            payload.GetAttribute("physics:collisionEnabled").Set(False)
+            payload.GetAttribute("physics:collisionEnabled").Set(enable_collision)
+            
+            kit_utils.set_rigid_body_properties(
+                payload.GetPath(),
+                angular_damping=0.1,
+                linear_damping=0.1
+            )
 
             drone_translations = torch.tensor(
                 [
@@ -96,19 +108,20 @@ class TransportationGroup(RobotBase):
                     translation=(0, 0, -0.5),
                     from_prim=payload,
                     to_prim=f"{prim_path}/{self.drone.name.lower()}_{i}/base_link",
+                    enable_collision=enable_collision
                 )
 
-            UsdPhysics.ArticulationRootAPI.Apply(prim)
-            PhysxSchema.PhysxArticulationAPI.Apply(prim)
+            UsdPhysics.ArticulationRootAPI.Apply(xform)
+            PhysxSchema.PhysxArticulationAPI.Apply(xform)
 
             if self.is_articulation:
                 kit_utils.set_articulation_properties(
-                    prim_path,
+                    xform.GetPath(),
                     enable_self_collisions=False,
                     solver_position_iteration_count=self.articulation_props.solver_position_iteration_count,
                     solver_velocity_iteration_count=self.articulation_props.solver_velocity_iteration_count,
                 )
-            prims.append(prim)
+            prims.append(xform)
 
         self.n += n
         return prims

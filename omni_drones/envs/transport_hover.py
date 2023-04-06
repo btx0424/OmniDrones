@@ -19,7 +19,7 @@ from omni_drones.robots.config import RobotCfg
 from omni_drones.robots.drone import MultirotorBase
 
 
-class Transport(IsaacEnv):
+class TransportHover(IsaacEnv):
     def __init__(self, cfg, headless):
         super().__init__(cfg, headless)
         self.reward_effort_weight = self.cfg.task.get("reward_effort_weight")
@@ -92,7 +92,7 @@ class Transport(IsaacEnv):
         
         info_spec = CompositeSpec({
             "payload_mass": UnboundedContinuousTensorSpec((1,)),
-            "pos_error": UnboundedContinuousTensorSpec((1,)),
+            "payload_pos_error": UnboundedContinuousTensorSpec((1,)),
             "heading_alignment": UnboundedContinuousTensorSpec((1,)),
             "uprightness": UnboundedContinuousTensorSpec((1,)),
         }).expand(self.num_envs).to(self.device)
@@ -106,7 +106,6 @@ class Transport(IsaacEnv):
 
         scene_utils.design_scene()
 
-        self.group.spawn(translations=[(0, 0, 2.0)])
         DynamicCuboid(
             "/World/envs/env_0/payloadTargetVis",
             translation=torch.tensor([0., 0., 2.]),
@@ -123,6 +122,7 @@ class Transport(IsaacEnv):
             disable_gravity=True
         )
 
+        self.group.spawn(translations=[(0, 0, 2.0)], enable_collision=True)
         return ["/World/defaultGroundPlane"]
 
     def _reset_idx(self, env_ids: torch.Tensor):

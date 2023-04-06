@@ -45,8 +45,8 @@ class Forest(IsaacEnv):
         if self.visual_obs:
             self.camera.initialize(f"/World/envs/.*/{self.drone.name}_*/base_link/Camera")
             observation_spec.update({
-                "rgb": UnboundedContinuousTensorSpec((*self.camera.shape, 4)).to(self.device),
-                "distance_to_camera": UnboundedContinuousTensorSpec((*self.camera.shape, 1)).to(self.device)
+                "rgb": UnboundedContinuousTensorSpec((4, *self.camera.shape)).to(self.device),
+                "distance_to_camera": UnboundedContinuousTensorSpec((1, *self.camera.shape)).to(self.device)
             })
 
         self.agent_spec["drone"] = AgentSpec(
@@ -156,7 +156,8 @@ class Forest(IsaacEnv):
         
         obs = TensorDict({"state": self.root_state}, [self.num_envs, self.drone.n])
         if self.visual_obs:
-            images = self.camera.get_images().reshape(self.num_envs, self.drone.n, *self.camera.shape)
+            images = self.camera.get_images()
+            images = images.unsqueeze(1)
             obs.update(images)
 
         tensordict = TensorDict({

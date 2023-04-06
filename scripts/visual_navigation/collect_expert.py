@@ -95,7 +95,7 @@ def main(cfg):
 
     transforms = Compose(
         InitTracker(), 
-        DepthImageNorm([("drone.obs", "distance_to_camera")], 0, 50)
+        DepthImageNorm([("drone.obs", "distance_to_camera")], 0, 24)
     )
     env = TransformedEnv(base_env, transforms)
 
@@ -141,7 +141,7 @@ def main(cfg):
         env,
         policy=policy,
         frames_per_batch=base_env.num_envs * base_env.max_episode_length,
-        total_frames=base_env.num_envs * base_env.max_episode_length * 20,
+        total_frames=base_env.num_envs * base_env.max_episode_length * 2,
         device=cfg.sim.device,
         storing_device="cpu",
         return_same_td=True,
@@ -152,13 +152,15 @@ def main(cfg):
     
     pbar = tqdm(collector)
     for i, batch in enumerate(pbar):
-        batch = batch.select(
-            ("drone.obs", "distance_to_camera"),
-            ("drone.obs", "state"),
-            "control_target",
-            "drone.action",
+        torch.save(
+            batch.select(
+                ("drone.obs", "distance_to_camera"),
+                ("drone.obs", "state"),
+                "control_target",
+                "drone.action",
+            ), 
+            f"trajectories/{i}.pth"
         )
-        torch.save(batch, f"trajectories/{i}.pth")
         pbar.set_postfix(
             {
                 "rollout_fps": collector._fps,
@@ -168,16 +170,17 @@ def main(cfg):
 
     from torchvision.io import write_video
 
+    print(batch)
     rgb = batch.get(("drone.obs", "rgb"), None) # [env, T, agent, H, W, C]
     if rgb is not None:
         for env_id, video_array in tqdm(enumerate(rgb[:, :, 0].unbind(0))):
-            write_video(f"rgb_{env_id}.mp4", video_array[..., :3], fps=50)
+            write_video(f"rgb_{env_id}.mp4", video_array[:, :3].permute(0, 2, 3, 1), fps=50)
     
-    depth = batch.get(("drone.obs", "distance_to_camera"), None)
-    if depth is not None:
-        for env_id, video_array in tqdm(enumerate(depth[:, :, 0].unbind(0))):
-            video_array =  video_array.expand(*video_array.shape[:-1], 3)
-            write_video(f"depth_{env_id}.mp4", video_array, fps=50)
+    # depth = batch.get(("drone.obs", "distance_to_camera"), None)
+    # if depth is not None:
+    #     for env_id, video_array in tqdm(enumerate(depth[:, :, 0].unbind(0))):
+    #         video_array =  video_array.expand(*video_array.shape[:-1], 3)
+    #         write_video(f"depth_{env_id}.mp4", video_array, fps=50)
 
     simulation_app.close()
 

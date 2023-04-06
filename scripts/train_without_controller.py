@@ -134,8 +134,9 @@ def main(cfg):
         env.reset()
         env.train()
 
+        video_array = torch.stack(frames)
         info["recording"] = wandb.Video(
-            torch.stack(frames).permute(0, 3, 1, 2), fps=1 / cfg.sim.dt, format="mp4"
+            video_array, fps=1 / cfg.sim.dt, format="mp4"
         )
         return info
 

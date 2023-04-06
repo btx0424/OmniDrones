@@ -4,22 +4,109 @@ import time
 
 import hydra
 import torch
+import torch.nn as nn
 import wandb
 from functorch import vmap
 from omegaconf import OmegaConf
+from tqdm import tqdm
+from setproctitle import setproctitle
+
+from tensordict import TensorDict
+from tensordict.nn import TensorDictModule, TensorDictSequential
+from torchrl.data import (
+    TensorSpec,
+    UnboundedContinuousTensorSpec,
+    CompositeSpec,
+    TensorDictReplayBuffer,
+    LazyMemmapStorage
+)
+
+from torchrl.envs.transforms import (
+    TransformedEnv, 
+    InitTracker, 
+    Compose,
+    CatTensors
+)
+from torchvision.models import mobilenet_v3_small
+from torchvision.io import write_video
 
 from omni_drones import CONFIG_PATH, init_simulation_app
-from omni_drones.utils.envs.transforms import LogOnEpisode
+from omni_drones.utils.envs.transforms import LogOnEpisode, DepthImageNorm
 from omni_drones.utils.wandb import init_wandb
 from omni_drones.utils.math import quaternion_to_euler
+from omni_drones.learning.utils.distributions import IndependentNormal
+from omni_drones.learning.utils.network import MLP
+from omni_drones.utils.torchrl import SyncDataCollector
 
-from setproctitle import setproctitle
-from tensordict import TensorDict
-from torchrl.data import UnboundedContinuousTensorSpec
-from torchrl.envs.transforms import TransformedEnv, InitTracker, Compose
 
-from tqdm import tqdm
+def make_dataset(
+    traj_dir: str,
+    batch_size: int,
+    max_size: 32000,
+):
+    buffer = TensorDictReplayBuffer(
+        batch_size=batch_size,
+        storage=LazyMemmapStorage(max_size, scratch_dir="tmp"),
+    )
+    for traj_file in tqdm(os.listdir(traj_dir)[:10], desc="loading data"):
+        td: TensorDict = torch.load(os.path.join(traj_dir, traj_file))
+        buffer.extend(td.reshape(-1))
+    return buffer
 
+class NormalParam(nn.Module):
+    def __init__(self, output_dim):
+        super().__init__()
+        self.linear = nn.LazyLinear(output_dim)
+        self.log_std = nn.Parameter(torch.zeros(output_dim))
+    
+    def forward(self, input):
+        loc = self.linear(input)
+        scale = torch.broadcast_to(torch.exp(self.log_std), loc.shape)
+        return loc, scale
+    
+class Actor(nn.Module):
+
+    def forward(self, loc, scale):
+        dist = IndependentNormal(loc, scale)
+        action = dist.sample()
+        logp = dist.log_prob(action).unsqueeze(-1)
+        return action, logp
+
+class ActorEval(nn.Module):
+
+    def forward(self, action, loc, scale):
+        dist = IndependentNormal(loc, scale)
+        logp = dist.log_prob(action).unsqueeze(-1)
+        entropy = dist.entropy()
+        return logp, entropy
+
+def make_model(
+    input_spec: CompositeSpec,
+    action_spec: TensorSpec,
+    device: torch.device="cpu"
+):
+    visual_encoder = nn.Sequential(
+        nn.Conv2d(1, 3, 1),
+        mobilenet_v3_small(num_classes=128)
+    )
+    state_input_shape = input_spec["state"].shape
+    state_encoder = MLP([state_input_shape[-1], 128], normalization=nn.LayerNorm)
+    encoder = TensorDictSequential(
+        TensorDictModule(visual_encoder, [("drone.obs", "distance_to_camera")], ["visual_feature"]),
+        TensorDictModule(state_encoder, [("drone.obs", "state")], ["state_feature"]),
+        CatTensors(["state_feature", "visual_feature"], "feature"),
+        TensorDictModule(MLP([128 + 128, 128]), ["feature"], ["feature"]),
+        TensorDictModule(NormalParam(action_spec.shape[-1]), ["feature"], ["loc", "scale"]),
+    ).to(device)
+    actor = TensorDictSequential(
+        encoder,
+        TensorDictModule(Actor(), ["loc", "scale"], ["action", "logp"])
+    )
+    actor_eval = TensorDictSequential(
+        encoder,
+        TensorDictModule(ActorEval(), ["control_target", "loc", "scale"], ["logp", "entropy"])
+    )
+    return actor, actor_eval 
 
 @hydra.main(version_base=None, config_path=CONFIG_PATH, config_name="config")
 def main(cfg):
@@ -32,46 +119,38 @@ def main(cfg):
 
     from omni_drones.envs import Forest
     from omni_drones.learning.mappo import MAPPOPolicy
-    from omni_drones.sensors.camera import Camera
 
     base_env = Forest(cfg, headless=cfg.headless)
-    camera = Camera()
-    camera.spawn(["/World/Camera"], translations=[(6, 6, 3)], targets=[(0, 0, 1)])
-    camera.initialize("/World/Camera")
 
-    agent_spec = base_env.agent_spec["drone"]
-    agent_spec.action_spec = UnboundedContinuousTensorSpec(3, device=base_env.device)
-    ppo = MAPPOPolicy(
-        cfg.algo, agent_spec=agent_spec, act_name="drone.target_vel", device="cuda"
+    actor, actor_eval = make_model(
+        input_spec=CompositeSpec({
+            "state": UnboundedContinuousTensorSpec(25),
+        }),
+        action_spec=UnboundedContinuousTensorSpec(6),
+        device=base_env.device
     )
+
     controller = base_env.drone.DEFAULT_CONTROLLER(base_env.drone.dt, 9.81, base_env.drone.params).to(
         base_env.device
     )
     
     def policy(tensordict: TensorDict):
-        tensordict = ppo(tensordict)
-        relative_state = tensordict[drone_state_key][..., :13].clone()
-        if relative_state.dim() > 3:
-            relative_state = relative_state.squeeze(2)
-        target_vel = tensordict["drone.target_vel"]
+        actor_input = tensordict.select(*actor.in_keys)
+        actor_input.batch_size = [*tensordict.batch_size, 1]
+        actor_input = actor_input.squeeze(1)
+        actor_output = actor(actor_input).unsqueeze(1)
 
-        control_target = torch.cat(
-            [
-                torch.zeros_like(relative_state[..., :3]),
-                target_vel,
-                torch.zeros_like(target_vel[..., [0]]),
-            ],
-            dim=-1,
-        )
+        drone_state = tensordict[("info", "drone_state")]
+        target_pos_vel = actor_output["control_target"]
+        target_yaw = torch.zeros_like(target_pos_vel[..., 0].unsqueeze(-1))
+
+        control_target = torch.cat([target_pos_vel, target_yaw], dim=-1)
+
         controller_state = tensordict.get(
-            "controller_state", TensorDict({}, relative_state.shape[:2])
+            "controller_state", TensorDict({}, drone_state.shape[:2])
         )
-        state = torch.cat([
-            torch.zeros_like(relative_state[..., :3]),
-            relative_state[..., 3:]
-        ], dim=-1)
         cmds, controller_state = vmap(vmap(controller))(
-            state, control_target, controller_state
+            drone_state, control_target, controller_state
         )
         torch.nan_to_num_(cmds, 0.0)
         assert not torch.isnan(cmds).any()
@@ -80,67 +159,50 @@ def main(cfg):
         return tensordict
 
     def log(info):
-        for k, v in info.items():
-            print(f"train/{k}: {v}")
+        print(OmegaConf.to_yaml(info))
         run.log(info)
 
     logger = LogOnEpisode(
         cfg.env.num_envs,
         in_keys=["return", "progress"],
-        log_keys=["train/return", "train/ep_length"],
+        log_keys=["return", "ep_length"],
         logger_func=log,
     )
 
-    env = TransformedEnv(base_env, Compose(InitTracker(), logger))
+    transforms = Compose(
+        InitTracker(), 
+        DepthImageNorm([("drone.obs", "distance_to_camera")], 0, 24),
+        logger
+    )
+    env = TransformedEnv(base_env, transforms)
     collector = SyncDataCollector(
         env,
-        policy,
-        frames_per_batch=base_env.num_envs * cfg.algo.train_every,
-        total_frames=512000000,
+        policy=policy,
+        frames_per_batch=base_env.num_envs * base_env.max_episode_length,
+        total_frames=-1,
         device=cfg.sim.device,
-        return_same_td=True,
+        storing_device="cpu",
     )
-
-    @torch.no_grad()
-    def evaluate():
-        info = {"env_frames": collector._frames}
-        frames = []
-
-        def record_frame(*args, **kwargs):
-            frame = camera.get_images()["rgb"][0]
-            frames.append(frame.cpu())
-
-        base_env.enable_render(True)
-        env.rollout(
-            max_steps=base_env.max_episode_length,
-            policy=policy,
-            callback=record_frame,
-            auto_reset=True,
-            break_when_any_done=False,
-        )
-        base_env.enable_render(not cfg.headless)
-
-        info["recording"] = wandb.Video(
-            torch.stack(frames).permute(0, 3, 1, 2), fps=1 / cfg.sim.dt, format="mp4"
-        )
-        return info
     
-    pbar = tqdm(collector)
-    for i, data in enumerate(pbar):
-        info = {"env_frames": collector._frames}
-        info.update(ppo.train_op(data))
-
-        if i % 2 == 0:
-            run.log(info)
-
-        if i % 50 == 0:
-            logging.info(f"Eval at {collector._frames} steps.")
-            run.log(evaluate())
-
-        pbar.set_postfix({
-            "rollout_fps": collector._fps,
-            "frames": collector._frames,
-        })
+    opt = torch.optim.Adam(actor.parameters())
+    buffer = make_dataset("trajectories", 128, 32000)
+    for epoch in range(5):
+        t = tqdm(range(512))
+        actor.train()
+        for _ in t:
+            batch = buffer.sample().to(env.device)
+            batch["drone.obs"] = batch["drone.obs"].squeeze(1)
+            batch["drone.action"] = batch["drone.action"].squeeze(1)
+            actor_output = actor_eval(batch)
+            loss = - torch.mean(actor_output["logp"])
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+            t.set_postfix({"loss": loss.item()})
+        actor.eval()
+        
+        with torch.no_grad():
+            td = next(collector)
 
     simulation_app.close()
 

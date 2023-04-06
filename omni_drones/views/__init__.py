@@ -285,16 +285,16 @@ class RigidPrimView(_RigidPrimView):
         indices = self._resolve_env_indices(env_indices)
         return super().set_velocities(velocities.reshape(-1, 6), indices)
 
-    def get_net_contact_forces(
-        self,
-        env_indices: Optional[torch.Tensor] = None,
-        clone: bool = False,
-        dt: float = 1,
-    ) -> torch.Tensor:
-        indices = self._resolve_env_indices(env_indices)
-        return (
-            super().get_net_contact_forces(indices, clone, dt).unflatten(0, self.shape)
-        )
+    # def get_net_contact_forces(
+    #     self,
+    #     env_indices: Optional[torch.Tensor] = None,
+    #     clone: bool = False,
+    #     dt: float = 1,
+    # ) -> torch.Tensor:
+    #     indices = self._resolve_env_indices(env_indices)
+    #     return (
+    #         super().get_net_contact_forces(indices.clone(), clone, dt).unflatten(0, self.shape)
+    #     )
 
     def _resolve_env_indices(self, env_indices: torch.Tensor):
         if not hasattr(self, "_all_indices"):

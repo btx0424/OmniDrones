@@ -108,6 +108,7 @@ class TransportationGroup(RobotBase):
                     translation=(0, 0, -0.5),
                     from_prim=payload,
                     to_prim=f"{prim_path}/{self.drone.name.lower()}_{i}/base_link",
+                    mass=0.03,
                     enable_collision=enable_collision
                 )
 

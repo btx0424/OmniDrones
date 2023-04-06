@@ -95,8 +95,8 @@ class TransportFlyThrough(IsaacEnv):
             torch.tensor([-1.5, 0.5, 2.5], device=self.device)
         )
         self.init_rpy_dist = D.Uniform(
-            torch.tensor([0., 0., 0.], device=self.device) * torch.pi,
-            torch.tensor([0., 0., 2.], device=self.device) * torch.pi
+            torch.tensor([0., 0., -.5], device=self.device) * torch.pi,
+            torch.tensor([0., 0., 0.5], device=self.device) * torch.pi
         )
 
         self.alpha = 0.7
@@ -118,9 +118,9 @@ class TransportFlyThrough(IsaacEnv):
 
         scene_utils.design_scene()
 
-        # create_obstacles("/World/envs/env_0/obstacle_0", translation=(0., 0., 1.5))
-        # create_obstacles("/World/envs/env_0/obstacle_1", translation=(0., 0., 2.7))
-        # create_obstacles("/World/envs/env_0/obstacle_2", translation=(0., 0., 3.9))
+        create_obstacles("/World/envs/env_0/obstacle_0", translation=(0., 0., 1.5))
+        create_obstacles("/World/envs/env_0/obstacle_1", translation=(0., 0., 2.7))
+        create_obstacles("/World/envs/env_0/obstacle_2", translation=(0., 0., 3.9))
 
         DynamicCuboid(
             "/World/envs/env_0/payloadTargetVis",
@@ -216,7 +216,7 @@ class TransportFlyThrough(IsaacEnv):
             "drone.obs": obs, 
             "drone.state": state,
             "info": self.info.clone()
-        }, self.num_envs)
+        }, self.num_envs).apply(lambda x: torch.nan_to_num(x, 0))
 
     def _compute_reward_and_done(self):
         distance = torch.norm(self.target_payload_rpos, dim=-1, keepdim=True)

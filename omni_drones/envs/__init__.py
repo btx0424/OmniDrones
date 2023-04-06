@@ -6,6 +6,8 @@ from .transport_hover import TransportHover
 from .transport_fly_through import TransportFlyThrough
 from .spread import Spread
 from .forest import Forest
+from .fly_through import SingleFlyThrough
+from .inverted_pendulum import InvertedPendulum
 from .gate import Gate
 
 from .isaac_env import IsaacEnv

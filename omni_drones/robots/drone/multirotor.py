@@ -46,6 +46,7 @@ class MultirotorBase(RobotBase):
             )
             self.base_link.initialize()
             print(self._view.dof_names)
+            print(self._view._dof_indices)
         else:
             super().initialize(prim_paths_expr=f"{prim_paths_expr}/base_link")
             self.base_link = self._view

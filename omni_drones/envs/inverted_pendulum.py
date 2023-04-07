@@ -64,16 +64,15 @@ class InvertedPendulum(IsaacEnv):
 
         self.drone.initialize()
 
+        # create and initialize additional views
         self.payload = RigidPrimView(
             f"/World/envs/env_*/{self.drone.name}_*/payload",
-            # track_contact_forces=True,
         )
         self.payload.initialize()
-        self.payload_target_vis = RigidPrimView(
-            "/World/envs/env_*/target",
-            reset_xform_properties=False
+        self.bar = RigidPrimView(
+            f"/World/envs/env_*/{self.drone.name}_*/bar",
         )
-        self.payload_target_vis.initialize()
+        self.bar.initialize()
 
         self.init_poses = self.drone.get_world_poses(clone=True)
         self.init_vels = torch.zeros_like(self.drone.get_velocities())
@@ -84,7 +83,7 @@ class InvertedPendulum(IsaacEnv):
         self.agent_spec["drone"] = AgentSpec(
             "drone",
             1,
-            UnboundedContinuousTensorSpec(drone_state_dim + 9).to(self.device),
+            UnboundedContinuousTensorSpec(drone_state_dim + 12).to(self.device),
             self.drone.action_spec.to(self.device),
             UnboundedContinuousTensorSpec(1).to(self.device),
         )
@@ -94,15 +93,19 @@ class InvertedPendulum(IsaacEnv):
             torch.tensor([1.5, 1.5, 2.0], device=self.device)
         )
         self.init_rpy_dist = D.Uniform(
-            torch.tensor([-.1, -.1, 0.], device=self.device) * torch.pi,
-            torch.tensor([0.1, 0.1, 2], device=self.device) * torch.pi
+            torch.tensor([-.15, -.15, 0.], device=self.device) * torch.pi,
+            torch.tensor([0.15, 0.15, 2], device=self.device) * torch.pi
         )
         self.payload_mass_dist = D.Uniform(
             torch.as_tensor(self.cfg.task.payload_mass_min, device=self.device),
             torch.as_tensor(self.cfg.task.payload_mass_max, device=self.device)
         )
+        self.bar_mass_dist = D.Uniform(
+            torch.as_tensor(self.cfg.task.bar_mass_min, device=self.device),
+            torch.as_tensor(self.cfg.task.bar_mass_max, device=self.device)
+        )
 
-        self.payload_target_pos = torch.zeros(self.num_envs, 3, device=self.device)
+        self.payload_target_pos = torch.tensor([0., 0., 2.5], device=self.device)
         
 
     def _design_scene(self):
@@ -122,7 +125,7 @@ class InvertedPendulum(IsaacEnv):
 
         sphere = objects.DynamicSphere(
             "/World/envs/env_0/target",
-            translation=(1.5, 0., 1.),
+            translation=(0., 0., 2.5),
             radius=0.08,
             color=torch.tensor([1., 0., 0.])
         )
@@ -145,6 +148,8 @@ class InvertedPendulum(IsaacEnv):
 
         payload_mass = self.payload_mass_dist.sample(env_ids.shape)
         self.payload.set_masses(payload_mass, env_ids)
+        bar_mass = self.bar_mass_dist.sample(env_ids.shape)
+        self.bar.set_masses(bar_mass, env_ids)
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("action", "drone.action")]
@@ -158,10 +163,12 @@ class InvertedPendulum(IsaacEnv):
 
         # relative position and heading
         self.drone_payload_rpos = self.drone_state[..., :3] - payload_pos.unsqueeze(1)
-        
+        self.target_payload_rpos = self.payload_target_pos - payload_pos.unsqueeze(1)
+
         obs = torch.cat([
-            self.drone_payload_rpos,
+            self.drone_payload_rpos, # 3
             self.drone_state,
+            self.target_payload_rpos, # 3
             self.payload_vels.unsqueeze(1), # 6
         ], dim=-1)
         
@@ -172,38 +179,39 @@ class InvertedPendulum(IsaacEnv):
     def _compute_reward_and_done(self):
         pos, rot, vels = self.drone_state[..., :13].split([3, 4, 6], dim=-1)
         
-        off_distance = torch.norm(pos[..., :2], dim=-1)
-        up_reward = normalize(-self.drone_payload_rpos)[..., 2]
+        distance = torch.norm(self.target_payload_rpos, dim=-1)
+        pos_reward = 1.0 / (1.0 + torch.square(self.reward_distance_scale * distance))
+        bar_up_reward = normalize(-self.drone_payload_rpos)[..., 2]
 
         effort_reward = self.reward_effort_weight * torch.exp(-self.effort)
 
         spin = torch.square(vels[..., -1])
-        spin_reward = 0.5 / (1.0 + torch.square(spin))
+        spin_reward = 1. / (1.0 + torch.square(spin))
 
         swing = torch.norm(self.payload_vels[..., :3], dim=-1, keepdim=True)
-        swing_reward = 0.5 * torch.exp(-swing)
+        swing_reward = 1. * torch.exp(-swing)
 
-        assert up_reward.shape == spin_reward.shape == swing_reward.shape
+        assert bar_up_reward.shape == spin_reward.shape == swing_reward.shape
         reward = (
-            up_reward
-            + up_reward * (spin_reward + swing_reward) 
+            bar_up_reward + pos_reward
+            + (pos_reward * bar_up_reward) * (spin_reward + swing_reward) 
             + effort_reward
-        )
+        ).unsqueeze(-1)
         
-        done_misbehave = (self.drone_state[..., 2] < 0.2) | (up_reward < 0.2)
+        done_misbehave = (pos[..., 2] < 0.2) | (bar_up_reward < 0.2)
         done_hasnan = torch.isnan(self.drone_state).any(-1)
 
         done = (
             (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
             | done_misbehave
             | done_hasnan
-            | (off_distance > 2.5)
+            | (distance > 2)
         )
 
-        self._tensordict["return"] += reward.unsqueeze(-1)
+        self._tensordict["return"] += reward
         return TensorDict(
             {
-                "reward": {"drone.reward": reward.unsqueeze(-1)},
+                "reward": {"drone.reward": reward},
                 "return": self._tensordict["return"],
                 "done": done,
             },

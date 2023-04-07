@@ -4,6 +4,7 @@ import omni.isaac.core.utils.prims as prim_utils
 import omni.isaac.core.utils.torch as torch_utils
 from omni_drones.utils.torch import euler_to_quaternion
 import torch
+import torch.distributions as D
 from omni.isaac.core.objects import VisualSphere
 from omni.isaac.core.prims import RigidPrimView
 from tensordict.tensordict import TensorDict, TensorDictBase
@@ -43,8 +44,14 @@ class Platform(IsaacEnv):
             state_spec=UnboundedContinuousTensorSpec(drone_state_dim*self.drone.n+9).to(self.device)
         )
 
-        self.init_pos_scale = torch.tensor([4.0, 4.0, 1.0], device=self.device)
-        self.init_rpy_scale = self.init_rpy_scale = torch.tensor([0.6, 0.6, 2.0], device=self.device) * torch.pi
+        self.init_pos_dist = D.Uniform(
+            torch.tensor([-2., -2., 1.5], device=self.device),
+            torch.tensor([2.0, 2.0, 2.5], device=self.device)
+        )
+        self.target_rpy_dist = D.Uniform(
+            torch.tensor([-.2, -.2, 0.0], device=self.device),
+            torch.tensor([0.2, 0.2, 2.0], device=self.device)
+        )
         self.target_pos = torch.tensor([0., 0., 2.], device=self.device)
         self.target_heading =  torch.zeros(self.num_envs, 3, device=self.device)
 
@@ -92,23 +99,16 @@ class Platform(IsaacEnv):
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
 
-        offset = (
-            torch.rand(len(env_ids), 3, device=self.device) * self.init_pos_scale
-            - self.init_pos_scale / 2
-        )
-
-        pos, rot = self.init_frame_poses
-        new_poses = (pos[env_ids] + offset, rot[env_ids])
-        self.frame_view.set_world_poses(*new_poses, env_ids)
+        pos = self.init_pos_dist.sample(env_ids.shape) + self.envs_positions[env_ids].unsqueeze(1)
+        self.frame_view.set_world_poses(positions=pos, env_indices=env_ids)
         self.frame_view.set_velocities(self.init_frame_vels[env_ids], env_ids)
 
-        pos, rot = self.init_drone_poses
-        new_poses = (pos[env_ids] + offset.unsqueeze(-2), rot[env_ids])
-        self.drone.set_world_poses(*new_poses, env_ids)
+        # pos, rot = self.init_drone_poses
+        # new_poses = (pos[env_ids] + offset.unsqueeze(-2), rot[env_ids])
+        # self.drone.set_world_poses(*new_poses, env_ids)
         self.drone.set_velocities(self.init_drone_vels[env_ids], env_ids)
 
-        target_rpy = torch.zeros(len(env_ids), 3, device=self.device)
-        target_rpy[..., 2] = torch.rand(len(env_ids), device=self.device) * torch.pi - torch.pi / 2
+        target_rpy = self.target_rpy_dist.sample(env_ids.shape)
         target_rot = euler_to_quaternion(target_rpy)
         self.target_heading[env_ids] = torch_utils.quat_axis(target_rot, 0)
 
@@ -153,22 +153,6 @@ class Platform(IsaacEnv):
                 self.frame_up # 3
             ], dim=-1
         )
-
-        if self._should_render(0):
-            env_pos = self.envs_positions[self.central_env_idx]
-            _frame_pos = frame_pos[self.central_env_idx] + env_pos
-            _target_pos = self.target_pos + env_pos
-            point_list_0 = []
-            point_list_1 = []
-            point_list_0.append(_frame_pos.tolist())
-            point_list_0.append((_frame_pos + frame_heading[self.central_env_idx]).tolist())
-            point_list_1.append(_target_pos.tolist())
-            point_list_1.append((_target_pos + self.target_heading[self.central_env_idx]).tolist())
-            colors = [(1.0, 1.0, 1.0, 1.0) for _ in range(len(point_list_0))]
-            sizes = [1 for _ in range(len(point_list_0))]
-
-            self.draw.clear_lines()
-            self.draw.draw_lines(point_list_0, point_list_1, colors, sizes)
             
         return TensorDict(
             {

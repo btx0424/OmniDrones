@@ -1,8 +1,8 @@
 program: train_without_controller.py
-name: SweepHoverPPO
+name: SinglePPO
 project: gpu-onpolicy
 entity: marl-drones
-method: bayes
+method: grid
 
 metric:
   name: train/return
@@ -34,11 +34,11 @@ parameters:
       - multidiscrete:5
       # - discrete:2
 
-  algo.num_minibatches:
-    values: [16, 32]
+  # algo.num_minibatches:
+  #   values: [16, 32]
   
   algo.train_every:
-    values: [64, 128]
+    value: 128
 
   # algo.actor.lr:
   #   distribution: log_uniform_values
@@ -51,7 +51,7 @@ parameters:
   #   min: 0.0001
 
   algo.entropy_coef:
-    values: [0.01, 0.001, 0.0001]
+    values: [0.001, 0.0001]
 
 command:
   - ${env}

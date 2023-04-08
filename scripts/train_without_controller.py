@@ -82,6 +82,7 @@ def main(cfg):
             transforms.append(transform)
     
     env = TransformedEnv(base_env, Compose(*transforms)).train()
+    env.set_seed(cfg.seed)
 
     camera_cfg = PinholeCameraCfg(
         sensor_tick=0,
@@ -166,6 +167,9 @@ def main(cfg):
             "rollout_fps": collector._fps,
             "frames": collector._frames,
         })
+
+    info = {"env_frames": collector._frames}
+    run.log(evaluate())
 
     simulation_app.close()
 

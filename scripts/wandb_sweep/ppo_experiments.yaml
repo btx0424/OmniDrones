@@ -11,36 +11,34 @@ metric:
 parameters:
 
   task: 
-    value: Hover
+    values: 
+    - Hover
+    - InvertedPendulum
 
   total_frames: 
-    value: 100_000_000
+    value: 120_000_000
 
   headless:
     value: true
   
+  seed:
+    values: [0, 42, 81]
+
   task.drone_model:
-    values: [Crazyflie, Firefly, Hummingbird]
+    values: [Firefly, Hummingbird, Omav]
 
   task.action_transform:
     values:
       - None # sweep does not support passing "null"
       - multidiscrete:2
-      - multidiscrete:4
-      - discrete:2
+      - multidiscrete:5
+      # - discrete:2
 
   algo.num_minibatches:
-    distribution: log_uniform_values
-    min: 2
-    max: 64
+    values: [16, 32]
   
   algo.train_every:
-    distribution: log_uniform_values
-    min: 32
-    max: 512
-  
-  algo.ppo_epochs:
-    values: [2, 4, 8]
+    values: [64, 128]
 
   # algo.actor.lr:
   #   distribution: log_uniform_values
@@ -53,9 +51,7 @@ parameters:
   #   min: 0.0001
 
   algo.entropy_coef:
-    distribution: log_uniform_values
-    max: 0.01
-    min: 0.0001
+    values: [0.01, 0.001, 0.0001]
 
 command:
   - ${env}

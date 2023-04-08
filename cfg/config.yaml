@@ -4,7 +4,8 @@ sim: ${task.sim}
 env: ${task.env}
 
 total_frames: -1
-eval_interval: 200
+eval_interval: -1
+seed: 0
 
 viewer:
   eye: [7.5, 7.5, 7.5]

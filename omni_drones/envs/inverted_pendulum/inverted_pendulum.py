@@ -192,16 +192,16 @@ class InvertedPendulum(IsaacEnv):
         swing_reward = 1. * torch.exp(-swing)
 
         assert bar_up_reward.shape == spin_reward.shape == swing_reward.shape
-        # reward = (
-        #     bar_up_reward + pos_reward
-        #     + (pos_reward * bar_up_reward) * (spin_reward + swing_reward) 
-        #     + effort_reward
-        # ).unsqueeze(-1)
         reward = (
-            pos_reward
-            + pos_reward * (bar_up_reward + spin_reward + swing_reward) 
+            bar_up_reward + pos_reward
+            + bar_up_reward * (spin_reward + swing_reward) 
             + effort_reward
         ).unsqueeze(-1)
+        # reward = (
+        #     pos_reward
+        #     + pos_reward * (bar_up_reward + spin_reward + swing_reward) 
+        #     + effort_reward
+        # ).unsqueeze(-1)
         
         done_misbehave = (pos[..., 2] < 0.2) | (bar_up_reward < 0.2)
         done_hasnan = torch.isnan(self.drone_state).any(-1)
@@ -210,7 +210,7 @@ class InvertedPendulum(IsaacEnv):
             (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
             | done_misbehave
             | done_hasnan
-            | (distance > 2)
+            | (distance > 2.5)
         )
 
         self._tensordict["return"] += reward

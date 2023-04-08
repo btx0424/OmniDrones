@@ -12,8 +12,8 @@ drone_model: Hummingbird
 reward_effort_weight: 0.1
 reward_distance_scale: 1.2
 
-payload_mass_min: 0.2
-payload_mass_max: 0.4
+payload_mass_min: 0.38
+payload_mass_max: 0.42
 bar_mass_min: 0.01
 bar_mass_max: 0.04
 

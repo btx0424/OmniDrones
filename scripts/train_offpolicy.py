@@ -10,7 +10,9 @@ from omegaconf import OmegaConf
 
 from omni_drones import CONFIG_PATH, init_simulation_app
 from omni_drones.utils.torchrl import SyncDataCollector, AgentSpec
-from omni_drones.utils.envs.transforms import LogOnEpisode, FromDiscreteAction
+from omni_drones.utils.envs.transforms import (
+    LogOnEpisode, FromMultiDiscreteAction, FromDiscreteAction
+)
 from omni_drones.utils.wandb import init_wandb
 
 from setproctitle import setproctitle
@@ -32,9 +34,10 @@ def main(cfg):
     from omni_drones.envs.isaac_env import IsaacEnv
     from omni_drones.learning.sac import MASACPolicy
     from omni_drones.learning.qmix import QMIX
+    from omni_drones.learning.dqn import DQN
     from omni_drones.sensors.camera import Camera
 
-    policies = {"qmix": QMIX, "sac": MASACPolicy}
+    policies = {"qmix": QMIX, "sac": MASACPolicy, "dqn": DQN}
 
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
     base_env = env_class(cfg, headless=cfg.headless)
@@ -52,12 +55,19 @@ def main(cfg):
     )
 
     transforms = [InitTracker(), logger]
-    if cfg.task.get("discrete_action", None):
-        nbins = cfg.task.discrete_action.nbins
-        transform = FromDiscreteAction(("action", "drone.action"), nbins=nbins)
-        transforms.append(transform)
+    # optionally discretize the action space
+    action_transform = cfg.task.get("action_transform", None)
+    if action_transform is not None:
+        if action_transform.startswith("multidiscrete"):
+            nbins = int(action_transform.split(":")[1])
+            transform = FromMultiDiscreteAction(("action", "drone.action"), nbins=nbins)
+            transforms.append(transform)
+        elif action_transform.startswith("discrete"):
+            nbins = int(action_transform.split(":")[1])
+            transform = FromDiscreteAction(("action", "drone.action"), nbins=nbins)
+            transforms.append(transform)
 
-    env = TransformedEnv(base_env, Compose(*transforms)) 
+    env = TransformedEnv(base_env, Compose(*transforms)).train()
 
     camera = Camera()
     camera.spawn(["/World/Camera"], translations=[(6, 6, 3)], targets=[(0, 0, 1)])

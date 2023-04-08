@@ -30,6 +30,9 @@ def create_obstacles(
     )
     UsdPhysics.RigidBodyAPI.Apply(prim)
     UsdPhysics.CollisionAPI.Apply(prim)
+    kit_utils.set_collision_properties(
+        prim_path, contact_offset=0.02, rest_offset=0
+    )
 
     stage = prim_utils.get_current_stage()
     script_utils.createJoint(stage, "Fixed", prim.GetParent(), prim)
@@ -47,6 +50,7 @@ def create_payload(
         translation=(0., 0., -bar_length / 2.),
         attributes={"radius": 0.01, "height": bar_length}
     )
+    bar.GetAttribute('primvars:displayColor').Set([(0.8, 0.1, 0.1)])
     UsdPhysics.RigidBodyAPI.Apply(bar)
     UsdPhysics.CollisionAPI.Apply(bar)
     massAPI = UsdPhysics.MassAPI.Apply(bar)
@@ -63,6 +67,7 @@ def create_payload(
     UsdPhysics.DriveAPI.Apply(joint, "rotY")
     joint.GetAttribute("drive:rotX:physics:damping").Set(0.0001)
     joint.GetAttribute("drive:rotY:physics:damping").Set(0.0001)
+    # joint.GetAttribute('physics:excludeFromArticulation').Set(True)
 
     payload = objects.DynamicSphere(
         prim_path=drone_prim_path + "/payload",
@@ -84,25 +89,28 @@ class FlyThrough(IsaacEnv):
         super().__init__(cfg, headless)
         self.reward_effort_weight = self.cfg.task.reward_effort_weight
         self.reward_distance_scale = self.cfg.task.reward_distance_scale
-        self.reward_collision_penalty = self.cfg.task.reward_collision_penalty
 
         self.bar = RigidPrimView(
             f"/World/envs/env_*/{self.drone.name}_*/bar",
-            # reset_xform_properties=False,
-            track_contact_forces=True
+            reset_xform_properties=False,
+            track_contact_forces=True,
+            contact_filter_prim_paths_expr=[
+                "/World/envs/env_*/obstacle_0",
+                "/World/envs/env_*/obstacle_1"
+            ]
         )
+
         self.bar.initialize()
         self.obstacles = RigidPrimView(
             "/World/envs/env_*/obstacle_*",
             reset_xform_properties=False,
-            shape=[self.num_envs, 3],
-            track_contact_forces=True
+            shape=[self.num_envs, -1],
+            # track_contact_forces=True
         )
         self.obstacles.initialize()
         self.payload = RigidPrimView(
             f"/World/envs/env_*/{self.drone.name}_*/payload",
-            # reset_xform_properties=False,
-            track_contact_forces=True,
+            reset_xform_properties=False,
         )
         self.payload.initialize()
         self.drone.initialize()
@@ -123,21 +131,21 @@ class FlyThrough(IsaacEnv):
         self.agent_spec["drone"] = AgentSpec(
             "drone",
             1,
-            UnboundedContinuousTensorSpec(drone_state_dim + 9 + 6).to(self.device),
+            UnboundedContinuousTensorSpec(drone_state_dim + 9 + 4).to(self.device),
             self.drone.action_spec.to(self.device),
             UnboundedContinuousTensorSpec(1).to(self.device),
         )
 
         self.init_pos_dist = D.Uniform(
             torch.tensor([-2.5, 0., 1.5], device=self.device),
-            torch.tensor([-1.0, 0., 2.5], device=self.device)
+            torch.tensor([-1.0, 0., 2.0], device=self.device)
         )
         self.init_rpy_dist = D.Uniform(
             torch.tensor([-.2, -.2, 0.], device=self.device) * torch.pi,
             torch.tensor([.2, .2, 2], device=self.device) * torch.pi
         )
         self.payload_target_pos_dist = D.Uniform(
-            torch.tensor([1., 0., 1.0], device=self.device),
+            torch.tensor([1.3, 0., 1.0], device=self.device),
             torch.tensor([1.5, 0., 1.5], device=self.device)
         )
         self.payload_mass_dist = D.Uniform(
@@ -154,7 +162,15 @@ class FlyThrough(IsaacEnv):
             "collision": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["info"] = info_spec
-        self.info = info_spec.zero()
+        # self.info = info_spec.zero()
+        self.payload_pos_error = torch.zeros(self.num_envs, 1, device=self.device)
+        self.drone_uprightness = torch.zeros(self.num_envs, 1, device=self.device)
+        self.collision = torch.zeros(self.num_envs, 1, device=self.device)
+        self.info = TensorDict({
+            "payload_pos_error": self.payload_pos_error,
+            "drone_uprightness": self.drone_uprightness,
+            "collision": self.collision
+        }, self.num_envs)
 
     def _design_scene(self):
         cfg = RobotCfg()
@@ -169,9 +185,8 @@ class FlyThrough(IsaacEnv):
         )
         
         obstacle_spacing = self.cfg.task.obstacle_spacing
-        create_obstacles("/World/envs/env_0/obstacle_0", translation=(0., 0., 1.5-obstacle_spacing))
-        create_obstacles("/World/envs/env_0/obstacle_1", translation=(0., 0., 1.5))
-        create_obstacles("/World/envs/env_0/obstacle_2", translation=(0., 0., 1.5+obstacle_spacing))
+        create_obstacles("/World/envs/env_0/obstacle_0", translation=(0., 0., 1.2))
+        create_obstacles("/World/envs/env_0/obstacle_1", translation=(0., 0., 1.2+obstacle_spacing))
 
         self.drone.spawn(translations=[(0.0, 0.0, 2.)])
         create_payload(f"/World/envs/env_0/{self.drone.name}_0", self.cfg.task.bar_length)
@@ -219,12 +234,12 @@ class FlyThrough(IsaacEnv):
     def _compute_state_and_obs(self):
         self.drone_state = self.drone.get_state()
         self.drone_up = self.drone_state[..., 16:19]
-        payload_pos, payload_rot = self.get_env_poses(self.payload.get_world_poses())
+        self.payload_pos, payload_rot = self.get_env_poses(self.payload.get_world_poses())
         self.payload_vels = self.payload.get_velocities()
 
         # relative position and heading
-        self.drone_payload_rpos = self.payload_target_pos.unsqueeze(1) - self.drone_state[..., :3]
-        self.target_payload_rpos = (self.payload_target_pos - payload_pos).unsqueeze(1)
+        self.drone_payload_rpos = self.drone_state[..., :3] - self.payload_target_pos.unsqueeze(1)
+        self.target_payload_rpos = (self.payload_target_pos - self.payload_pos).unsqueeze(1)
         obstacle_drone_rpos = self.obstacle_pos[..., [0, 2]] - self.drone_state[..., [0, 2]]
         
         obs = torch.cat([
@@ -232,7 +247,7 @@ class FlyThrough(IsaacEnv):
             self.drone_state[..., 3:],
             self.target_payload_rpos, # 3
             self.payload_vels.unsqueeze(1), # 6
-            obstacle_drone_rpos.flatten(start_dim=-2).unsqueeze(1), # 3 * 2
+            obstacle_drone_rpos.flatten(start_dim=-2).unsqueeze(1),
         ], dim=-1)
 
         payload_pos_error = torch.norm(self.target_payload_rpos, dim=-1)
@@ -263,27 +278,33 @@ class FlyThrough(IsaacEnv):
         swing = torch.norm(self.payload_vels[..., :3], dim=-1, keepdim=True)
         swing_reward = 0.5 * torch.exp(-swing)
 
-        # collision_payload = self.payload.get_net_contact_forces().abs().sum(-1, keepdim=True) > 0.
-        collision_bar = self.bar.get_net_contact_forces().abs().sum(-1, keepdim=True) > 0.
-        collision_reward = (collision_bar).float()
+        collision = (
+            self.bar
+            .get_net_contact_forces()
+            .any(-1, keepdim=True)
+        )
+        collision_reward = collision.float()
 
-        self.info["collision"].add_(collision_reward)
+        self.info["collision"] += collision_reward
         assert pose_reward.shape == up_reward.shape == spin_reward.shape == swing_reward.shape
         reward = (
             pose_reward 
             + pose_reward * (up_reward + spin_reward + swing_reward) 
             + effort_reward
-            - collision_reward * self.reward_collision_penalty
         )
         
-        done_misbehave = (self.drone_state[..., 2] < 0.2) | (distance > 5)
+        done_misbehave = (
+            (pos[..., 2] < 0.2) 
+            | (pos[..., 2] > 2.5)
+            | (self.payload_pos[..., 2] < 0.15).unsqueeze(1)
+        )
         done_hasnan = torch.isnan(self.drone_state).any(-1)
 
         done = (
             (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
             | done_misbehave
             | done_hasnan
-            | (self.info["collision"] > 2.)
+            | collision
         )
 
         self._tensordict["return"] += reward.unsqueeze(-1)

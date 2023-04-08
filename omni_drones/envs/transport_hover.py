@@ -122,7 +122,7 @@ class TransportHover(IsaacEnv):
             disable_gravity=True
         )
 
-        self.group.spawn(translations=[(0, 0, 2.0)], enable_collision=True)
+        self.group.spawn(translations=[(0, 0, 2.0)], enable_collision=False)
         return ["/World/defaultGroundPlane"]
 
     def _reset_idx(self, env_ids: torch.Tensor):
@@ -226,6 +226,8 @@ class TransportHover(IsaacEnv):
         }, self.num_envs)
 
     def _compute_reward_and_done(self):
+        vels = self.payload.get_velocities()
+
         distance = torch.norm(
             torch.cat([self.target_payload_rpos, self.target_payload_rheading], dim=-1)
         , dim=-1, keepdim=True)
@@ -234,12 +236,23 @@ class TransportHover(IsaacEnv):
         reward = torch.zeros(self.num_envs, self.drone.n, 1, device=self.device)
         reward_pose = 1 / (1 + torch.square(distance * self.reward_distance_scale))
         # reward_pose = torch.exp(-distance * self.reward_distance_scale)
-        reward_up = torch.square((self.payload_up[:, 2] + 1) / 2).unsqueeze(-1)
+
+        up = self.payload_up[:, 2]
+        reward_up = torch.square((up + 1) / 2).unsqueeze(-1)
+
+        spinnage = vels[:, -3:].sum(-1, keepdim=True)
+        reward_spin = 1. / (1 + torch.square(spinnage))
 
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort).mean(-1, keepdim=True)
         reward_separation = torch.square(separation / self.safe_distance).clamp(0, 1)
 
-        reward[:] = (reward_separation * (reward_pose + reward_pose * reward_up + reward_effort)).unsqueeze(-1)
+        reward[:] = (
+            reward_separation * (
+                reward_pose 
+                + reward_pose * (reward_up + reward_spin) 
+                + reward_effort
+            )
+        ).unsqueeze(-1)
 
         done_hasnan = torch.isnan(self.drone_states).any(-1)
         done_fall = self.drone_states[..., 2] < 0.2

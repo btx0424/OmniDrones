@@ -45,7 +45,7 @@ class Hover(IsaacEnv):
         )
         self.init_rpy_dist = D.Uniform(
             torch.tensor([-.2, -.2, 0.], device=self.device) * torch.pi,
-            torch.tensor([.2, .2, 2], device=self.device) * torch.pi
+            torch.tensor([0.2, 0.2, 2.], device=self.device) * torch.pi
         )
         self.target_rpy_dist = D.Uniform(
             torch.tensor([0., 0., 0.], device=self.device) * torch.pi,

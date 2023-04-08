@@ -20,11 +20,11 @@ parameters:
     value: true
   
   task.drone_model:
-    values: [Crazyflie, Firefly, Hummingbird]
+    values: [Crazyflie, Firefly, Hummingbird, Omav]
 
   task.action_transform:
     values:
-      - None # sweep does not support passing "null"
+      # - None # sweep does not support passing "null"
       - multidiscrete:2
       - multidiscrete:4
       - discrete:2

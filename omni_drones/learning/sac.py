@@ -199,8 +199,9 @@ class MASACPolicy(object):
 
                 t.set_postfix({"critic_loss": critic_loss.item()})
 
-                if (gradient_step + 1) % self.cfg.target_update_interval == 0:
-                    soft_update(self.critic_target, self.critic, self.cfg.tau)
+                if gradient_step % self.cfg.target_update_interval == 0:
+                    with torch.no_grad():
+                        soft_update(self.critic_target, self.critic, self.cfg.tau)
         
         infos = {**torch.stack(infos_actor), **torch.stack(infos_critic)}
         infos = {k: torch.mean(v).item() for k, v in infos.items()}

@@ -15,6 +15,8 @@ reward_distance_scale: 1.2
 payload_mass_min: 0.2
 payload_mass_max: 0.4
 bar_mass_min: 0.01
-bar_mass_max: 0.05
+bar_mass_max: 0.04
+
+bar_length: 1.
 
 action_transform: null

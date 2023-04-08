@@ -1,0 +1,23 @@
+name: dqn
+
+buffer_size: 204800
+train_every: 80
+batch_size: 25600
+gamma: 0.95
+reward_weights: null
+max_grad_norm: 15
+
+gradient_steps: 320
+
+q_net:
+  hidden_units: [128, 128]
+  lr: 0.0003
+
+epsilon_start: 1.0
+epsilon_finish: 0.05
+anneal_time: 50000
+
+target_update_interval: 4
+tau: 0.005
+
+use_double: true

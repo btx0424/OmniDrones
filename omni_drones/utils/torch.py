@@ -90,7 +90,7 @@ def euler_to_quaternion(euler: torch.Tensor) -> torch.Tensor:
     return quaternion
 
 
-def normalize(x: torch.Tensor, eps: float = 1e-6):
+def normalize(x: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
     return x / (torch.norm(x, dim=-1, keepdim=True) + eps)
 
 

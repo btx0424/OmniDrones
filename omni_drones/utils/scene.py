@@ -204,6 +204,10 @@ def create_bar(
         joint.GetAttribute("limit:rotX:physics:high").Set(120)
         joint.GetAttribute("limit:rotY:physics:low").Set(-120)
         joint.GetAttribute("limit:rotY:physics:high").Set(120)
+        UsdPhysics.DriveAPI.Apply(joint, "rotX")
+        UsdPhysics.DriveAPI.Apply(joint, "rotY")
+        joint.GetAttribute("drive:rotX:physics:damping").Set(0.0002)
+        joint.GetAttribute("drive:rotY:physics:damping").Set(0.0002)
 
     if to_prim is not None:
         joint: Usd.Prim = script_utils.createJoint(stage, "D6", prim, to_prim)
@@ -211,6 +215,10 @@ def create_bar(
         joint.GetAttribute("limit:rotX:physics:high").Set(120)
         joint.GetAttribute("limit:rotY:physics:low").Set(-120)
         joint.GetAttribute("limit:rotY:physics:high").Set(120)
+        UsdPhysics.DriveAPI.Apply(joint, "rotX")
+        UsdPhysics.DriveAPI.Apply(joint, "rotY")
+        joint.GetAttribute("drive:rotX:physics:damping").Set(0.0002)
+        joint.GetAttribute("drive:rotY:physics:damping").Set(0.0002)
 
     return prim
 

@@ -19,7 +19,7 @@ from omni_drones.robots.config import RobotCfg
 from omni_drones.robots.drone import MultirotorBase
 
 
-class Transport(IsaacEnv):
+class TransportHover(IsaacEnv):
     def __init__(self, cfg, headless):
         super().__init__(cfg, headless)
         self.reward_effort_weight = self.cfg.task.get("reward_effort_weight")
@@ -92,7 +92,7 @@ class Transport(IsaacEnv):
         
         info_spec = CompositeSpec({
             "payload_mass": UnboundedContinuousTensorSpec((1,)),
-            "pos_error": UnboundedContinuousTensorSpec((1,)),
+            "payload_pos_error": UnboundedContinuousTensorSpec((1,)),
             "heading_alignment": UnboundedContinuousTensorSpec((1,)),
             "uprightness": UnboundedContinuousTensorSpec((1,)),
         }).expand(self.num_envs).to(self.device)
@@ -106,7 +106,6 @@ class Transport(IsaacEnv):
 
         scene_utils.design_scene()
 
-        self.group.spawn(translations=[(0, 0, 2.0)])
         DynamicCuboid(
             "/World/envs/env_0/payloadTargetVis",
             translation=torch.tensor([0., 0., 2.]),
@@ -123,6 +122,7 @@ class Transport(IsaacEnv):
             disable_gravity=True
         )
 
+        self.group.spawn(translations=[(0, 0, 2.0)], enable_collision=False)
         return ["/World/defaultGroundPlane"]
 
     def _reset_idx(self, env_ids: torch.Tensor):
@@ -226,6 +226,8 @@ class Transport(IsaacEnv):
         }, self.num_envs)
 
     def _compute_reward_and_done(self):
+        vels = self.payload.get_velocities()
+
         distance = torch.norm(
             torch.cat([self.target_payload_rpos, self.target_payload_rheading], dim=-1)
         , dim=-1, keepdim=True)
@@ -234,12 +236,23 @@ class Transport(IsaacEnv):
         reward = torch.zeros(self.num_envs, self.drone.n, 1, device=self.device)
         reward_pose = 1 / (1 + torch.square(distance * self.reward_distance_scale))
         # reward_pose = torch.exp(-distance * self.reward_distance_scale)
-        reward_up = torch.square((self.payload_up[:, 2] + 1) / 2).unsqueeze(-1)
+
+        up = self.payload_up[:, 2]
+        reward_up = torch.square((up + 1) / 2).unsqueeze(-1)
+
+        spinnage = vels[:, -3:].sum(-1, keepdim=True)
+        reward_spin = 1. / (1 + torch.square(spinnage))
 
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort).mean(-1, keepdim=True)
         reward_separation = torch.square(separation / self.safe_distance).clamp(0, 1)
 
-        reward[:] = (reward_separation * (reward_pose + reward_pose * reward_up + reward_effort)).unsqueeze(-1)
+        reward[:] = (
+            reward_separation * (
+                reward_pose 
+                + reward_pose * (reward_up + reward_spin) 
+                + reward_effort
+            )
+        ).unsqueeze(-1)
 
         done_hasnan = torch.isnan(self.drone_states).any(-1)
         done_fall = self.drone_states[..., 2] < 0.2

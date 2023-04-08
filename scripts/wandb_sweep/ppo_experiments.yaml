@@ -1,8 +1,8 @@
 program: train_without_controller.py
-name: SweepHoverPPO
+name: SinglePPO
 project: gpu-onpolicy
 entity: marl-drones
-method: bayes
+method: grid
 
 metric:
   name: train/return
@@ -11,43 +11,35 @@ metric:
 parameters:
 
   task: 
-    value: Transport
+    values: 
+    - Hover
+    - InvertedPendulum
 
   total_frames: 
-    value: 100_000_000
+    value: 120_000_000
+
+  headless:
+    value: true
+  
+  seed:
+    values: [0, 42, 81]
 
   task.drone_model:
-    values: [Firefly, Hummingbird]
+    values: [Firefly, Hummingbird, Omav]
 
   task.action_transform:
     values:
       - None # sweep does not support passing "null"
       - multidiscrete:2
-      - multidiscrete:4
-      - discrete:2
-  
-  headless:
-    value: true
-  
-  algo.num_minibatches:
-    distribution: log_uniform_values
-    min: 8
-    max: 64
+      - multidiscrete:5
+      # - discrete:2
+
+  # algo.num_minibatches:
+  #   values: [16, 32]
   
   algo.train_every:
-    distribution: log_uniform_values
-    min: 32
-    max: 512
-  
-  algo.ppo_epochs:
-    values: [2, 4, 8]
+    value: 128
 
-  # algo.critic_input: # state is generally better
-  #   values: [obs, state]
-  
-  algo.share_actor:
-    values: [true, false]
-  
   # algo.actor.lr:
   #   distribution: log_uniform_values
   #   max: 0.01
@@ -59,9 +51,7 @@ parameters:
   #   min: 0.0001
 
   algo.entropy_coef:
-    distribution: log_uniform_values
-    max: 0.01
-    min: 0.0001
+    values: [0.001, 0.0001]
 
 command:
   - ${env}

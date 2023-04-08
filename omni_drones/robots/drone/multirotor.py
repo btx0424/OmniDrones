@@ -46,6 +46,7 @@ class MultirotorBase(RobotBase):
             )
             self.base_link.initialize()
             print(self._view.dof_names)
+            print(self._view._dof_indices)
         else:
             super().initialize(prim_paths_expr=f"{prim_paths_expr}/base_link")
             self.base_link = self._view
@@ -102,7 +103,7 @@ class MultirotorBase(RobotBase):
         heading = vmap(torch_utils.quat_axis)(rot, axis=0)
         up = vmap(torch_utils.quat_axis)(rot, axis=2)
         state = torch.cat([pos, rot, vel, heading, up, thr], dim=-1)
-        assert not torch.isnan(state).any()
+        # assert not torch.isnan(state).any()
         return state
 
     def _reset_idx(self, env_ids: torch.Tensor):

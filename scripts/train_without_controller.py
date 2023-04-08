@@ -40,7 +40,7 @@ def main(cfg):
     print(OmegaConf.to_yaml(cfg))
 
     from omni_drones.envs.isaac_env import IsaacEnv
-    from omni_drones.sensors.camera import Camera
+    from omni_drones.sensors.camera import Camera, PinholeCameraCfg
     algos = {"mappo": MAPPOPolicy, "happo": HAPPOPolicy}
 
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
@@ -81,9 +81,22 @@ def main(cfg):
             transform = FromDiscreteAction(("action", "drone.action"), nbins=nbins)
             transforms.append(transform)
     
-    env = TransformedEnv(base_env, Compose(*transforms)) 
+    env = TransformedEnv(base_env, Compose(*transforms)).train()
+    env.set_seed(cfg.seed)
 
-    camera = Camera()
+    camera_cfg = PinholeCameraCfg(
+        sensor_tick=0,
+        resolution=(960, 720),
+        data_types=["rgb"],
+        usd_params=PinholeCameraCfg.UsdCameraCfg(
+            focal_length=24.0,
+            focus_distance=400.0,
+            horizontal_aperture=20.955,
+            clipping_range=(0.1, 1.0e5),
+        ),
+    )
+    
+    camera = Camera(camera_cfg)
     camera.spawn(["/World/Camera"], translations=[(7.5, 7.5, 7.5)], targets=[(0, 0, 1.5)])
     camera.initialize("/World/Camera")
 
@@ -155,6 +168,9 @@ def main(cfg):
             "rollout_fps": collector._fps,
             "frames": collector._frames,
         })
+
+    info = {"env_frames": collector._frames}
+    run.log(evaluate())
 
     simulation_app.close()
 

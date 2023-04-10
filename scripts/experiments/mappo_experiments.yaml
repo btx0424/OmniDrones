@@ -12,16 +12,25 @@ parameters:
 
   algo:
     values:
-    - MAPPO
-    - HAPPO
+    - mappo
+    - happo
   
+  algo.actor.hidden_units:
+    value: [128, 128, 64]
+
+  algo.critic.hidden_units:
+    value: [128, 128, 64]
+
+  algo.critic_input:
+    value: state
+
   task: 
     values: 
     - TransportHover
     - PlatformHover
 
   total_frames: 
-    value: 120_000_000
+    value: 150_000_000
 
   headless:
     value: true
@@ -36,7 +45,7 @@ parameters:
     values:
       - None # sweep does not support passing "null"
       # - multidiscrete:2
-      # - multidiscrete:5
+      - multidiscrete:5
       - discrete:2
 
   # algo.num_minibatches:
@@ -55,8 +64,8 @@ parameters:
   #   max: 0.01
   #   min: 0.0001
 
-  algo.entropy_coef:
-    values: [0.001, 0.0001]
+  # algo.entropy_coef:
+  #   values: [0.001, 0.0001]
 
 command:
   - ${env}

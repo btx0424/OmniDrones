@@ -89,23 +89,25 @@ class FlyThrough(IsaacEnv):
         super().__init__(cfg, headless)
         self.reward_effort_weight = self.cfg.task.reward_effort_weight
         self.reward_distance_scale = self.cfg.task.reward_distance_scale
+        self.reset_on_collision = self.cfg.task.reset_on_collision
 
-        self.bar = RigidPrimView(
-            f"/World/envs/env_*/{self.drone.name}_*/bar",
-            reset_xform_properties=False,
-            track_contact_forces=True,
-            contact_filter_prim_paths_expr=[
-                "/World/envs/env_*/obstacle_0",
-                "/World/envs/env_*/obstacle_1"
-            ]
-        )
+        # self.bar = RigidPrimView(
+        #     f"/World/envs/env_*/{self.drone.name}_*/bar",
+        #     reset_xform_properties=False,
+        #     track_contact_forces=True,
+        #     contact_filter_prim_paths_expr=[
+        #         "/World/envs/env_*/obstacle_0",
+        #         "/World/envs/env_*/obstacle_1"
+        #     ]
+        # )
 
-        self.bar.initialize()
+        # self.bar.initialize()
+        self.drone.initialize()
         self.obstacles = RigidPrimView(
             "/World/envs/env_*/obstacle_*",
             reset_xform_properties=False,
             shape=[self.num_envs, -1],
-            # track_contact_forces=True
+            track_contact_forces=True
         )
         self.obstacles.initialize()
         self.payload = RigidPrimView(
@@ -113,7 +115,6 @@ class FlyThrough(IsaacEnv):
             reset_xform_properties=False,
         )
         self.payload.initialize()
-        self.drone.initialize()
 
         self.payload_target_vis = RigidPrimView(
             "/World/envs/env_*/target",
@@ -278,9 +279,15 @@ class FlyThrough(IsaacEnv):
         swing = torch.norm(self.payload_vels[..., :3], dim=-1, keepdim=True)
         swing_reward = 0.5 * torch.exp(-swing)
 
+        # collision = (
+        #     self.bar
+        #     .get_net_contact_forces()
+        #     .any(-1, keepdim=True)
+        # )
         collision = (
-            self.bar
+            self.obstacles
             .get_net_contact_forces()
+            .any(-1)
             .any(-1, keepdim=True)
         )
         collision_reward = collision.float()
@@ -304,8 +311,10 @@ class FlyThrough(IsaacEnv):
             (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
             | done_misbehave
             | done_hasnan
-            | collision
         )
+        
+        if self.reset_on_collision:
+            done = done | collision
 
         self._tensordict["return"] += reward.unsqueeze(-1)
         return TensorDict(

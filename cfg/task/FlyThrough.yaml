@@ -17,5 +17,6 @@ payload_mass_max: 0.4
 
 bar_length: 1.
 obstacle_spacing: 0.85
+reset_on_collision: true
 
 action_transform: null

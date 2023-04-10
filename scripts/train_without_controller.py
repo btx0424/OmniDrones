@@ -169,7 +169,8 @@ def main(cfg):
         })
 
     info = {"env_frames": collector._frames}
-    run.log(evaluate())
+    info.update(evaluate())
+    run.log(info)
 
     simulation_app.close()
 

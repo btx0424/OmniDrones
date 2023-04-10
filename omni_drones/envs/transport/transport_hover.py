@@ -22,9 +22,9 @@ from omni_drones.robots.drone import MultirotorBase
 class TransportHover(IsaacEnv):
     def __init__(self, cfg, headless):
         super().__init__(cfg, headless)
-        self.reward_effort_weight = self.cfg.task.get("reward_effort_weight")
-        self.reward_distance_scale = self.cfg.task.get("reward_distance_scale")
-        self.safe_distance = self.cfg.task.get("safe_distance", 0.5)
+        self.reward_effort_weight = self.cfg.task.reward_effort_weight
+        self.reward_distance_scale = self.cfg.task.reward_distance_scale
+        self.safe_distance = self.cfg.task.safe_distance
 
         self.group.initialize()
         self.payload = self.group.payload_view

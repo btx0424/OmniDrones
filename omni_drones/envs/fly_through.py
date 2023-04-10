@@ -186,8 +186,14 @@ class FlyThrough(IsaacEnv):
         )
         
         obstacle_spacing = self.cfg.task.obstacle_spacing
-        create_obstacles("/World/envs/env_0/obstacle_0", translation=(0., 0., 1.2))
-        create_obstacles("/World/envs/env_0/obstacle_1", translation=(0., 0., 1.2+obstacle_spacing))
+        create_obstacles(
+            "/World/envs/env_0/obstacle_0", 
+            translation=(0., 0., 1.2)
+        )
+        create_obstacles(
+            "/World/envs/env_0/obstacle_1", 
+            translation=(0., 0., 1.2+obstacle_spacing)
+        )
 
         self.drone.spawn(translations=[(0.0, 0.0, 2.)])
         create_payload(f"/World/envs/env_0/{self.drone.name}_0", self.cfg.task.bar_length)

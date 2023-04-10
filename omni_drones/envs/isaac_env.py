@@ -6,6 +6,7 @@ import omni.replicator.core as rep
 
 import omni.usd
 import torch
+import logging
 from omni.isaac.cloner import GridCloner
 from omni.isaac.core.simulation_context import SimulationContext
 from omni.isaac.core.utils import prims as prim_utils, stage as stage_utils
@@ -186,6 +187,7 @@ class IsaacEnv(EnvBase):
             omni.usd.get_context().get_stage().GetRootLayer().Clear()
             # update closing status
             self._is_closed = True
+            logging.info("IsaacEnv closed.")
 
     def _reset(self, tensordict: TensorDictBase, **kwargs) -> TensorDictBase:
         if tensordict is not None:

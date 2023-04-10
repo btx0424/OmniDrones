@@ -1,31 +1,5 @@
 headless: false
 
-env:
-  num_envs: 4096
-  env_spacing: 2.5
-  max_episode_length: 500
-
-sim:
-  dt: 0.016
-  substeps: 1
-  gravity: [0, 0, -9.81]
-  replicate_physics: false
-  use_flatcache: false
-  use_gpu_pipeline: false
-  device: cpu
-
-  # GPU buffers
-  gpu_max_rigid_contact_count: 524288
-  gpu_max_rigid_patch_count: 81920
-  gpu_found_lost_pairs_capacity: 4194304
-  gpu_found_lost_aggregate_pairs_capacity: 33554432
-  gpu_total_aggregate_pairs_capacity: 4194304
-  gpu_max_soft_body_contacts: 1048576
-  gpu_max_particle_contacts: 1048576
-  gpu_heap_capacity: 67108864
-  gpu_temp_buffer_capacity: 16777216
-  gpu_max_num_partitions: 8
-
 viewer:
   eye: [7.5, 7.5, 7.5]
   lookat: [0., 0., 0.]
@@ -43,7 +17,15 @@ wandb:
   log_code: True
   tags: 
 
+sim:
+  device: cpu
+  use_flatcache: false
+  use_gpu_pipeline: false
+  
+  use_gpu: false
+
 defaults:
-  # - task: test
+  - env_base
+  - sim_base
   - algo: mappo
   - _self_

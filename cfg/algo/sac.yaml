@@ -1,0 +1,22 @@
+name: sac
+
+buffer_size: 204800
+train_every: 80
+batch_size: 25600
+gamma: 0.95
+tau: 0.005
+reward_weights: null
+max_grad_norm: 15
+
+share_actor: true
+
+gradient_steps: 640
+hidden_units: [128, 128]
+
+actor_lr: 0.0003
+actor_delay: 2
+
+critic_lr: 0.0003
+target_update_interval: 4
+
+alpha_lr: 0.0001

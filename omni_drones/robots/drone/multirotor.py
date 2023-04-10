@@ -42,16 +42,21 @@ class MultirotorBase(RobotBase):
                 prim_paths_expr=f"{self.prim_paths_expr}/base_link",
                 name="base_link",
                 track_contact_forces=True,
+                shape=self.shape,
             )
             self.base_link.initialize()
+            print(self._view.dof_names)
+            print(self._view._dof_indices)
         else:
             super().initialize(prim_paths_expr=f"{prim_paths_expr}/base_link")
             self.base_link = self._view
             self.prim_paths_expr = prim_paths_expr
 
         self.rotors_view = RigidPrimView(
-            prim_paths_expr=f"{self.prim_paths_expr}/rotor_[0-{self.num_rotors-1}]",
+            # prim_paths_expr=f"{self.prim_paths_expr}/rotor_[0-{self.num_rotors-1}]",
+            prim_paths_expr=f"{self.prim_paths_expr}/rotor_*",
             name="rotors",
+            shape=(*self.shape, self.num_rotors)
         )
         self.rotors_view.initialize()
 
@@ -75,7 +80,7 @@ class MultirotorBase(RobotBase):
 
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
         rotor_cmds = actions.expand(*self.shape, self.num_rotors)
-        thrusts, moments = vmap(vmap(self.rotors))(
+        thrusts, moments = vmap(vmap(self.rotors, randomness="different"), randomness="same")(
             rotor_cmds, self.rotor_params_and_states
         )
         self.forces[..., 2] = thrusts
@@ -97,13 +102,21 @@ class MultirotorBase(RobotBase):
         thr = self.throttle * 2 - 1
         heading = vmap(torch_utils.quat_axis)(rot, axis=0)
         up = vmap(torch_utils.quat_axis)(rot, axis=2)
-        return torch.cat([pos, rot, vel, heading, up, thr], dim=-1)
+        state = torch.cat([pos, rot, vel, heading, up, thr], dim=-1)
+        # assert not torch.isnan(state).any()
+        return state
 
     def _reset_idx(self, env_ids: torch.Tensor):
+        if env_ids is None:
+            env_ids = torch.arange(self.shape[0], device=self.device)
         self.forces[env_ids] = 0.0
         self.torques[env_ids] = 0.0
-        self.throttle[env_ids] = 0.0
-
+        self.throttle[env_ids] = self.rotors.f_inv(1 / self.get_thrust_to_weight_ratio()[env_ids])
+        return env_ids
+    
+    def get_thrust_to_weight_ratio(self):
+        return self.max_forces.sum(-1, keepdim=True) / (self.mass * 9.81)
+    
     @staticmethod
     def downwash(
         p0: torch.Tensor, 

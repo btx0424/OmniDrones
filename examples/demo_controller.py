@@ -32,21 +32,21 @@ def main(cfg):
         backend="torch",
         device=cfg.sim.device,
     )
-    n = 3
+    n = 4
 
-    firefly = Firefly(cfg=RobotCfg())
+    drone = Firefly(cfg=RobotCfg())
 
     translations = torch.zeros(n, 3)
     translations[:, 1] = torch.arange(n)
     translations[:, 2] = 0.5
-    firefly.spawn(translations=translations)
+    drone.spawn(translations=translations)
 
     scene_utils.design_scene()
 
     camera_cfg = PinholeCameraCfg(
         sensor_tick=0,
-        resolution=(640, 480),
-        data_types=["rgb"],
+        resolution=(320, 240),
+        data_types=["rgb", "distance_to_camera"],
         usd_params=PinholeCameraCfg.UsdCameraCfg(
             focal_length=24.0,
             focus_distance=400.0,
@@ -54,63 +54,68 @@ def main(cfg):
             clipping_range=(0.1, 1.0e5),
         ),
     )
-    camera = Camera(
-        camera_cfg,
-        "/World/envs/env_0/Firefly_0/base_link",
-        translation=(-2, -1.4, 0.8),
-        target=(0.0, 0.0, 0.0),
+    camera = Camera(camera_cfg)
+    camera.spawn(
+        [f"/World/envs/env_0/{drone.name}_{i}/base_link/Camera" for i in range(n)],
     )
 
     sim.reset()
-    firefly.initialize()
+    camera.initialize(f"/World/envs/env_0/{drone.name}_*/base_link/Camera")
+    drone.initialize()
 
-    init_poses = firefly.get_env_poses()
-    init_vels = firefly.get_velocities()
-    controller = LeePositionController(
-        dt=sim.get_physics_dt(), g=9.81, uav_params=firefly.params
+    init_poses = drone.get_world_poses(clone=True)
+    init_vels = drone.get_velocities(clone=True)
+    controller = drone.DEFAULT_CONTROLLER(
+        dt=sim.get_physics_dt(), g=9.81, uav_params=drone.params
     ).to(sim.device)
 
     controller_state = TensorDict({}, n, device=sim.device)
     control_target = torch.zeros(n, 7, device=sim.device)
-    control_target[:, 0] = torch.arange(n, device=sim.device).flip(-1) * 0.5
+    # control_target[:, 0] = torch.arange(n, device=sim.device).flip(-1) * 0.5
     control_target[:, 1] = torch.arange(n, device=sim.device)
-    control_target[:, 2] = 1.0 + torch.arange(n, device=sim.device) * 0.5
-    control_target[:, -1] = (torch.pi / 6) * torch.arange(n, device=sim.device)
-    action = firefly.action_spec.zero((n,))
+    control_target[:, 2] = 1.0 + torch.arange(n, device=sim.device) * 0.2
+    control_target[:, -1] = (torch.pi / 3) * torch.arange(n, device=sim.device)
+    action = drone.action_spec.zero((n,))
 
-    step = 0
     frames = []
-    try:
-        while simulation_app.is_running():
-            if sim.is_stopped() or len(frames) >= 1000:
-                break
-            if not sim.is_playing():
-                continue
-            root_state = firefly.get_state()[..., :13].squeeze(0)
-            action, controller_state = functorch.vmap(controller)(
-                root_state, control_target, controller_state
-            )
-            firefly.apply_action(action)
+    from tqdm import tqdm
+    t = tqdm(range(2000))
+    for i in t:
+        if sim.is_stopped() or len(frames) >= 1000:
+            break
+        if not sim.is_playing():
+            continue
+        root_state = drone.get_state(env=False)[..., :13].squeeze(0)
+        action, controller_state = functorch.vmap(controller)(
+            root_state, control_target, controller_state
+        )
+        # action[:], controller_state = controller(
+        #     root_state[0], control_target[0], controller_state
+        # )
+        drone.apply_action(action)
+        sim.step(i % 2 == 0)
+
+        if i % 2 == 0 and len(frames) < 1000:
+            frame = camera.get_images()
+            frames.append(frame.cpu())
+
+        if i % 1000 == 0:
+            drone.set_world_poses(*init_poses)
+            drone.set_velocities(init_vels)
+            controller_state.zero_()
             sim.step()
-
-            if step % 2 == 0 and len(frames) < 1000:
-                frame = camera().clone()
-                frames.append(frame)
-                print(step, frame)
-
-            step += 1
-            if step >= 1000:
-                firefly.set_env_poses(*init_poses)
-                firefly.set_velocities(init_vels)
-                controller_state.zero_()
-                step = 0
-                sim.step()
-    except KeyboardInterrupt:
-        pass
+        
     from torchvision.io import write_video
 
-    for k, v in torch.stack(frames).items():
-        write_video(f"{k}.mp4", v.cpu()[..., :3], fps=50)
+    for k, v in torch.stack(frames).cpu().items():
+        torch.save(v, f"{k}.pth")
+        for i, vv in enumerate(v.unbind(1)):
+            if vv.shape[-1] == 4:
+                write_video(f"{k}_{i}.mp4", vv[..., :3], fps=50)
+            elif vv.shape[-1] == 1:
+                vv = -torch.nan_to_num(vv, 0).expand(*vv.shape[:-1], 3)
+                write_video(f"{k}_{i}.mp4", vv[..., :3], fps=50)
+        
     simulation_app.close()
 
 

@@ -1,0 +1,57 @@
+program: train_without_controller.py
+name: SweepHoverPPO
+project: gpu-onpolicy
+entity: marl-drones
+method: bayes
+
+metric:
+  name: train/return
+  goal: maximize
+
+parameters:
+
+  task: 
+    value: Platform
+
+  total_frames: 
+    value: 500_000_000
+
+  task.drone_model:
+    values: [Crazyflie, Firefly, Hummingbird, Neo11]
+
+  headless:
+    value: true
+  
+  algo.num_minibatches:
+    distribution: log_uniform_values
+    min: 2
+    max: 64
+  
+  algo.train_every:
+    distribution: log_uniform_values
+    min: 8
+    max: 64
+  
+  algo.ppo_epochs:
+    values: [2, 4, 8]
+
+  algo.actor.lr:
+    distribution: log_uniform_values
+    max: 0.01
+    min: 0.0001
+  
+  algo.critic.lr:
+    distribution: log_uniform_values
+    max: 0.01
+    min: 0.0001
+  
+  algo.entropy_coef:
+    distribution: log_uniform_values
+    max: 0.01
+    min: 0.0001
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args_no_hyphens}

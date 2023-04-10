@@ -1,4 +1,11 @@
 name: Spread
 
+defaults:
+  - /env_base
+  - /sim_base
+
 drone_model: Firefly
 num_drones: 3
+
+action_transform: null
+

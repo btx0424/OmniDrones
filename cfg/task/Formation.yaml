@@ -1,5 +1,18 @@
 name: Formation
 
+defaults:
+  - /env_base
+  - /sim_base
+
+envs: 
+  num_envs: 1024
+
 drone_model: Crazyflie
 
 formation: tetragon
+
+multidiscrete_action:
+  nbins: 4
+
+# discrete_action:
+#   nbins: 2

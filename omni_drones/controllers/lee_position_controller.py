@@ -76,7 +76,7 @@ class LeePositionController(nn.Module):
         )
         ang_rate_err = ang_vel
         ang_acc = (
-            -ang_error * self.attitute_gain
+            - ang_error * self.attitute_gain
             - ang_rate_err * self.ang_rate_gain
             + torch.cross(ang_vel, ang_vel)
         )

@@ -1,3 +1,15 @@
 name: Hover
 
+defaults:
+  - /env_base
+  - /sim_base
+
+env:
+  num_envs: 4096
+
 drone_model: Firefly
+
+reward_effort_weight: 0.1
+reward_distance_scale: 1.2
+
+action_transform: null

@@ -47,43 +47,16 @@ def main(cfg):
         cmds, controller_state = vmap(vmap(controller))(
             relative_state, control_target, controller_state
         )
-        tensordict["drone.action"] = cmds
+        tensordict[("action", "drone.action")] = cmds
         tensordict["controller_state"] = controller_state
         return tensordict
 
-    camera_cfg = PinholeCameraCfg(
-        sensor_tick=0,
-        resolution=(640, 480),
-        data_types=["rgb"],
-        usd_params=PinholeCameraCfg.UsdCameraCfg(
-            focal_length=24.0,
-            focus_distance=400.0,
-            horizontal_aperture=20.955,
-            clipping_range=(0.1, 1.0e5),
-        ),
-    )
-
-    camera = Camera(
-        camera_cfg, "/World", translation=(2.5, 2, 1.5), target=(0.0, 0.0, 0.75)
-    )
-
-    frames = []
-
-    def record_frame(*args, **kwargs):
-        frame = camera().clone().cpu()
-        frames.append(frame)
-
     env.enable_render = True
     env.rollout(
-        max_steps=1000,
+        max_steps=env.num_envs * 1000,
         policy=policy,
-        callback=record_frame,
+        break_when_any_done=False,
     )
-
-    from torchvision.io import write_video
-
-    for k, v in torch.stack(frames).items():
-        write_video(f"demo_env_{k}.mp4", v.cpu()[..., :3], fps=50)
 
     simulation_app.close()
 

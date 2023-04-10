@@ -1,11 +1,12 @@
 import abc
 
-from typing import Dict, List, Optional, Tuple, Type
+from typing import Dict, List, Optional, Tuple, Type, Union, Callable
 
 import omni.replicator.core as rep
 
 import omni.usd
 import torch
+import logging
 from omni.isaac.cloner import GridCloner
 from omni.isaac.core.simulation_context import SimulationContext
 from omni.isaac.core.utils import prims as prim_utils, stage as stage_utils
@@ -13,11 +14,12 @@ from omni.isaac.core.utils.carb import set_carb_setting
 from omni.isaac.core.utils.extensions import disable_extension
 from omni.isaac.core.utils.viewports import set_camera_view
 from tensordict.tensordict import TensorDict, TensorDictBase
-from torchrl.data import CompositeSpec, TensorSpec
+from torchrl.data import CompositeSpec, TensorSpec, DiscreteTensorSpec
 from torchrl.envs import EnvBase
 
 from omni_drones.robots.robot import RobotBase
 from omni_drones.sensors.camera import PinholeCameraCfg
+from omni_drones.utils.torchrl import AgentSpec
 
 
 class IsaacEnv(EnvBase):
@@ -50,10 +52,10 @@ class IsaacEnv(EnvBase):
         )
         # store inputs to class
         self.cfg = cfg
-        self.enable_render = not headless
+        self.enable_render(not headless)
         # extract commonly used parameters
         self.num_envs = self.cfg.env.num_envs
-        self.max_eposode_length = self.cfg.env.max_episode_length
+        self.max_episode_length = self.cfg.env.max_episode_length
         self.min_episode_length = self.cfg.env.min_episode_length
         # check that simulation is running
         if stage_utils.get_current_stage() is None:
@@ -76,6 +78,7 @@ class IsaacEnv(EnvBase):
             # physics_prim_path="/physicsScene",
             device="cuda:0",
         )
+        self.dt = self.sim.get_physics_dt()
         # set flags for simulator
         self._configure_simulation_flags(sim_params)
         # add flag for checking closing status
@@ -107,6 +110,9 @@ class IsaacEnv(EnvBase):
         self.envs_positions = torch.tensor(
             self.envs_positions, dtype=torch.float, device=self.device
         )
+        # find the environment closest to the origin for visualization
+        self.central_env_idx = self.envs_positions.norm(dim=-1).argmin()
+        
         RobotBase._envs_positions = self.envs_positions.unsqueeze(1)
 
         # filter collisions within each environment instance
@@ -129,14 +135,18 @@ class IsaacEnv(EnvBase):
         self.observation_spec = CompositeSpec(shape=self.batch_size)
         self.action_spec = CompositeSpec(shape=self.batch_size)
         self.reward_spec = CompositeSpec(shape=self.batch_size)
+        self.done_spec = DiscreteTensorSpec(
+            n=2, shape=(*self.batch_size, 1), dtype=torch.bool, device=self.device
+        )
 
     @classmethod
     def __init_subclass__(cls, **kwargs):
         if cls.__name__ in IsaacEnv.REGISTRY:
             raise ValueError
         super().__init_subclass__(**kwargs)
-        IsaacEnv.REGISTRY[cls.__name__] = cls
-        IsaacEnv.REGISTRY[cls.__name__.lower()] = cls
+        if not cls.__name__.startswith("_"):
+            IsaacEnv.REGISTRY[cls.__name__] = cls
+            IsaacEnv.REGISTRY[cls.__name__.lower()] = cls
 
     @property
     def agent_spec(self):
@@ -177,15 +187,17 @@ class IsaacEnv(EnvBase):
             omni.usd.get_context().get_stage().GetRootLayer().Clear()
             # update closing status
             self._is_closed = True
+            logging.info("IsaacEnv closed.")
 
     def _reset(self, tensordict: TensorDictBase, **kwargs) -> TensorDictBase:
         if tensordict is not None:
-            env_mask = tensordict.pop("_reset").squeeze()
+            env_mask = tensordict.get("_reset").squeeze()
         else:
             env_mask = torch.ones(self.num_envs, dtype=bool, device=self.device)
         env_ids = env_mask.nonzero().squeeze(-1)
         self._reset_idx(env_ids)
-        self.sim.step(render=False)
+        # self.sim.step(render=False)
+        self.sim._physics_sim_view.flush()
         self._tensordict.masked_fill_(env_mask, 0)
         return self._tensordict.update(self._compute_state_and_obs())
 
@@ -195,8 +207,8 @@ class IsaacEnv(EnvBase):
 
     def _step(self, tensordict: TensorDictBase) -> TensorDictBase:
         self._pre_sim_step(tensordict)
-        for _ in range(1):
-            self.sim.step(self.enable_render)
+        for substep in range(1):
+            self.sim.step(self._should_render(substep))
         self.progress_buf += 1
         tensordict = TensorDict({"next": {}}, self.batch_size)
         tensordict["next"].update(self._compute_state_and_obs())
@@ -259,19 +271,14 @@ class IsaacEnv(EnvBase):
             return pos + self.envs_positions.unsqueeze(1), rot
         else:
             return pos + self.envs_positions, rot
-
-
-from dataclasses import dataclass
-
-
-@dataclass
-class AgentSpec:
-    name: str
-    n: int
-    observation_spec: TensorSpec
-    action_spec: TensorSpec
-    reward_spec: TensorSpec
-    state_spec: TensorSpec = None
+    
+    def enable_render(self, enable: Union[bool, Callable]=True):
+        if isinstance(enable, bool):
+            self._should_render = lambda substep: enable
+        elif callable(enable):
+            self._should_render = enable
+        else:
+            raise TypeError("enable_render must be a bool or callable.")
 
 
 class _AgentSpecView(Dict[str, AgentSpec]):

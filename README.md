@@ -82,4 +82,13 @@ And edit `.vscode/settings.json`:
 
 ## Installation
 
+Clone and install [torchrl](https://github.com/btx0424/rl/tree/nest_compspec) and [tensordict](https://github.com/btx0424/tensordict).
+
 Clone the repo and install through `pip`.
+
+## Usage
+
+```bash
+# at OmniDrones/scripts
+python train_without_controller.py headless=True
+```

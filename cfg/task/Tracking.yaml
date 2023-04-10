@@ -1,0 +1,12 @@
+name: Tracking
+
+defaults:
+  - /env_base
+  - /sim_base
+
+drone_model: Firefly
+
+traj_func: circle
+future_traj_len: 3
+
+action_transform: null

@@ -4,6 +4,21 @@ from contextlib import contextmanager
 
 from omni.isaac.core.articulations import ArticulationView as _ArticulationView
 from omni.isaac.core.prims import RigidPrimView as _RigidPrimView
+from omni.isaac.core.prims import XFormPrimView
+from omni.isaac.core.simulation_context import SimulationContext
+import omni
+import functools
+
+
+def require_sim_initialized(func):
+
+    @functools.wraps(func)
+    def _func(*args, **kwargs):
+        if SimulationContext.instance()._physics_sim_view is None:
+            raise RuntimeError("SimulationContext not initialzed.")
+        return func(*args, **kwargs)
+    
+    return _func
 
 
 class ArticulationView(_ArticulationView):
@@ -32,6 +47,11 @@ class ArticulationView(_ArticulationView):
             reset_xform_properties,
             enable_dof_force_sensors,
         )
+    
+    @require_sim_initialized
+    def initialize(self, physics_sim_view: omni.physics.tensors.SimulationView = None) -> None:
+        super().initialize(physics_sim_view)
+        return self
 
     def get_world_poses(
         self, env_indices: Optional[torch.Tensor] = None, clone: bool = True
@@ -87,9 +107,27 @@ class ArticulationView(_ArticulationView):
         self,
         velocities: Optional[torch.Tensor],
         env_indices: Optional[torch.Tensor] = None,
+        joint_indices: Optional[torch.Tensor] = None,
     ) -> None:
         indices = self._resolve_env_indices(env_indices)
-        super().set_joint_velocities(velocities.reshape(-1, self.num_dof), indices)
+        super().set_joint_velocities(
+            velocities.reshape(-1, self.num_dof), 
+            indices,
+            joint_indices
+        )
+
+    def set_joint_velocity_targets(
+        self, 
+        velocities: Optional[torch.Tensor], 
+        env_indices: Optional[torch.Tensor] = None, 
+        joint_indices: Optional[torch.Tensor] = None
+    ) -> None:
+        indices = self._resolve_env_indices(env_indices)
+        super().set_joint_velocity_targets(
+            velocities.flatten(end_dim=-2), 
+            indices, 
+            joint_indices
+        )
 
     def get_joint_positions(
         self, env_indices: Optional[torch.Tensor] = None, clone: bool = True
@@ -103,15 +141,46 @@ class ArticulationView(_ArticulationView):
         self,
         positions: Optional[torch.Tensor],
         env_indices: Optional[torch.Tensor] = None,
+        joint_indices: Optional[torch.Tensor] = None,
     ) -> None:
         indices = self._resolve_env_indices(env_indices)
-        super().set_joint_positions(positions.reshape(-1, self.num_dof), indices)
+        super().set_joint_positions(
+            positions.flatten(end_dim=-2), 
+            indices,
+            joint_indices
+        )
+
+    def set_joint_position_targets(
+        self, 
+        positions: Optional[torch.Tensor], 
+        env_indices: Optional[torch.Tensor] = None, 
+        joint_indices: Optional[torch.Tensor] = None,
+    ) -> None:
+        indices = self._resolve_env_indices(env_indices)
+        super().set_joint_position_targets(
+            positions.flatten(end_dim=-2), 
+            indices,
+            joint_indices
+        )
+    
+    def set_joint_efforts(
+        self, 
+        efforts: Optional[torch.Tensor], 
+        env_indices: Optional[torch.Tensor] = None, 
+        joint_indices: Optional[torch.Tensor] = None
+    ) -> None:
+        indices = self._resolve_env_indices(env_indices)
+        super().set_joint_efforts(
+            efforts.flatten(end_dim=-2), 
+            indices, 
+            joint_indices
+        )
 
     def get_body_masses(
         self, env_indices: Optional[torch.Tensor] = None, clone: bool = True
     ) -> torch.Tensor:
         indices = self._resolve_env_indices(env_indices)
-        return super().get_body_masses(indices, clone).unflatten(0, self.shape)
+        return super().get_body_masses(indices, clone=clone).unflatten(0, self.shape)
 
     def set_body_masses(
         self,
@@ -177,6 +246,11 @@ class RigidPrimView(_RigidPrimView):
             contact_filter_prim_paths_expr,
         )
 
+    @require_sim_initialized
+    def initialize(self, physics_sim_view: omni.physics.tensors.SimulationView = None):
+        super().initialize(physics_sim_view)
+        return self
+
     def get_world_poses(
         self, env_indices: Optional[torch.Tensor] = None, clone: bool = True
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -214,13 +288,22 @@ class RigidPrimView(_RigidPrimView):
     def get_net_contact_forces(
         self,
         env_indices: Optional[torch.Tensor] = None,
-        clone: bool = True,
+        clone: bool = False,
         dt: float = 1,
     ) -> torch.Tensor:
         indices = self._resolve_env_indices(env_indices)
         return (
             super().get_net_contact_forces(indices, clone, dt).unflatten(0, self.shape)
         )
+
+    def get_contact_force_matrix(
+        self, 
+        env_indices: Optional[torch.Tensor] = None, 
+        clone: bool = True, 
+        dt: float = 1
+    ) -> torch.Tensor:
+        indices = self._resolve_env_indices(env_indices)
+        return super().get_contact_force_matrix(indices, clone, dt).unflatten(0, self.shape)
 
     def _resolve_env_indices(self, env_indices: torch.Tensor):
         if not hasattr(self, "_all_indices"):

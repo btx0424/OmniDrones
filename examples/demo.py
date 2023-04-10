@@ -44,7 +44,7 @@ def main(cfg):
         translations = torch.zeros(n, 3)
         translations[:, 0] = i
         translations[:, 1] = torch.arange(n)
-        translations[:, 2] = 0.5
+        translations[:, 2] = 1.0
         drones[model].spawn(translations=translations)
 
     scene_utils.design_scene()
@@ -52,18 +52,22 @@ def main(cfg):
 
     for drone in drones.values():
         drone.initialize()
-
+        drone._reset_idx()
+        
     while simulation_app.is_running():
-        if sim.is_stopped():
+        try:
+            if sim.is_stopped():
+                break
+            if not sim.is_playing():
+                sim.step(render=not cfg.headless)
+                continue
+            for drone in drones.values():
+                actions = drone.action_spec.rand((1, drone.n,))
+                actions[:] = 2 / drone.get_thrust_to_weight_ratio() - 1
+                drone.apply_action(actions)
+            sim.step()
+        except KeyboardInterrupt:
             break
-        if not sim.is_playing():
-            sim.step(render=not cfg.headless)
-            continue
-        for drone in drones.values():
-            actions = drone.action_spec.zero((drone._count,))
-            actions.fill_(0.0)
-            drone.apply_action(actions)
-        sim.step()
 
     simulation_app.close()
 

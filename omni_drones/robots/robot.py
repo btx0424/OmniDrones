@@ -94,8 +94,8 @@ class RobotBase(abc.ABC):
                 prim_path,
                 linear_damping=self.rigid_props.linear_damping,
                 angular_damping=self.rigid_props.angular_damping,
-                max_linear_velocity=self.rigid_props.max_linear_velocity,
-                max_angular_velocity=self.rigid_props.max_angular_velocity,
+                max_linear_velocity=50, #self.rigid_props.max_linear_velocity,
+                max_angular_velocity=50, # self.rigid_props.max_angular_velocity,
                 max_depenetration_velocity=self.rigid_props.max_depenetration_velocity,
                 enable_gyroscopic_forces=True,
                 disable_gravity=self.rigid_props.disable_gravity,
@@ -139,15 +139,16 @@ class RobotBase(abc.ABC):
             self._view = RigidPrimView(
                 self.prim_paths_expr, 
                 reset_xform_properties=False,
-                shape=(-1, self.n)
+                shape=(-1, self.n),
+                # track_contact_forces=True
             )
 
         self._view.initialize()
         # set the default state
         self._view.post_reset()
         self.shape = torch.arange(self._view.count).reshape(-1, self.n).shape
-        self._physics_view = self._view._physics_view
-        self._physics_sim_view = self._view._physics_sim_view
+        
+        self.prim_paths = self._view.prim_paths
 
     @abc.abstractmethod
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
@@ -157,25 +158,25 @@ class RobotBase(abc.ABC):
     def _reset_idx(self, env_ids: torch.Tensor):
         raise NotImplementedError
 
-    def get_world_poses(self, clone=True):
+    def get_world_poses(self, clone: bool=False):
         return self._view.get_world_poses(clone=clone)
 
     def set_world_poses(self, positions: torch.Tensor=None, orientations: torch.Tensor=None, env_indices: torch.Tensor = None):
         return self._view.set_world_poses(positions, orientations, env_indices=env_indices)
 
-    def get_velocities(self, clone=True):
+    def get_velocities(self, clone: bool=False):
         return self._view.get_velocities(clone=clone)
 
     def set_velocities(self, velocities: torch.Tensor, env_indices: torch.Tensor = None):
         return self._view.set_velocities(velocities, env_indices=env_indices)
 
-    def get_joint_positions(self, clone=True):
+    def get_joint_positions(self, clone: bool=False):
         return self._view.get_joint_positions(clone=clone)
 
     def set_joint_positions(self, pos: torch.Tensor, env_indices: torch.Tensor = None):
         return self._view.set_joint_positions(pos, env_indices=env_indices)
 
-    def get_joint_velocities(self, clone=True):
+    def get_joint_velocities(self, clone: bool=False):
         return self._view.get_joint_velocities(clone=clone)
 
     def set_joint_velocities(self, vel: torch.Tensor, env_indices: torch.Tensor = None):

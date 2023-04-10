@@ -1,0 +1,25 @@
+name: TransportFlyThrough
+
+defaults:
+  - /env_base
+  - /sim_base
+
+env:
+  num_envs: 1024
+
+drone_model: Hummingbird
+
+payload_mass_min: 1.9
+payload_mass_max: 2.1
+
+reward_effort_weight: 0.1
+reward_distance_scale: 1.0
+safe_distance: 0.5
+
+reset_on_collision: false
+obstacle_spacing: 1.
+
+flatten_obs: true
+flatten_state: true
+
+action_transform: null

@@ -1,4 +1,4 @@
-from typing import Optional, Union
+from typing import Optional, Union, Sequence
 
 import omni.isaac.core.utils.prims as prim_utils
 import omni.isaac.core.utils.stage as stage_utils
@@ -14,7 +14,6 @@ from tensordict import TensorDict
 from omni_drones.utils.math import quaternion_to_euler
 from .config import FisheyeCameraCfg, PinholeCameraCfg
 
-
 class Camera:
     """
     Viewport camera used for visualization purpose.
@@ -22,11 +21,7 @@ class Camera:
 
     def __init__(
         self,
-        cfg: Union[PinholeCameraCfg, FisheyeCameraCfg] = None,
-        parent_prim_path: str = "/World",
-        translation=None,
-        orientation=None,
-        target=None,
+        cfg: Union[PinholeCameraCfg, FisheyeCameraCfg] = None
     ) -> None:
         if cfg is None:
             cfg = PinholeCameraCfg(
@@ -43,56 +38,82 @@ class Camera:
         self.cfg = cfg
         self.resolution = cfg.resolution
         self.shape = (self.resolution[1], self.resolution[0])
-        prim_path = stage_utils.get_next_free_path(f"{parent_prim_path}/Camera")
-        self.prim = UsdGeom.Camera(prim_utils.define_prim(prim_path, "Camera"))
-        self.prim_path = prim_utils.get_prim_path(self.prim)
-        self._define_usd_camera_attributes()
-        self.xform = XFormPrim(self.prim_path, translation=translation)
-        self.xform.initialize()
-        self.set_local_pose(translation, orientation, target)
+        self.sim = SimulationContext.instance()
+        self.device = self.sim.device
 
-        self.device = SimulationContext.instance().device
+        self.n = 0
+
         if isinstance(self.device, str) and "cuda" in self.device:
             self.device = self.device.split(":")[0]
+        self.annotators = []
 
-        self.render_product = rep.create.render_product(
-            self.prim_path, resolution=self.resolution
-        )
-        self.annotators = {}
-        for annotator_type in cfg.data_types:
-            annotator = rep.AnnotatorRegistry.get_annotator(
-                name=annotator_type, device=self.device
+    def spawn(
+        self, 
+        prim_paths: Sequence[str],
+        translations=None,
+        targets=None,
+    ):
+        n = len(prim_paths)
+
+        if translations is None:
+            translations = [(0, 0, 0) for _ in range(n)]
+        translations = torch.atleast_2d(torch.as_tensor(translations)).expand(n, 3).tolist()
+
+        if targets is None:
+            targets = [(1, 0, 0) for _ in range(n)]
+        targets = torch.atleast_2d(torch.as_tensor(targets)).expand(n, 3).tolist()
+
+        if not len(translations) == len(prim_paths) == len(targets):
+            raise ValueError
+        
+        for prim_path, translation, target in zip(prim_paths, translations, targets):
+            if prim_utils.is_prim_path_valid(prim_path):
+                raise RuntimeError(f"Duplicate prim at {prim_path}.")
+            prim = prim_utils.create_prim(
+                prim_path,
+                prim_type="Camera",
+                translation=translation,
+                orientation=orientation_from_view(translation, target)
             )
-            annotator.attach([self.render_product])
-            self.annotators[annotator_type] = annotator
-        SimulationContext.instance().render()
+            self._define_usd_camera_attributes(prim_path)
 
-    def __call__(self) -> TensorDict:
-        tensordict = TensorDict(
-            {
-                k: wp.to_torch(v.get_data(device=self.device))
-                for k, v in self.annotators.items()
-            },
-            self.shape,
-        )
-        return tensordict
+        self.n += n
 
-    def set_local_pose(self, translation, orientation=None, target=None):
-        if target is not None:
-            if orientation is not None:
-                raise ValueError
-            eye_position = Gf.Vec3d(translation)
-            target_position = Gf.Vec3d(target)
-            up_axis = Gf.Vec3d(0, 0, 1)
-            matrix_gf = Gf.Matrix4d(1).SetLookAt(eye_position, target_position, up_axis)
-            matrix_gf = matrix_gf.GetInverse()
-            quat = matrix_gf.ExtractRotationQuat()
-            orientation = [quat.real, *quat.imaginary]
-            # orientation = orientation_from_view(target, translation)
+    def initialize(
+        self, 
+        prim_paths_expr: str = None,
+    ):
+        if prim_paths_expr is None:
+            prim_paths_expr = f"/World/envs/.*/Camera_.*"
 
-        self.xform.set_local_pose(translation, orientation)
+        prim_paths = prim_utils.find_matching_prim_paths(prim_paths_expr)
+        
+        for prim_path in prim_paths:
+            render_product = rep.create.render_product(
+                prim_path, resolution=self.resolution
+            )
+            annotators = {}
+            for annotator_type in self.cfg.data_types:
+                annotator = rep.AnnotatorRegistry.get_annotator(
+                    name=annotator_type, device=self.device
+                )
+                annotator.attach([render_product])
+                annotators[annotator_type] = annotator
 
-    def _define_usd_camera_attributes(self):
+            self.annotators.append(annotators)
+        
+        self.count = len(prim_paths)
+    
+        for _ in range(2):
+            self.sim.render()
+        
+    def get_images(self) -> TensorDict:
+        return torch.stack([TensorDict({
+            k: wp.to_torch(v.get_data(device=self.device)).permute(2, 0, 1)
+            for k, v in annotators.items()
+        }, []) for annotators in self.annotators])
+
+    def _define_usd_camera_attributes(self, prim_path):
         """Creates and sets USD camera attributes.
 
         This function creates additional attributes on the camera prim used by Replicator.
@@ -114,7 +135,7 @@ class Camera:
             "fthetaPolyE": "float",
         }
         # get camera prim
-        prim = prim_utils.get_prim_at_path(self.prim_path)
+        prim = prim_utils.get_prim_at_path(prim_path)
         # create attributes
         for attr_name, attr_type in attribute_types.items():
             # check if attribute does not exist
@@ -140,55 +161,14 @@ class Camera:
 
 
 def orientation_from_view(camera, target):
-    quat = lookat_to_quatf(Gf.Vec3f(camera), Gf.Vec3f(target), Gf.Vec3f(0.0, 0.0, 1.0))
-    return [quat.real, *quat.imaginary]
-
-
-import math
-
-
-def lookat_to_quatf(camera: Gf.Vec3f, target: Gf.Vec3f, up: Gf.Vec3f) -> Gf.Quatf:
-    """[summary]
-
-    Args:
-        camera (Gf.Vec3f): [description]
-        target (Gf.Vec3f): [description]
-        up (Gf.Vec3f): [description]
-
-    Returns:
-        Gf.Quatf: Pxr quaternion object.
-    """
-    F = (target - camera).GetNormalized()
-    R = Gf.Cross(up, F).GetNormalized()
-    U = Gf.Cross(F, R)
-
-    q = Gf.Quatf()
-    trace = R[0] + U[1] + F[2]
-    if trace > 0.0:
-        s = 0.5 / math.sqrt(trace + 1.0)
-        q = Gf.Quatf(
-            0.25 / s, Gf.Vec3f((U[2] - F[1]) * s, (F[0] - R[2]) * s, (R[1] - U[0]) * s)
-        )
-    else:
-        if R[0] > U[1] and R[0] > F[2]:
-            s = 2.0 * math.sqrt(1.0 + R[0] - U[1] - F[2])
-            q = Gf.Quatf(
-                (U[2] - F[1]) / s,
-                Gf.Vec3f(0.25 * s, (U[0] + R[1]) / s, (F[0] + R[2]) / s),
-            )
-        elif U[1] > F[2]:
-            s = 2.0 * math.sqrt(1.0 + U[1] - R[0] - F[2])
-            q = Gf.Quatf(
-                (F[0] - R[2]) / s,
-                Gf.Vec3f((U[0] + R[1]) / s, 0.25 * s, (F[1] + U[2]) / s),
-            )
-        else:
-            s = 2.0 * math.sqrt(1.0 + F[2] - R[0] - U[1])
-            q = Gf.Quatf(
-                (R[1] - U[0]) / s,
-                Gf.Vec3f((F[0] + R[2]) / s, (F[1] + U[2]) / s, 0.25 * s),
-            )
-    return q
+    camera_position = Gf.Vec3d(camera)
+    target_position = Gf.Vec3d(target)
+    up_axis = Gf.Vec3d(0, 0, 1)
+    matrix_gf = Gf.Matrix4d(1).SetLookAt(camera_position, target_position, up_axis)
+    matrix_gf = matrix_gf.GetInverse()
+    quat = matrix_gf.ExtractRotationQuat()
+    orientation = (quat.real, *quat.imaginary)
+    return orientation
 
 
 def to_camel_case(snake_str: str, to: Optional[str] = "cC") -> str:

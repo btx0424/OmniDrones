@@ -139,3 +139,5 @@ videos/
 *.pt
 urdf/
 *.pkl
+*.pth
+tmp

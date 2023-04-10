@@ -109,9 +109,9 @@ class Camera:
         
     def get_images(self) -> TensorDict:
         return torch.stack([TensorDict({
-            k: wp.to_torch(v.get_data(device=self.device))
+            k: wp.to_torch(v.get_data(device=self.device)).permute(2, 0, 1)
             for k, v in annotators.items()
-        }, self.shape) for annotators in self.annotators])
+        }, []) for annotators in self.annotators])
 
     def _define_usd_camera_attributes(self, prim_path):
         """Creates and sets USD camera attributes.

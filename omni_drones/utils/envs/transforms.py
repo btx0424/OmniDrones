@@ -174,15 +174,20 @@ class DepthImageNorm(Transform):
         self,
         in_keys: Sequence[str],
         min_range: float,
-        max_range: float
+        max_range: float,
+        inverse: bool=False
     ):
         super().__init__(in_keys=in_keys)
         self.max_range = max_range
         self.min_range = min_range
+        self.inverse = inverse
 
     def _apply_transform(self, obs: torch.Tensor) -> None:
         obs = torch.nan_to_num(obs, posinf=self.max_range, neginf=self.min_range)
-        obs = (obs - self.min_range) / (self.max_range - self.min_range)
+        if self.inverse:
+            obs = (obs - self.min_range) / (self.max_range - self.min_range)
+        else:
+            obs = (self.max_range - obs) / (self.max_range - self.min_range)
         return obs
 
 

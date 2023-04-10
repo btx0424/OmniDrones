@@ -127,12 +127,16 @@ class TransportationGroup(RobotBase):
         self.n += n
         return prims
 
-    def initialize(self, prim_paths_expr: str = None):
+    def initialize(self, prim_paths_expr: str = None, track_contact_forces: bool = False):
         super().initialize(prim_paths_expr)
-        self.payload_view = RigidPrimView(f"{self.prim_paths_expr}/payload")
-        self.payload_view.initialize()
         self.drone.n = self.n * 4
         self.drone.initialize(f"{self.prim_paths_expr}/{self.drone.name.lower()}_*")
+        self.payload_view = RigidPrimView(
+            f"{self.prim_paths_expr}/payload",
+            reset_xform_properties=False,
+            track_contact_forces=track_contact_forces
+        )
+        self.payload_view.initialize()
 
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
         self.drone.apply_action(actions)

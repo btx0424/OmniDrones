@@ -5,7 +5,7 @@ defaults:
   - /sim_base
 
 env:
-  num_envs: 2048
+  num_envs: 1024
 
 drone_model: Hummingbird
 
@@ -13,6 +13,8 @@ payload_mass_min: 1.9
 payload_mass_max: 2.1
 
 reward_effort_weight: 0.1
+reward_spin_weight: 0.8
+reward_swing_weight: 0.8
 reward_distance_scale: 1.2
 safe_distance: 0.5
 

@@ -17,6 +17,8 @@ from omni_drones.robots.config import RobotCfg
 from omni_drones.robots.drone import MultirotorBase
 from omni_drones.views import RigidPrimView
 
+from .utils import create_pendulum
+
 def create_obstacles(
     prim_path: str,
     translation=(0., 0., 1.5),
@@ -38,49 +40,13 @@ def create_obstacles(
     script_utils.createJoint(stage, "Fixed", prim.GetParent(), prim)
     return prim
 
-def create_payload(
-    drone_prim_path: str,
-    bar_length: str,
-    payload_radius: float=0.06,
-    payload_mass: float=0.3
-):
-    bar = prim_utils.create_prim(
-        prim_path=drone_prim_path + "/bar",
-        prim_type="Capsule",
-        translation=(0., 0., bar_length / 2.),
-        attributes={"radius": 0.01, "height": bar_length}
-    )
-    UsdPhysics.RigidBodyAPI.Apply(bar)
-    UsdPhysics.CollisionAPI.Apply(bar)
-    massAPI = UsdPhysics.MassAPI.Apply(bar)
-    massAPI.CreateMassAttr().Set(0.02)
-
-    base_link = prim_utils.get_prim_at_path(drone_prim_path + "/base_link")
-    stage = prim_utils.get_current_stage()
-    joint = script_utils.createJoint(stage, "D6", bar, base_link)
-    joint.GetAttribute("limit:rotX:physics:low").Set(-torch.inf)
-    joint.GetAttribute("limit:rotX:physics:high").Set(torch.inf)
-    joint.GetAttribute("limit:rotY:physics:low").Set(-torch.inf)
-    joint.GetAttribute("limit:rotY:physics:high").Set(torch.inf)
-    UsdPhysics.DriveAPI.Apply(joint, "rotX")
-    UsdPhysics.DriveAPI.Apply(joint, "rotY")
-    joint.GetAttribute("drive:rotX:physics:damping").Set(0.0001)
-    joint.GetAttribute("drive:rotY:physics:damping").Set(0.0001)
-
-    payload = objects.DynamicSphere(
-        prim_path=drone_prim_path + "/payload",
-        translation=(0., 0., bar_length),
-        radius=payload_radius,
-        mass=payload_mass
-    )
-    joint = script_utils.createJoint(stage, "Fixed", bar, payload.prim)
-
 
 class InvertedPendulumFlyThrough(IsaacEnv):
     def __init__(self, cfg, headless):
         super().__init__(cfg, headless)
-        self.reward_effort_weight = self.cfg.task.get("reward_effort_weight")
-        self.reward_distance_scale = self.cfg.task.get("reward_distance_scale")
+        self.reward_effort_weight = self.cfg.task.reward_effort_weight
+        self.reward_distance_scale = self.cfg.task.reward_distance_scale
+        self.reset_on_collision = self.cfg.task.reset_on_collision
 
         self.drone.initialize()
 
@@ -89,20 +55,12 @@ class InvertedPendulumFlyThrough(IsaacEnv):
             f"/World/envs/env_*/{self.drone.name}_*/payload",
         )
         self.payload.initialize()
-        self.bar = RigidPrimView(
-            f"/World/envs/env_*/{self.drone.name}_*/bar",
-            track_contact_forces=True,
-            contact_filter_prim_paths_expr=[
-                "/World/envs/env_*/obstacle_0",
-                "/World/envs/env_*/obstacle_1"
-            ]
-        )
-        self.bar.initialize()
+
         self.obstacles = RigidPrimView(
             "/World/envs/env_*/obstacle_*",
             reset_xform_properties=False,
             shape=[self.num_envs, -1],
-            # track_contact_forces=True
+            track_contact_forces=True
         )
         self.obstacles.initialize()
 
@@ -165,7 +123,7 @@ class InvertedPendulumFlyThrough(IsaacEnv):
         create_obstacles("/World/envs/env_0/obstacle_1", translation=(0., 0., 1.2+obstacle_spacing))
 
         self.drone.spawn(translations=[(0.0, 0.0, 2.)])
-        create_payload(f"/World/envs/env_0/{self.drone.name}_0", self.cfg.task.bar_length)
+        create_pendulum(f"/World/envs/env_0/{self.drone.name}_0", self.cfg.task.bar_length)
 
         self.payload_target_pos = torch.tensor([1.5, 0., 2.3], device=self.device)
         sphere = objects.DynamicSphere(
@@ -269,6 +227,8 @@ class InvertedPendulumFlyThrough(IsaacEnv):
             | done_misbehave
             | done_hasnan
         ) 
+        if self.reset_on_collision:
+            done |= collision
 
         self._tensordict["return"] += reward
         return TensorDict(

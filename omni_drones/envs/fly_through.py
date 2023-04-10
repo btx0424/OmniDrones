@@ -91,18 +91,8 @@ class FlyThrough(IsaacEnv):
         self.reward_distance_scale = self.cfg.task.reward_distance_scale
         self.reset_on_collision = self.cfg.task.reset_on_collision
 
-        # self.bar = RigidPrimView(
-        #     f"/World/envs/env_*/{self.drone.name}_*/bar",
-        #     reset_xform_properties=False,
-        #     track_contact_forces=True,
-        #     contact_filter_prim_paths_expr=[
-        #         "/World/envs/env_*/obstacle_0",
-        #         "/World/envs/env_*/obstacle_1"
-        #     ]
-        # )
-
-        # self.bar.initialize()
         self.drone.initialize()
+
         self.obstacles = RigidPrimView(
             "/World/envs/env_*/obstacle_*",
             reset_xform_properties=False,
@@ -304,11 +294,12 @@ class FlyThrough(IsaacEnv):
             pose_reward 
             + pose_reward * (up_reward + spin_reward + swing_reward) 
             + effort_reward
-        )
+        ) * (1 - collision_reward)
         
         done_misbehave = (
             (pos[..., 2] < 0.2) 
             | (pos[..., 2] > 2.5)
+            | (pos[..., 1].abs() > 2.)
             | (self.payload_pos[..., 2] < 0.15).unsqueeze(1)
         )
         done_hasnan = torch.isnan(self.drone_state).any(-1)

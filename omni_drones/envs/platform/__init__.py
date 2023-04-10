@@ -1,2 +1,2 @@
-from .hover import PlatformHover
-from .fly_through import PlatformFlyThrough
+from .platform_hover import PlatformHover
+from .platform_fly_through import PlatformFlyThrough

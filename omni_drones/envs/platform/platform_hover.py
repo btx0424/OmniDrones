@@ -1,21 +1,22 @@
 from functorch import vmap
-import omni.isaac.core.utils.prims as prim_utils
 
 import omni.isaac.core.utils.torch as torch_utils
-from omni_drones.utils.torch import euler_to_quaternion
+import omni.isaac.core.utils.prims as prim_utils
 import torch
 import torch.distributions as D
-from omni.isaac.core.objects import DynamicSphere
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec
 
 import omni_drones.utils.kit as kit_utils
-import omni_drones.utils.scene as scene_utils
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.views import RigidPrimView
 from omni_drones.robots.config import RobotCfg
 from omni_drones.robots.drone import MultirotorBase
+from omni_drones.utils.scene import design_scene
+from omni_drones.utils.torch import euler_to_quaternion
+
+from .utils import create_frame
 
 
 def compose_transform(
@@ -35,16 +36,12 @@ def compose_transform(
 class PlatformHover(IsaacEnv):
     def __init__(self, cfg, headless):
         super().__init__(cfg, headless)
-        self.reward_effort_weight = self.cfg.task.get("reward_effort_weight", 0.1)
-        self.reward_distance_scale = self.cfg.task.get("reward_distance_scale", 1.)
+        self.reward_effort_weight = self.cfg.task.reward_effort_weight
+        self.reward_distance_scale = self.cfg.task.reward_distance_scale
 
         self.drone.initialize(f"/World/envs/env_.*/platform/{self.drone.name}_*")
-        self.target_pos_vis = RigidPrimView(
-            "/World/envs/env_*/target_pos",
-            reset_xform_properties=False
-        ).initialize()
-        self.target_head_vis = RigidPrimView(
-            "/World/envs/env_*/target_head",
+        self.target_vis = RigidPrimView(
+            "/World/envs/env_*/target",
             reset_xform_properties=False
         ).initialize()
         self.init_drone_poses = self.drone.get_world_poses(clone=True)
@@ -88,6 +85,7 @@ class PlatformHover(IsaacEnv):
         self.alpha = 0.7
         info_spec = CompositeSpec({
             "pos_error": UnboundedContinuousTensorSpec(1),
+            "heading_alignment": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["info"] = info_spec
         self.info = info_spec.zero()
@@ -96,43 +94,18 @@ class PlatformHover(IsaacEnv):
         drone_model = self.cfg.task.drone_model
         self.drone: MultirotorBase = MultirotorBase.REGISTRY[drone_model]()
         n = 4
+
+        arm_length = self.cfg.task.arm_length
         self.drone_translations = torch.tensor([
-            [-1.0, 0.0, 0.0], 
-            [0.0, 1.0, 0.0], 
-            [1.0, 0.0, 0.0], 
-            [0.0, -1.0, 0.0]
+            [-arm_length, 0.0, 0.0], 
+            [0.0, arm_length, 0.0], 
+            [arm_length, 0.0, 0.0], 
+            [0.0, -arm_length, 0.0]
         ], device=self.device)
         self.drone_rotations = torch.tensor([1., 0., 0., 0.], device=self.device).expand(4, -1)
 
         arm_angles = [torch.pi * 2 / n * i for i in range(n)]
-        arm_lengths = [1.0 for _ in range(n)]
-        
-        DynamicSphere(
-            prim_path="/World/envs/env_0/target_pos",
-            translation=(0., 0., 2.), radius=0.05,
-            color=torch.tensor([0.7, 0.2, 0.1]),
-        )
-        DynamicSphere(
-            prim_path="/World/envs/env_0/target_head",
-            translation=(0., 0., 2.), radius=0.05,
-            color=torch.tensor([0.2, 0.7, 0.1]),
-        )
-        kit_utils.set_rigid_body_properties(
-            prim_path="/World/envs/env_0/target_pos",
-            disable_gravity=True
-        )
-        kit_utils.set_collision_properties(
-            prim_path="/World/envs/env_0/target_pos",
-            collision_enabled=False
-        )
-        kit_utils.set_rigid_body_properties(
-            prim_path="/World/envs/env_0/target_head",
-            disable_gravity=True
-        )
-        kit_utils.set_collision_properties(
-            prim_path="/World/envs/env_0/target_head",
-            collision_enabled=False
-        )
+        arm_lengths = [arm_length for _ in range(n)]
 
         platform = prim_utils.create_prim(
             "/World/envs/env_0/platform", translation=(0., 0., 2.)
@@ -143,7 +116,7 @@ class PlatformHover(IsaacEnv):
                 f"/World/envs/env_0/platform/{self.drone.name}_{i}" for i in range(n)
             ],
         )
-        scene_utils.create_frame(
+        create_frame(
             "/World/envs/env_0/platform/frame",
             arm_angles,
             arm_lengths,
@@ -151,8 +124,18 @@ class PlatformHover(IsaacEnv):
                 f"/World/envs/env_0/platform/{self.drone.name}_{i}/base_link"
                 for i in range(n)
             ],
+            enable_collision=False,
         )
-        scene_utils.design_scene()
+        target_prim_path = create_frame(
+            "/World/envs/env_0/target",
+            arm_angles,
+            arm_lengths,
+            enable_collision=False,
+        ).GetPath().pathString
+        # kit_utils.set_collision_properties(target_prim_path, collision_enabled=False)
+        kit_utils.set_rigid_body_properties(target_prim_path, disable_gravity=True)
+
+        design_scene()
         return ["/World/defaultGroundPlane"]
 
     def _reset_idx(self, env_ids: torch.Tensor):
@@ -180,12 +163,14 @@ class PlatformHover(IsaacEnv):
         self.target_heading[env_ids] = target_heading
         self.target_up[env_ids] = target_up
         
-        self.target_head_vis.set_world_poses(
-            self.target_pos + target_heading + self.envs_positions[env_ids],
+        self.target_vis.set_world_poses(
+            self.target_pos + self.envs_positions[env_ids],
+            orientations=target_rot,
             env_indices=env_ids
         )
 
         self.info["pos_error"][env_ids] = 0
+        self.info["heading_alignment"][env_ids] = 0
 
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
@@ -234,7 +219,10 @@ class PlatformHover(IsaacEnv):
         )
         
         pos_error = torch.norm(self.target_frame_rpos, dim=-1, keepdim=True)
+        heading_alignment = torch.sum(self.frame_heading * self.target_heading, dim=-1, keepdim=True)
         self.info["pos_error"].mul_(self.alpha).add_((1-self.alpha) * pos_error)
+        self.info["heading_alignment"].mul_(self.alpha).add_((1-self.alpha) * heading_alignment)
+
         return TensorDict(
             {
                 "drone.obs": obs,
@@ -255,7 +243,7 @@ class PlatformHover(IsaacEnv):
         up = torch.sum(self.frame_up * self.target_up, dim=-1, keepdim=True)
         reward_up = torch.square((up + 1) / 2)
 
-        spinnage = vels[:, -3:].sum(-1, keepdim=True)
+        spinnage = vels[:, -3:].abs().sum(-1, keepdim=True)
         reward_spin = 1. / (1 + torch.square(spinnage))
         
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort).mean(-1, keepdim=True)

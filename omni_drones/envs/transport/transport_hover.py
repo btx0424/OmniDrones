@@ -23,6 +23,9 @@ class TransportHover(IsaacEnv):
     def __init__(self, cfg, headless):
         super().__init__(cfg, headless)
         self.reward_effort_weight = self.cfg.task.reward_effort_weight
+        self.reward_spin_weight = self.cfg.task.reward_spin_weight
+        self.reward_swing_weight = self.cfg.task.reward_swing_weight
+
         self.reward_distance_scale = self.cfg.task.reward_distance_scale
         self.safe_distance = self.cfg.task.safe_distance
 
@@ -232,8 +235,11 @@ class TransportHover(IsaacEnv):
         up = self.payload_up[:, 2]
         reward_up = torch.square((up + 1) / 2).unsqueeze(-1)
 
-        spinnage = vels[:, -3:].sum(-1, keepdim=True)
-        reward_spin = 1. / (1 + torch.square(spinnage))
+        spinnage = vels[:, -3:].abs().sum(-1, keepdim=True)
+        reward_spin = self.reward_spin_weight * torch.exp(-torch.square(spinnage))
+
+        swing = vels[:, :3].abs().sum(-1, keepdim=True)
+        reward_swing = self.reward_swing_weight * torch.exp(-torch.square(swing))
 
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort).mean(-1, keepdim=True)
         reward_separation = torch.square(separation / self.safe_distance).clamp(0, 1)
@@ -241,7 +247,7 @@ class TransportHover(IsaacEnv):
         reward[:] = (
             reward_separation * (
                 reward_pose 
-                + reward_pose * (reward_up + reward_spin) 
+                + reward_pose * (reward_up + reward_spin + reward_swing) 
                 + reward_effort
             )
         ).unsqueeze(-1)

@@ -1,21 +1,22 @@
 from functorch import vmap
-import omni.isaac.core.utils.prims as prim_utils
 
 import omni.isaac.core.utils.torch as torch_utils
-from omni_drones.utils.torch import euler_to_quaternion
+import omni.isaac.core.utils.prims as prim_utils
 import torch
 import torch.distributions as D
-from omni.isaac.core.objects import DynamicSphere
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec
 
 import omni_drones.utils.kit as kit_utils
-import omni_drones.utils.scene as scene_utils
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.views import RigidPrimView
 from omni_drones.robots.config import RobotCfg
 from omni_drones.robots.drone import MultirotorBase
+from omni_drones.utils.scene import design_scene
+from omni_drones.utils.torch import euler_to_quaternion
+
+from .utils import create_frame
 
 
 def compose_transform(
@@ -106,33 +107,6 @@ class PlatformFlyThrough(IsaacEnv):
 
         arm_angles = [torch.pi * 2 / n * i for i in range(n)]
         arm_lengths = [1.0 for _ in range(n)]
-        
-        DynamicSphere(
-            prim_path="/World/envs/env_0/target_pos",
-            translation=(0., 0., 2.), radius=0.05,
-            color=torch.tensor([0.7, 0.2, 0.1]),
-        )
-        DynamicSphere(
-            prim_path="/World/envs/env_0/target_head",
-            translation=(0., 0., 2.), radius=0.05,
-            color=torch.tensor([0.2, 0.7, 0.1]),
-        )
-        kit_utils.set_rigid_body_properties(
-            prim_path="/World/envs/env_0/target_pos",
-            disable_gravity=True
-        )
-        kit_utils.set_collision_properties(
-            prim_path="/World/envs/env_0/target_pos",
-            collision_enabled=False
-        )
-        kit_utils.set_rigid_body_properties(
-            prim_path="/World/envs/env_0/target_head",
-            disable_gravity=True
-        )
-        kit_utils.set_collision_properties(
-            prim_path="/World/envs/env_0/target_head",
-            collision_enabled=False
-        )
 
         platform = prim_utils.create_prim(
             "/World/envs/env_0/platform", translation=(0., 0., 2.)
@@ -143,7 +117,7 @@ class PlatformFlyThrough(IsaacEnv):
                 f"/World/envs/env_0/platform/{self.drone.name}_{i}" for i in range(n)
             ],
         )
-        scene_utils.create_frame(
+        create_frame(
             "/World/envs/env_0/platform/frame",
             arm_angles,
             arm_lengths,
@@ -152,7 +126,7 @@ class PlatformFlyThrough(IsaacEnv):
                 for i in range(n)
             ],
         )
-        scene_utils.design_scene()
+        design_scene()
         return ["/World/defaultGroundPlane"]
 
     def _reset_idx(self, env_ids: torch.Tensor):

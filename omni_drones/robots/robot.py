@@ -139,7 +139,8 @@ class RobotBase(abc.ABC):
             self._view = RigidPrimView(
                 self.prim_paths_expr, 
                 reset_xform_properties=False,
-                shape=(-1, self.n)
+                shape=(-1, self.n),
+                # track_contact_forces=True
             )
 
         self._view.initialize()

@@ -11,6 +11,7 @@ import omni_drones.utils.kit as kit_utils
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.views import RigidPrimView
+from omni_drones.utils.torch import cpos, off_diag, others
 from omni_drones.robots.config import RobotCfg
 from omni_drones.robots.drone import MultirotorBase
 from omni_drones.utils.scene import design_scene
@@ -57,13 +58,22 @@ class PlatformHover(IsaacEnv):
         self.init_frame_vels = torch.zeros_like(self.frame_view.get_velocities())
 
         drone_state_dim = self.drone.state_spec.shape.numel()
+        observation_spec = CompositeSpec({
+            "state_self": UnboundedContinuousTensorSpec((1, drone_state_dim + self.drone.n)),
+            "state_others": UnboundedContinuousTensorSpec((self.drone.n-1, drone_state_dim)),
+            "state_frame": UnboundedContinuousTensorSpec((1, 25)),
+        }).to(self.device)
+        state_spec = CompositeSpec({
+            "state_drones": UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim + self.drone.n)),
+            "state_frame": UnboundedContinuousTensorSpec((1, 25)),
+        }).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone",
             4,
-            UnboundedContinuousTensorSpec(drone_state_dim + 12 + self.drone.n).to(self.device),
+            observation_spec,
             self.drone.action_spec.to(self.device),
             UnboundedContinuousTensorSpec(1).to(self.device),
-            state_spec=UnboundedContinuousTensorSpec(drone_state_dim*self.drone.n+9).to(self.device)
+            state_spec
         )
 
         self.init_pos_dist = D.Uniform(
@@ -179,10 +189,14 @@ class PlatformHover(IsaacEnv):
 
     def _compute_state_and_obs(self):
         self.drone_states = self.drone.get_state()
+        drone_pos = self.drone_states[..., :3]
+        self.drone_rpos = vmap(cpos)(drone_pos, drone_pos)
+        self.drone_rpos = vmap(off_diag)(self.drone_rpos)
 
         frame_pos, frame_rot = self.get_env_poses(self.frame_view.get_world_poses(clone=True))
         self.frame_heading = torch_utils.quat_axis(frame_rot, 0)
         self.frame_up = torch_utils.quat_axis(frame_rot, 2)
+        self.frame_vels = self.frame_view.get_velocities(clone=True)
 
         self.target_frame_rpos = self.target_pos - frame_pos
         self.target_frame_rheading = self.target_heading - self.frame_heading
@@ -193,30 +207,30 @@ class PlatformHover(IsaacEnv):
             self.target_frame_rup
         ], dim=-1)
 
-        target_drone_rpos = self.target_pos - self.drone_states[..., :3]
         frame_drone_rpos = frame_pos.unsqueeze(1) - self.drone_states[..., :3]
+        frame_state = torch.cat([
+            self.target_frame_rpose, # 9
+            frame_rot, # 4
+            self.frame_heading, # 3
+            self.frame_up, # 3
+            self.frame_vels, # 6
+        ], dim=-1).unsqueeze(1) # [num_envs, 1, 25]
+
 
         identity = torch.eye(self.drone.n, device=self.device).expand(self.num_envs, -1, -1)
-        obs = torch.cat(
-            [
-                frame_drone_rpos, # 3
-                target_drone_rpos, # 3
-                self.drone_states[..., 3:], # drone_state_dim - 3
-                self.target_frame_rpose.unsqueeze(1).expand(-1, self.drone.n, -1), # 3
-                identity
-            ],
-            dim=-1,
-        )
 
-        state = torch.cat(
-            [
-                frame_drone_rpos.flatten(1), # 3 * drone.n
-                self.drone_states[..., 3:].flatten(1), # (drone_state_dim - 3) * drone.n
-                self.target_frame_rpos, # 3
-                self.target_frame_rheading, # 3
-                self.target_frame_rup # 3
-            ], dim=-1
+        obs = TensorDict({}, [self.num_envs, self.drone.n])
+        obs["state_self"] = torch.cat(
+            [-frame_drone_rpos, self.drone_states[..., 3:], identity], dim=-1
+        ).unsqueeze(2)
+        obs["state_others"] = torch.cat(
+            [self.drone_rpos, vmap(others)(self.drone_states[..., 3:])], dim=-1
         )
+        obs["state_frame"] = frame_state.unsqueeze(1).expand(-1, self.drone.n, 1, -1)
+
+        state = TensorDict({}, [self.num_envs])
+        state["state_drones"] = obs["state_self"].squeeze(2)    # [num_envs, drone.n, drone_state_dim]
+        state["state_frame"] = frame_state                # [num_envs, 1, frame_state_dim]
         
         pos_error = torch.norm(self.target_frame_rpos, dim=-1, keepdim=True)
         heading_alignment = torch.sum(self.frame_heading * self.target_heading, dim=-1, keepdim=True)

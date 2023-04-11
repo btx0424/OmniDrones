@@ -1,4 +1,4 @@
-name: PlatformHover
+name: PlatformFlyThrough
 
 defaults:
   - /env_base
@@ -12,6 +12,8 @@ drone_model: Hummingbird
 reward_effort_weight: 0.1
 reward_distance_scale: 1.0
 arm_length: 0.85
+obstacle_spacing: 1.
+reset_on_collision: false
 
 flatten_obs: true
 flatten_state: true

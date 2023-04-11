@@ -16,7 +16,7 @@ parameters:
     - InvertedPendulum
 
   total_frames: 
-    value: 120_000_000
+    value: 110_000_000
 
   headless:
     value: true

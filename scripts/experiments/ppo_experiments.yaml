@@ -12,8 +12,10 @@ parameters:
 
   task: 
     values: 
-    - Hover
-    - InvertedPendulum
+    # - Hover
+    # - InvertedPendulum
+    - FlyThrough
+    - InvertedPendulumFlyThrough
 
   total_frames: 
     value: 110_000_000
@@ -50,8 +52,8 @@ parameters:
   #   max: 0.01
   #   min: 0.0001
 
-  algo.entropy_coef:
-    values: [0.001, 0.0001]
+  # algo.entropy_coef:
+  #   values: [0.001, 0.0001]
 
 command:
   - ${env}

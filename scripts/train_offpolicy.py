@@ -32,12 +32,12 @@ def main(cfg):
     print(OmegaConf.to_yaml(cfg))
 
     from omni_drones.envs.isaac_env import IsaacEnv
-    from omni_drones.learning.sac import MASACPolicy
+    from omni_drones.learning import MASACPolicy, TD3Policy
     from omni_drones.learning.qmix import QMIX
     from omni_drones.learning.dqn import DQN
     from omni_drones.sensors.camera import Camera
 
-    policies = {"qmix": QMIX, "sac": MASACPolicy, "dqn": DQN}
+    policies = {"qmix": QMIX, "sac": MASACPolicy, "dqn": DQN, "td3": TD3Policy}
 
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
     base_env = env_class(cfg, headless=cfg.headless)

@@ -97,7 +97,7 @@ def main(cfg):
     )
     
     camera = Camera(camera_cfg)
-    camera.spawn(["/World/Camera"], translations=[(7.5, 7.5, 7.5)], targets=[(0, 0, 1.5)])
+    camera.spawn(["/World/Camera"], translations=[(7.5, 7.5, 7.5)], targets=[(0, 0, 0.5)])
     camera.initialize("/World/Camera")
 
     # TODO: create a agent_spec view for TransformedEnv

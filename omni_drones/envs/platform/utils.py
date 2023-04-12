@@ -19,7 +19,7 @@ def create_frame(
     arm_angles: Sequence[float],
     arm_lengths: Sequence[float],
     to_prim_paths: Optional[Sequence[str]]=None,
-    joint_damping: float = 0.005,
+    joint_damping: float = 0.002,
     color: Sequence[float] = (0.5, 0.5, 0.2),
     enable_collision: bool = False,
     exclude_from_articulation: bool = False,

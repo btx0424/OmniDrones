@@ -61,7 +61,7 @@ class TransportationGroup(RobotBase):
                 prim_path=f"{prim_path}/payload",
                 prim_type="Cube",
                 translation=(0.0, 0.0, -1.1),
-                scale=(0.5, 0.5, 0.2),
+                scale=(0.75, 0.5, 0.2),
             )
 
             script_utils.setRigidBody(payload, "convexHull", False)
@@ -77,10 +77,10 @@ class TransportationGroup(RobotBase):
 
             drone_translations = torch.tensor(
                 [
-                    [0.5, 0.5, 0],
-                    [0.5, -0.5, 0],
-                    [-0.5, -0.5, 0],
-                    [-0.5, 0.5, 0],
+                    [0.75, 0.5, 0],
+                    [0.75, -0.5, 0],
+                    [-0.75, -0.5, 0],
+                    [-0.75, 0.5, 0],
                 ]
             )
 

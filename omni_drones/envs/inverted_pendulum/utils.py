@@ -17,6 +17,7 @@ def create_pendulum(
         translation=(0., 0., bar_length / 2.),
         attributes={"radius": 0.01, "height": bar_length}
     )
+    bar.GetAttribute('primvars:displayColor').Set([(0.8, 0.1, 0.1)])
     UsdPhysics.RigidBodyAPI.Apply(bar)
     UsdPhysics.CollisionAPI.Apply(bar)
     massAPI = UsdPhysics.MassAPI.Apply(bar)

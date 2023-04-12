@@ -79,8 +79,8 @@ class TransportHover(IsaacEnv):
             torch.as_tensor(self.cfg.task.payload_mass_max, device=self.device)
         )
         self.init_pos_dist = D.Uniform(
-            torch.tensor([-2.5, -2.5, 1.], device=self.device),
-            torch.tensor([2.5, 2.5, 2.5], device=self.device)
+            torch.tensor([-3, -3, 1.], device=self.device),
+            torch.tensor([3., 3., 2.5], device=self.device)
         )
         self.init_rpy_dist = D.Uniform(
             torch.tensor([0., 0., 0.], device=self.device) * torch.pi,
@@ -109,7 +109,7 @@ class TransportHover(IsaacEnv):
         DynamicCuboid(
             "/World/envs/env_0/payloadTargetVis",
             translation=torch.tensor([0., 0., 2.]),
-            scale=torch.tensor([0.5, 0.5, 0.2]),
+            scale=torch.tensor([0.75, 0.5, 0.2]),
             color=torch.tensor([0.8, 0.1, 0.1]),
             size=2.01,
         )

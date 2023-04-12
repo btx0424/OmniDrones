@@ -1,28 +1,28 @@
-name: sac
+name: td3
 
 buffer_size: 409600
-train_every: 20
+train_every: 80
 batch_size: 2560
 gamma: 0.95
 tau: 0.005
 reward_weights: null
 max_grad_norm: 5
 
-share_actor: true
-
 gradient_steps: 640
+target_noise: 0.05
+policy_noise: 0.1
+noise_clip: 0.2
 
 actor:
   hidden_units: [128, 128]
   lr: 0.0003
-  layer_norm: true
+  layern_norm: true
 
 critic:
   hidden_units: [128, 128]
   lr: 0.0003
   layer_norm: true
 
-alpha_lr: 0.005
-
 actor_delay: 2
 target_update_interval: 4
+critic_loss: mse_loss

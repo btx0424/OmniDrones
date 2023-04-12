@@ -28,7 +28,7 @@ def create_obstacles(
         prim_path=prim_path,
         prim_type="Capsule",
         translation=translation,
-        attributes={"axis":"Y", "radius":0.05, "height": width}
+        attributes={"axis": "Y", "radius": 0.04, "height": width}
     )
     UsdPhysics.RigidBodyAPI.Apply(prim)
     UsdPhysics.CollisionAPI.Apply(prim)
@@ -50,12 +50,6 @@ class InvertedPendulumFlyThrough(IsaacEnv):
 
         self.drone.initialize()
 
-        # create and initialize additional views
-        self.payload = RigidPrimView(
-            f"/World/envs/env_*/{self.drone.name}_*/payload",
-        )
-        self.payload.initialize()
-
         self.obstacles = RigidPrimView(
             "/World/envs/env_*/obstacle_*",
             reset_xform_properties=False,
@@ -63,6 +57,14 @@ class InvertedPendulumFlyThrough(IsaacEnv):
             track_contact_forces=True
         )
         self.obstacles.initialize()
+        self.payload = RigidPrimView(
+            f"/World/envs/env_*/{self.drone.name}_*/payload",
+        )
+        self.payload.initialize()
+        self.bar = RigidPrimView(
+            f"/World/envs/env_*/{self.drone.name}_*/bar",
+        )
+        self.bar.initialize()
 
         self.init_poses = self.drone.get_world_poses(clone=True)
         self.init_vels = torch.zeros_like(self.drone.get_velocities())
@@ -123,7 +125,11 @@ class InvertedPendulumFlyThrough(IsaacEnv):
         create_obstacles("/World/envs/env_0/obstacle_1", translation=(0., 0., 1.2+obstacle_spacing))
 
         self.drone.spawn(translations=[(0.0, 0.0, 2.)])
-        create_pendulum(f"/World/envs/env_0/{self.drone.name}_0", self.cfg.task.bar_length)
+        create_pendulum(
+            f"/World/envs/env_0/{self.drone.name}_0", 
+            self.cfg.task.bar_length,
+            payload_radius=0.04
+        )
 
         self.payload_target_pos = torch.tensor([1.5, 0., 2.3], device=self.device)
         sphere = objects.DynamicSphere(
@@ -199,9 +205,15 @@ class InvertedPendulumFlyThrough(IsaacEnv):
         swing = torch.norm(self.payload_vels[..., :3], dim=-1, keepdim=True)
         swing_reward = 1. * torch.exp(-swing)
 
+        # collision = (
+        #     self.bar
+        #     .get_net_contact_forces()
+        #     .any(-1, keepdim=True)
+        # )
         collision = (
-            self.bar
+            self.obstacles
             .get_net_contact_forces()
+            .any(-1)
             .any(-1, keepdim=True)
         )
         collision_reward = collision.float()
@@ -212,7 +224,7 @@ class InvertedPendulumFlyThrough(IsaacEnv):
             pos_reward
             + pos_reward * (bar_up_reward + spin_reward + swing_reward) 
             + effort_reward
-        )* (1 - collision_reward) ).unsqueeze(-1)
+        ) * (1 - collision_reward) ).unsqueeze(-1)
         
         done_misbehave = (
             (pos[..., 2] < 0.2) 

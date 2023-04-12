@@ -81,12 +81,12 @@ class InvertedPendulum(IsaacEnv):
         )
 
         self.drone.spawn(translations=[(0.0, 0.0, 2.)])
-        create_pendulum(f"/World/envs/env_0/{self.drone.name}_0", 1.)
+        create_pendulum(f"/World/envs/env_0/{self.drone.name}_0", 1., 0.04)
 
         sphere = objects.DynamicSphere(
             "/World/envs/env_0/target",
             translation=(0., 0., 2.5),
-            radius=0.08,
+            radius=0.05,
             color=torch.tensor([1., 0., 0.])
         )
         kit_utils.set_collision_properties(sphere.prim_path, collision_enabled=False)

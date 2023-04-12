@@ -40,6 +40,7 @@ class MASACPolicy(object):
         self.reward_weights = reward_weights
 
         self.gradient_steps = int(cfg.gradient_steps)
+        self.buffer_size = int(cfg.buffer_size)
         self.batch_size = int(cfg.batch_size)
 
         self.obs_name = f"{self.agent_spec.name}.obs"
@@ -61,7 +62,7 @@ class MASACPolicy(object):
 
         self.replay_buffer = TensorDictReplayBuffer(
             batch_size=self.batch_size,
-            storage=LazyTensorStorage(max_size=self.cfg.buffer_size, device=self.device),
+            storage=LazyTensorStorage(max_size=self.buffer_size, device=self.device),
             sampler=RandomSampler(),
         )
     
@@ -107,7 +108,7 @@ class MASACPolicy(object):
         
         self.critic_target = copy.deepcopy(self.critic)
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=self.cfg.critic.lr)       
-        self.critic_loss_fn = F.mse_loss
+        self.critic_loss_fn = {"mse": F.mse_loss, "smooth_l1": F.smooth_l1_loss}[self.cfg.critic_loss]
 
     def __call__(self, tensordict: TensorDict, deterministic: bool=False) -> TensorDict:
         actor_input = tensordict.select(*self.policy_in_keys)

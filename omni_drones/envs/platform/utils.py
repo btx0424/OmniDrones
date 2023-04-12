@@ -22,20 +22,23 @@ def create_frame(
     joint_damping: float = 0.005,
     color: Sequence[float] = (0.5, 0.5, 0.2),
     enable_collision: bool = False,
+    exclude_from_articulation: bool = False,
 ):
-    if not len(arm_angles) == len(arm_lengths):
-        raise ValueError
     if isinstance(arm_angles, torch.Tensor):
         arm_angles = arm_angles.tolist()
     if isinstance(arm_lengths, torch.Tensor):
         arm_lengths = arm_lengths.tolist()
 
     stage = stage_utils.get_current_stage()
-    prim_xform = prim_utils.define_prim(prim_path)
+    prim_xform = prim_utils.create_prim(prim_path, translation=(0., 0., 0.))
     
     arms = []
     if to_prim_paths is None:
         to_prim_paths = [None for _ in range(len(arm_angles))]
+
+    if not len(arm_angles) == len(arm_lengths) == len(to_prim_paths):
+        raise ValueError
+    
     for i, (arm_angle, arm_length, to_prim_path) in enumerate(
         zip(arm_angles, arm_lengths, to_prim_paths)
     ):
@@ -54,7 +57,11 @@ def create_frame(
         capsuleGeom.AddScaleOp().Set(Gf.Vec3f(1.0, 1.0, 1.0))
         capsuleGeom.CreateDisplayColorAttr().Set([color])
 
-        arms.append(capsuleGeom.GetPrim())
+        UsdPhysics.CollisionAPI.Apply(capsuleGeom.GetPrim())
+        prim: Usd.Prim = capsuleGeom.GetPrim()
+        prim.GetAttribute("physics:collisionEnabled").Set(enable_collision)
+
+        arms.append(prim)
 
         if to_prim_path is not None:
             to_prim = prim_utils.get_prim_at_path(to_prim_path)
@@ -66,7 +73,7 @@ def create_frame(
             joint.GetAttribute("limit:rotX:physics:high").Set(torch.inf)
             joint.GetAttribute("limit:rotY:physics:low").Set(-torch.inf)
             joint.GetAttribute("limit:rotY:physics:high").Set(torch.inf)
-            joint.GetAttribute("physics:excludeFromArticulation").Set(True)
+            joint.GetAttribute("physics:excludeFromArticulation").Set(exclude_from_articulation)
 
             UsdPhysics.DriveAPI.Apply(joint, "rotX")
             UsdPhysics.DriveAPI.Apply(joint, "rotY")
@@ -74,13 +81,14 @@ def create_frame(
             joint.GetAttribute("drive:rotY:physics:damping").Set(joint_damping)
 
     script_utils.setRigidBody(prim_xform, "convexHull", False)
-
+    UsdPhysics.RigidBodyAPI.Apply(prim_xform)
     massAPI = UsdPhysics.MassAPI.Apply(prim_xform)
     massAPI.CreateMassAttr().Set(0.2)
 
     for arm in arms:
         arm.GetAttribute("physics:collisionEnabled").Set(enable_collision)
     return prim_xform
+
 
 class OveractuatedPlatform(RobotBase):
 
@@ -144,18 +152,24 @@ class OveractuatedPlatform(RobotBase):
                     prim=drone_prim,
                 )
 
-            frame_prim = create_frame(
+            create_frame(
                 f"/World/envs/env_0/{self.name}_{i}/frame",
-                [torch.pi * 2 / n * j for j in range(4)],
+                [torch.pi / 2 * j for j in range(4)],
                 [arm_length for j in range(4)],
-                # [
-                #     f"/World/envs/env_0/{self.name}_{i}/{self.drone.name}_{j}/base_link"
-                #     for j in range(n)
-                # ],
-                enable_collision=enable_collision
+                [
+                    f"/World/envs/env_0/{self.name}_{i}/{self.drone.name}_{j}/base_link"
+                    for j in range(4)
+                ],
+                enable_collision=enable_collision,
+                exclude_from_articulation=False
             )
             UsdPhysics.ArticulationRootAPI.Apply(xform)
             PhysxSchema.PhysxArticulationAPI.Apply(xform)
+
+            kit_utils.set_nested_collision_properties(
+                f"/World/envs/env_0/{self.name}_{i}/frame",
+                contact_offset=0.02,
+            )
 
             if self.is_articulation:
                 kit_utils.set_articulation_properties(
@@ -172,11 +186,6 @@ class OveractuatedPlatform(RobotBase):
     def initialize(self, prim_paths_expr: str = None):
         super().initialize(prim_paths_expr)
         self.drone.initialize(f"/World/envs/env_.*/{self.name}_*/{self.drone.name}_*")
-        self.frame = RigidPrimView(
-            f"/World/envs/env_.*/{self.name}_*/frame",
-            reset_xform_properties=False
-        )
-        self.frame.initialize()
 
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
         self.drone.apply_action(actions)

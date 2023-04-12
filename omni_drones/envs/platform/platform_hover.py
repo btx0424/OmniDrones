@@ -135,6 +135,7 @@ class PlatformHover(IsaacEnv):
                 for i in range(n)
             ],
             enable_collision=False,
+            exclude_from_articulation=True,
         )
         target_prim_path = create_frame(
             "/World/envs/env_0/target",
@@ -142,7 +143,6 @@ class PlatformHover(IsaacEnv):
             arm_lengths,
             enable_collision=False,
         ).GetPath().pathString
-        # kit_utils.set_collision_properties(target_prim_path, collision_enabled=False)
         kit_utils.set_rigid_body_properties(target_prim_path, disable_gravity=True)
 
         design_scene()

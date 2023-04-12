@@ -68,7 +68,7 @@ class PlatformFlyThrough(IsaacEnv):
             "/World/envs/env_*/obstacle_*",
             reset_xform_properties=False,
             shape=[self.num_envs, -1],
-            track_contact_forces=True
+            # track_contact_forces=True
         )
         self.obstacles.initialize()
 
@@ -264,6 +264,14 @@ class PlatformFlyThrough(IsaacEnv):
         
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort).mean(-1, keepdim=True)
 
+        collision = (
+            self.obstacles
+            .get_net_contact_forces()
+            .any(-1)
+            .any(-1, keepdim=True)
+        )
+        collision_reward = collision.float()
+        
         reward[:] = (
             reward_pose 
             + reward_pose * (reward_spin) 

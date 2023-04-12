@@ -101,7 +101,7 @@ class PlatformFlyThrough(IsaacEnv):
         )
 
         self.init_pos_dist = D.Uniform(
-            torch.tensor([-2.5, -.5, 1.5], device=self.device),
+            torch.tensor([-2.5, -.5, 1.75], device=self.device),
             torch.tensor([-2.0, 0.5, 2.5], device=self.device)
         )
         self.init_rpy_dist = D.Uniform(
@@ -109,7 +109,7 @@ class PlatformFlyThrough(IsaacEnv):
             torch.tensor([0.4, 0.4, 2], device=self.device) * torch.pi
         )
         
-        self.target_pos = torch.tensor([2.0, 0., 2.], device=self.device)
+        self.target_pos = torch.tensor([2.0, 0., 2.25], device=self.device)
         self.target_heading =  torch.zeros(self.num_envs, 3, device=self.device)
         self.target_up = torch.zeros(self.num_envs, 3, device=self.device)
 

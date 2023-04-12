@@ -64,21 +64,21 @@ class PlatformFlyThrough(IsaacEnv):
         self.reward_distance_scale = self.cfg.task.reward_distance_scale
         self.reset_on_collision = self.cfg.task.reset_on_collision
 
-        # self.obstacles = RigidPrimView(
-        #     "/World/envs/env_*/obstacle_*",
-        #     reset_xform_properties=False,
-        #     shape=[self.num_envs, -1],
-        #     # track_contact_forces=True
-        # )
-        # self.obstacles.initialize()
+        self.obstacles = RigidPrimView(
+            "/World/envs/env_*/obstacle_*",
+            reset_xform_properties=False,
+            shape=[self.num_envs, -1],
+            track_contact_forces=True
+        )
+        self.obstacles.initialize()
 
         self.drone.initialize(f"/World/envs/env_.*/platform/{self.drone.name}_*")
-        self.init_drone_poses = self.drone.get_world_poses(clone=True)
         self.init_drone_vels = torch.zeros_like(self.drone.get_velocities())
 
         self.frame_view = RigidPrimView(
             "/World/envs/env_.*/platform/frame",
-            reset_xform_properties=False
+            reset_xform_properties=False,
+            track_contact_forces=True
         )
         self.frame_view.initialize()
         self.frame_view.post_reset()
@@ -165,6 +165,7 @@ class PlatformFlyThrough(IsaacEnv):
                 f"/World/envs/env_0/platform/{self.drone.name}_{i}/base_link"
                 for i in range(n)
             ],
+            enable_collision=True
         )
         design_scene()
 
@@ -253,14 +254,12 @@ class PlatformFlyThrough(IsaacEnv):
         )
 
     def _compute_reward_and_done(self):
-        vels = self.frame_view.get_velocities()
-
         distance = torch.norm(self.target_frame_rpos, dim=-1, keepdim=True)
         
         reward = torch.zeros(self.num_envs, 4, 1, device=self.device)
         reward_pose = 1 / (1 + torch.square(distance * self.reward_distance_scale))
         
-        spinnage = vels[:, -3:].abs().sum(-1, keepdim=True)
+        spinnage = self.frame_vels[:, -3:].abs().sum(-1, keepdim=True)
         reward_spin = 1. / (1 + torch.square(spinnage))
         
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort).mean(-1, keepdim=True)

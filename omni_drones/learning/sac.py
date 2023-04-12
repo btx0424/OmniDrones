@@ -106,17 +106,7 @@ class MASACPolicy(object):
         self.critic_target = copy.deepcopy(self.critic)
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=self.cfg.critic_lr)       
         self.critic_loss_fn = F.mse_loss
-        
-        self.value_func = functorch.vmap(
-            TensorDictModule(
-                self.critic,
-                in_keys=self.value_in_keys,
-                out_keys=self.value_out_keys,
-            ), 
-            in_dims=1, out_dims=1
-        )
 
-    
     def __call__(self, tensordict: TensorDict, deterministic: bool=False) -> TensorDict:
         actor_input = tensordict.select(*self.policy_in_keys)
         actor_input.batch_size = [*actor_input.batch_size, self.agent_spec.n]

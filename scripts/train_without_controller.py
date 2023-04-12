@@ -168,7 +168,8 @@ def main(cfg):
             "rollout_fps": collector._fps,
             "frames": collector._frames,
         })
-
+    
+    logging.info(f"Final Eval at {collector._frames} steps.")
     info = {"env_frames": collector._frames}
     info.update(evaluate())
     run.log(info)

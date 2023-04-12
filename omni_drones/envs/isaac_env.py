@@ -177,6 +177,7 @@ class IsaacEnv(EnvBase):
         raise NotImplementedError
 
     def close(self):
+        return # TODO: fix this
         if not self._is_closed:
             # stop physics simulation (precautionary)
             self.sim.stop()

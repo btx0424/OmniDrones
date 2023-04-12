@@ -18,8 +18,6 @@ from omni_drones.robots.drone import MultirotorBase
 
 class TransportationGroup(RobotBase):
 
-    usd_path = ASSET_PATH + "/usd/group.usd"
-
     def __init__(
         self,
         name: str = "Group",

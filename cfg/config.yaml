@@ -13,7 +13,7 @@ viewer:
 
 wandb:
   group: ${oc.select:..task.name}
-  run_name: ${oc.select:..task.name,test}
+  run_name: ${oc.select:..task.name,test}-${oc.select:..algo.name,none}
   job_type: train
   entity: marl-drones
   project: gpu-onpolicy

@@ -9,7 +9,7 @@ max_grad_norm: 5
 
 share_actor: true
 
-gradient_steps: 1024
+gradient_steps: 2048
 
 actor:
   hidden_units: [256, 128]

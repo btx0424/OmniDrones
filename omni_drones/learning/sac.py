@@ -147,7 +147,7 @@ class MASACPolicy(object):
                     assert not torch.isnan(target_q).any()
 
                 qs = self.critic(state, actions)
-                critic_loss = sum(F.mse_loss(q, target_q) for q in qs.unbind(-1))
+                critic_loss = sum(self.critic_loss_fn(q, target_q) for q in qs.unbind(-1))
                 self.critic_opt.zero_grad()
                 critic_loss.backward()
                 critic_grad_norm = nn.utils.clip_grad_norm_(self.critic.parameters(), self.cfg.max_grad_norm)
@@ -164,8 +164,9 @@ class MASACPolicy(object):
                         actor_output = self.actor(transition, deterministic=False)
                         act = actor_output[self.act_name]
                         logp = actor_output[f"{self.agent_spec.name}.logp"]
+
                         qs = self.critic(state, act)
-                        q = torch.min(qs, dim=-1)[0]
+                        q = torch.min(qs, dim=-1).values
                         actor_loss = (self.log_alpha.exp() * logp - q).mean()
                         self.actor_opt.zero_grad()
                         actor_loss.backward()
@@ -180,12 +181,13 @@ class MASACPolicy(object):
                         infos_actor.append(TensorDict({
                             "actor_loss": actor_loss,
                             "actor_grad_norm": actor_grad_norm,
+                            "entropy": -logp.mean(),
                             "alpha": self.log_alpha.exp().detach(),
                             "alpha_loss": alpha_loss,
                         }, []))
 
 
-                if gradient_step % self.cfg.target_update_interval == 0:
+                if (gradient_step + 1) % self.cfg.target_update_interval == 0:
                     with torch.no_grad():
                         soft_update(self.critic_target, self.critic, self.cfg.tau)
         

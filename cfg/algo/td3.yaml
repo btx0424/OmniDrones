@@ -15,7 +15,7 @@ noise_clip: 0.2
 actor:
   hidden_units: [256, 128]
   lr: 0.0005
-  layern_norm: true
+  layer_norm: true
 
 critic:
   hidden_units: [256, 128]

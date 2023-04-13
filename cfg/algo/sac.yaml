@@ -1,11 +1,10 @@
 name: sac
 
-buffer_size: 819200
-train_every: 20
-batch_size: 2560
+buffer_size: 409600
+train_every: 32
+batch_size: 4096
 gamma: 0.95
 tau: 0.005
-reward_weights: null
 max_grad_norm: 5
 
 share_actor: true
@@ -13,12 +12,12 @@ share_actor: true
 gradient_steps: 1024
 
 actor:
-  hidden_units: [128, 128]
+  hidden_units: [256, 128]
   lr: 0.0005
   layer_norm: true
 
 critic:
-  hidden_units: [128, 128]
+  hidden_units: [256, 128]
   lr: 0.0005
   layer_norm: true
 

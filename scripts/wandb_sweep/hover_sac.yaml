@@ -13,6 +13,12 @@ parameters:
   task: 
     value: Hover
 
+  task.env.num_envs:
+    value: 512
+
+  algo:
+    value: sac
+  
   total_frames: 
     value: 10_000_000
 

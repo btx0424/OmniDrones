@@ -43,14 +43,17 @@ def main(cfg):
     base_env = env_class(cfg, headless=cfg.headless)
 
     def log(info):
-        for k, v in info.items():
-            print(f"{k}: {v}")
+        print(OmegaConf.to_yaml(info))
         run.log(info)
 
+    info_keys = [
+        k for k in base_env.observation_spec.keys(True, True) 
+        if isinstance(k, tuple) and k[0]=="info"
+    ]
     logger = LogOnEpisode(
         cfg.env.num_envs,
-        in_keys=["return", "progress"],
-        log_keys=["train/return", "train/ep_length"],
+        in_keys=["return", "progress", *info_keys],
+        log_keys=["return", "ep_length", *info_keys],
         logger_func=log,
     )
 
@@ -143,7 +146,7 @@ def main(cfg):
     info = {"env_frames": collector._frames}
     info.update(evaluate())
     run.log(info)
-    
+
     simulation_app.close()
 
 

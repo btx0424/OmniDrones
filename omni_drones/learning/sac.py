@@ -33,12 +33,6 @@ class MASACPolicy(object):
         self.agent_spec = agent_spec
         self.device = device
 
-        if cfg.reward_weights is not None:
-            reward_weights = torch.as_tensor(cfg.reward_weights, device=self.device).float() 
-        else:
-            reward_weights = torch.ones(self.agent_spec.reward_spec.shape, device=self.device)
-        self.reward_weights = reward_weights
-
         self.gradient_steps = int(cfg.gradient_steps)
         self.buffer_size = int(cfg.buffer_size)
         self.batch_size = int(cfg.batch_size)
@@ -190,7 +184,6 @@ class MASACPolicy(object):
                             "alpha_loss": alpha_loss,
                         }, []))
 
-                t.set_postfix({"critic_loss": critic_loss.item()})
 
                 if gradient_step % self.cfg.target_update_interval == 0:
                     with torch.no_grad():

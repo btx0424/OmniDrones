@@ -35,6 +35,8 @@ class TD3Policy(object):
 
         self.gradient_steps = int(cfg.gradient_steps)
         self.batch_size = int(cfg.batch_size)
+        self.buffer_size = int(cfg.buffer_size)
+        
         self.target_noise = self.cfg.target_noise
         self.policy_noise = self.cfg.policy_noise
         self.noise_clip = self.cfg.noise_clip
@@ -51,7 +53,8 @@ class TD3Policy(object):
         self.make_model()        
 
         self.replay_buffer = TensorDictReplayBuffer(
-            storage=LazyTensorStorage(max_size=self.cfg.buffer_size, device=self.device),
+            batch_size=self.batch_size,
+            storage=LazyTensorStorage(max_size=self.buffer_size, device=self.device),
             sampler=RandomSampler(),
         )
     
@@ -64,7 +67,8 @@ class TD3Policy(object):
         self.actor = TensorDictModule(
             nn.Sequential(
                 encoder,
-                nn.LazyLinear(self.action_dim)
+                nn.LazyLinear(self.action_dim),
+                nn.Tanh()
             ),
             in_keys=self.policy_in_keys, out_keys=self.policy_out_keys
         ).to(self.device)
@@ -93,7 +97,7 @@ class TD3Policy(object):
         
         self.critic_target = copy.deepcopy(self.critic)
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=self.cfg.critic.lr)       
-        self.critic_loss_fn = F.mse_loss
+        self.critic_loss_fn = {"mse":F.mse_loss, "smooth_l1": F.smooth_l1_loss}[self.cfg.critic_loss]
 
     def __call__(self, tensordict: TensorDict, deterministic: bool=False) -> TensorDict:
         actor_input = tensordict.select(*self.policy_in_keys)
@@ -138,10 +142,10 @@ class TD3Policy(object):
                     action_noise = (
                         next_action
                         .clone()
-                        .normal_(0, self.target_policy_noise)
-                        .clamp_(-self.target_noise_clip, self.target_noise_clip)
+                        .normal_(0, self.target_noise)
+                        .clamp_(-self.noise_clip, self.noise_clip)
                     )
-                    next_action = next_action + action_noise
+                    next_action = torch.clamp(next_action + action_noise, -1, 1)
 
                     next_qs = self.critic_target(next_state, next_action)
                     next_q = torch.min(next_qs, dim=-1, keepdim=True).values
@@ -168,7 +172,8 @@ class TD3Policy(object):
                         action = actor_output[self.act_name]
 
                         qs = self.critic(state, action)
-                        actor_loss = - qs.mean()
+                        q = torch.min(qs, dim=-1, keepdim=True).values
+                        actor_loss = - q.mean()
 
                         self.actor_opt.zero_grad()
                         actor_loss.backward()

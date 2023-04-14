@@ -415,7 +415,7 @@ def make_ppo_actor(cfg, observation_spec: TensorSpec, action_spec: TensorSpec):
     if isinstance(action_spec, MultiDiscreteTensorSpec):
         act_dist = MultiCategoricalModule(
             encoder.output_shape.numel(), 
-            torch.as_tensor(action_spec.nvec.storage().float())
+            torch.as_tensor(action_spec.nvec.storage().float()).long()
         )
     elif isinstance(action_spec, DiscreteTensorSpec):
         act_dist = MultiCategoricalModule(encoder.output_shape.numel(), [action_spec.space.n])

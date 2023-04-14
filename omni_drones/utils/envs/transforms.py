@@ -52,7 +52,7 @@ class LogOnEpisode(Transform):
                 tensordict.batch_size, dtype=torch.bool, device=tensordict.device
             )
         if _reset.any():
-            _reset = _reset.squeeze(-1)
+            _reset = _reset.all(-1).nonzero().squeeze(-1)
             self.stats.extend(
                 tensordict[_reset].select(*self.in_keys).clone().unbind(0)
             )

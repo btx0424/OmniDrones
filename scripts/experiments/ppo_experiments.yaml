@@ -18,7 +18,7 @@ parameters:
     - InvertedPendulumFlyThrough
 
   total_frames: 
-    value: 110_000_000
+    value: 150_000_000
 
   headless:
     value: true
@@ -27,14 +27,14 @@ parameters:
     values: [0, 42, 81]
 
   task.drone_model:
-    values: [Firefly, Hummingbird, Omav]
+    values: [Firefly, Hummingbird]
 
   task.action_transform:
     values:
       - None # sweep does not support passing "null"
-      - multidiscrete:2
+      # - multidiscrete:2
       - multidiscrete:5
-      # - discrete:2
+      - discrete:2
 
   # algo.num_minibatches:
   #   values: [16, 32]

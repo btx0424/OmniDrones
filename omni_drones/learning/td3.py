@@ -188,8 +188,6 @@ class TD3Policy(object):
                     with torch.no_grad():
                         soft_update(self.actor_target, self.actor, self.cfg.tau)
                         soft_update(self.critic_target, self.critic, self.cfg.tau)
-
-                t.set_postfix({"critic_loss": critic_loss.item()})
         
         infos = {**torch.stack(infos_actor), **torch.stack(infos_critic)}
         infos = {k: torch.mean(v).item() for k, v in infos.items()}

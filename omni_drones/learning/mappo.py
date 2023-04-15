@@ -397,7 +397,7 @@ def make_dataset_naive(
             yield tensordict[indices]
 
 
-from .utils.distributions import (
+from .modules.distributions import (
     DiagGaussian,
     MultiCategoricalModule,
 )

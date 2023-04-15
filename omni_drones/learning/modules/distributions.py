@@ -59,59 +59,59 @@ class DiagGaussian(nn.Module):
         return dist
 
 
-class SafeTanhTransform(D.TanhTransform):
-    """Safe version of TanhTransform that avoids NaNs."""
+# class SafeTanhTransform(D.TanhTransform):
+#     """Safe version of TanhTransform that avoids NaNs."""
 
-    def _inverse(self, y: torch.Tensor):
-        eps = torch.finfo(y.dtype).eps
-        y = y.clamp(-1 + eps, 1 - eps)
-        return torch.atanh(y)
+#     def _inverse(self, y: torch.Tensor):
+#         eps = torch.finfo(y.dtype).eps
+#         y = y.clamp(-1 + eps, 1 - eps)
+#         return torch.atanh(y)
 
 
-class TanhIndependentNormal(D.TransformedDistribution):
-    arg_constraints = {"loc": constraints.real, "scale": constraints.positive}
+# class TanhIndependentNormal(D.TransformedDistribution):
+#     arg_constraints = {"loc": constraints.real, "scale": constraints.positive}
 
-    def __init__(
-        self,
-        loc: torch.Tensor,
-        scale: torch.Tensor,
-        min: Union[torch.Tensor, Number] = -1.0,
-        max: Union[torch.Tensor, Number] = 1.0,
-        event_dims=1,
-    ):
-        self.min = torch.as_tensor(min, device=loc.device).broadcast_to(loc.shape)
-        self.max = torch.as_tensor(max, device=loc.device).broadcast_to(loc.shape)
-        self._loc = (self.min + self.max) / 2
-        self._scale = (self.max - self.min) / 2
-        self.eps = torch.finfo(loc.dtype).eps
-        base_dist = D.Independent(D.Normal(loc, scale), event_dims)
-        t = SafeTanhTransform()
+#     def __init__(
+#         self,
+#         loc: torch.Tensor,
+#         scale: torch.Tensor,
+#         min: Union[torch.Tensor, Number] = -1.0,
+#         max: Union[torch.Tensor, Number] = 1.0,
+#         event_dims=1,
+#     ):
+#         self.min = torch.as_tensor(min, device=loc.device).broadcast_to(loc.shape)
+#         self.max = torch.as_tensor(max, device=loc.device).broadcast_to(loc.shape)
+#         self._loc = (self.min + self.max) / 2
+#         self._scale = (self.max - self.min) / 2
+#         self.eps = torch.finfo(loc.dtype).eps
+#         base_dist = D.Independent(D.Normal(loc, scale), event_dims)
+#         t = SafeTanhTransform()
 
-        super().__init__(base_dist, t)
+#         super().__init__(base_dist, t)
 
-    def sample(self, sample_shape: torch.Size = torch.Size()):
-        return super().sample(sample_shape) * self._scale + self._loc
+#     def sample(self, sample_shape: torch.Size = torch.Size()):
+#         return super().sample(sample_shape) * self._scale + self._loc
 
-    def rsample(self, sample_shape: torch.Size = torch.Size()):
-        return super().rsample(sample_shape) * self._scale + self._loc
+#     def rsample(self, sample_shape: torch.Size = torch.Size()):
+#         return super().rsample(sample_shape) * self._scale + self._loc
 
-    def log_prob(self, value: torch.Tensor):
-        return super().log_prob(
-            ((value - self._loc) / self._scale).clamp(-1 + self.eps, 1 - self.eps)
-        )
+#     def log_prob(self, value: torch.Tensor):
+#         return super().log_prob(
+#             ((value - self._loc) / self._scale).clamp(-1 + self.eps, 1 - self.eps)
+#         )
 
-    @property
-    def mode(self):
-        m = self.base_dist.mode
-        return torch.tanh(m)
+#     @property
+#     def mode(self):
+#         m = self.base_dist.mode
+#         return torch.tanh(m)
 
-    @property
-    def mean(self):
-        return self.mode
+#     @property
+#     def mean(self):
+#         return self.mode
 
-    def entropy(self):
-        return -self.log_prob(self.rsample(self.batch_shape))
-
+#     def entropy(self):
+#         return -self.log_prob(self.rsample(self.batch_shape))
+from torchrl.modules.distributions import TanhNormal
 
 class IndependentNormal(D.Independent):
     arg_constraints = {"loc": constraints.real, "scale": constraints.positive}
@@ -206,7 +206,7 @@ class TanhIndependentNormalModule(nn.Module):
             raise ValueError("scale_mapping must be a string or a callable function.")
         self.scale_lb = scale_lb
         self.dist_cls = functools.partial(
-            TanhIndependentNormal, min=min, max=max, event_dims=event_dims
+            TanhNormal, min=min, max=max, event_dims=event_dims
         )
 
     def forward(self, tensor: torch.Tensor) -> Tuple[torch.Tensor]:

@@ -127,7 +127,7 @@ class PlatformFlyThrough(IsaacEnv):
     def _design_scene(self):
         drone_model = self.cfg.task.drone_model
         self.drone: MultirotorBase = MultirotorBase.REGISTRY[drone_model]()
-        n = 4
+        
         arm_length = self.cfg.task.arm_length
         self.platform = OveractuatedPlatform(drone=self.drone,)
         self.platform.spawn(

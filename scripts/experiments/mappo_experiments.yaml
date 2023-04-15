@@ -16,21 +16,23 @@ parameters:
     - happo
   
   algo.actor.hidden_units:
-    value: [128, 128, 64]
+    value: [256, 128, 128]
 
   algo.critic.hidden_units:
-    value: [128, 128, 64]
+    value: [256, 128, 128]
 
   algo.critic_input:
     value: state
 
   task: 
     values: 
-    - TransportHover
-    - PlatformHover
+    - TransportHover # easy
+    - PlatformHover # easy
+    # - TransportFlyThrough # hard
+    # - PlatformFlyThrough # medium
 
   total_frames: 
-    value: 110_000_000
+    value: 155_000_000
 
   headless:
     value: true

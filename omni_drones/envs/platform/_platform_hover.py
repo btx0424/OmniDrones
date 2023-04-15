@@ -17,7 +17,7 @@ from omni_drones.robots.drone import MultirotorBase
 from omni_drones.utils.scene import design_scene
 from omni_drones.utils.torch import euler_to_quaternion
 
-from .utils import create_frame
+from .utils import create_frame, OveractuatedPlatform
 
 
 def compose_transform(
@@ -40,22 +40,16 @@ class PlatformHover(IsaacEnv):
         self.reward_effort_weight = self.cfg.task.reward_effort_weight
         self.reward_distance_scale = self.cfg.task.reward_distance_scale
 
-        self.drone.initialize(f"/World/envs/env_.*/platform/{self.drone.name}_*")
+        self.platform.initialize()
+
         self.target_vis = RigidPrimView(
             "/World/envs/env_*/target",
             reset_xform_properties=False
         ).initialize()
-        self.init_drone_poses = self.drone.get_world_poses(clone=True)
-        self.init_drone_vels = torch.zeros_like(self.drone.get_velocities())
-
-        self.frame_view = RigidPrimView(
-            "/World/envs/env_.*/platform/frame",
-            reset_xform_properties=False
-        )
-        self.frame_view.initialize()
-        self.frame_view.post_reset()
-        self.init_frame_poses = self.frame_view.get_world_poses(clone=True)
-        self.init_frame_vels = torch.zeros_like(self.frame_view.get_velocities())
+        
+        self.init_vels = torch.zeros_like(self.platform.get_velocities())
+        self.init_joint_pos = self.platform.get_joint_positions(clone=True)
+        self.init_joint_vel = torch.zeros_like(self.platform.get_joint_velocities())
 
         drone_state_dim = self.drone.state_spec.shape.numel()
         observation_spec = CompositeSpec({
@@ -88,7 +82,7 @@ class PlatformHover(IsaacEnv):
             torch.tensor([-.2, -.2, 0.0], device=self.device),
             torch.tensor([0.2, 0.2, 2.0], device=self.device)
         )
-        self.target_pos = torch.tensor([0., 0., 2.], device=self.device)
+        self.target_pos = torch.tensor([0., 0., 2.25], device=self.device)
         self.target_heading =  torch.zeros(self.num_envs, 3, device=self.device)
         self.target_up = torch.zeros(self.num_envs, 3, device=self.device)
 
@@ -103,44 +97,20 @@ class PlatformHover(IsaacEnv):
     def _design_scene(self):
         drone_model = self.cfg.task.drone_model
         self.drone: MultirotorBase = MultirotorBase.REGISTRY[drone_model]()
-        n = 4
 
         arm_length = self.cfg.task.arm_length
-        self.drone_translations = torch.tensor([
-            [-arm_length, 0.0, 0.0], 
-            [0.0, arm_length, 0.0], 
-            [arm_length, 0.0, 0.0], 
-            [0.0, -arm_length, 0.0]
-        ], device=self.device)
-        self.drone_rotations = torch.tensor([1., 0., 0., 0.], device=self.device).expand(4, -1)
+        self.platform = OveractuatedPlatform(drone=self.drone,)
+        self.platform.spawn(
+            translations=[0., 0., 2.],
+            arm_lengths=[arm_length],
+            enable_collision=True
+        )
 
-        arm_angles = [torch.pi * 2 / n * i for i in range(n)]
-        arm_lengths = [arm_length for _ in range(n)]
-
-        platform = prim_utils.create_prim(
-            "/World/envs/env_0/platform", translation=(0., 0., 2.)
-        )
-        self.drone.spawn(
-            translations=self.drone_translations,
-            prim_paths=[
-                f"/World/envs/env_0/platform/{self.drone.name}_{i}" for i in range(n)
-            ],
-        )
-        create_frame(
-            "/World/envs/env_0/platform/frame",
-            arm_angles,
-            arm_lengths,
-            [
-                f"/World/envs/env_0/platform/{self.drone.name}_{i}/base_link"
-                for i in range(n)
-            ],
-            enable_collision=False,
-            exclude_from_articulation=True,
-        )
+        # for visulization
         target_prim_path = create_frame(
             "/World/envs/env_0/target",
-            arm_angles,
-            arm_lengths,
+            [torch.pi / 2 * j for j in range(4)],
+            [arm_length for j in range(4)],
             enable_collision=False,
         ).GetPath().pathString
         kit_utils.set_rigid_body_properties(target_prim_path, disable_gravity=True)
@@ -151,20 +121,14 @@ class PlatformHover(IsaacEnv):
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
 
-        frame_pos = self.init_pos_dist.sample(env_ids.shape) + self.envs_positions[env_ids]
-        frame_rpy = self.init_rpy_dist.sample(env_ids.shape)
-        frame_rot = euler_to_quaternion(frame_rpy)
-        self.frame_view.set_world_poses(frame_pos, frame_rot, env_indices=env_ids)
-        self.frame_view.set_velocities(self.init_frame_vels[env_ids], env_ids)
+        platform_pos = self.init_pos_dist.sample(env_ids.shape) + self.envs_positions[env_ids]
+        platform_rpy = self.init_rpy_dist.sample(env_ids.shape)
+        platform_rot = euler_to_quaternion(platform_rpy)
+        self.platform.set_world_poses(platform_pos, platform_rot, env_indices=env_ids)
+        self.platform.set_velocities(self.init_vels[env_ids], env_ids)
 
-        drone_pos, drone_rot = vmap(compose_transform)(
-            frame_pos.unsqueeze(1),
-            frame_rot.unsqueeze(1),
-            translation=self.drone_translations,
-            rotation=self.drone_rotations
-        )
-        self.drone.set_world_poses(drone_pos, drone_rot, env_ids)
-        self.drone.set_velocities(self.init_drone_vels[env_ids], env_ids)
+        self.platform.set_joint_positions(self.init_joint_pos[env_ids], env_ids)
+        self.platform.set_joint_velocities(self.init_joint_vel[env_ids], env_ids)
 
         target_rpy = self.target_rpy_dist.sample(env_ids.shape)
         target_rot = euler_to_quaternion(target_rpy)
@@ -193,47 +157,47 @@ class PlatformHover(IsaacEnv):
         self.drone_rpos = vmap(cpos)(drone_pos, drone_pos)
         self.drone_rpos = vmap(off_diag)(self.drone_rpos)
 
-        frame_pos, frame_rot = self.get_env_poses(self.frame_view.get_world_poses(clone=True))
-        self.frame_heading = torch_utils.quat_axis(frame_rot, 0)
-        self.frame_up = torch_utils.quat_axis(frame_rot, 2)
-        self.frame_vels = self.frame_view.get_velocities(clone=True)
+        self.platform_pos, platform_rot = self.get_env_poses(self.platform.get_world_poses(clone=True))
+        self.platform_heading = vmap(torch_utils.quat_axis)(platform_rot, axis=0)
+        self.platform_up = vmap(torch_utils.quat_axis)(platform_rot, axis=2)
+        self.platform_vels = self.platform.get_velocities(clone=True)
 
-        self.target_frame_rpos = self.target_pos - frame_pos
-        self.target_frame_rheading = self.target_heading - self.frame_heading
-        self.target_frame_rup = self.target_up - self.frame_up
-        self.target_frame_rpose = torch.cat([
-            self.target_frame_rpos,
-            self.target_frame_rheading,
-            self.target_frame_rup
+        self.target_platform_rpos = self.target_pos - self.platform_pos
+        self.target_platform_rheading = self.target_heading.unsqueeze(1) - self.platform_heading
+        self.target_platform_rup = self.target_up.unsqueeze(1) - self.platform_up
+        self.target_platform_rpose = torch.cat([
+            self.target_platform_rpos,
+            self.target_platform_rheading,
+            self.target_platform_rup
         ], dim=-1)
 
-        frame_drone_rpos = frame_pos.unsqueeze(1) - self.drone_states[..., :3]
-        frame_state = torch.cat([
-            self.target_frame_rpose, # 9
-            frame_rot, # 4
-            self.frame_heading, # 3
-            self.frame_up, # 3
-            self.frame_vels, # 6
-        ], dim=-1).unsqueeze(1) # [num_envs, 1, 25]
+        platform_drone_rpos = self.platform_pos - self.drone_states[..., :3]
+        platform_state = torch.cat([
+            self.target_platform_rpose, # 9
+            platform_rot, # 4
+            self.platform_heading, # 3
+            self.platform_up, # 3
+            self.platform_vels, # 6
+        ], dim=-1) # [num_envs, 1, 25]
 
 
         identity = torch.eye(self.drone.n, device=self.device).expand(self.num_envs, -1, -1)
 
         obs = TensorDict({}, [self.num_envs, self.drone.n])
         obs["state_self"] = torch.cat(
-            [-frame_drone_rpos, self.drone_states[..., 3:], identity], dim=-1
+            [-platform_drone_rpos, self.drone_states[..., 3:], identity], dim=-1
         ).unsqueeze(2)
         obs["state_others"] = torch.cat(
             [self.drone_rpos, vmap(others)(self.drone_states[..., 3:])], dim=-1
         )
-        obs["state_frame"] = frame_state.unsqueeze(1).expand(-1, self.drone.n, 1, -1)
+        obs["state_frame"] = platform_state.unsqueeze(1).expand(-1, self.drone.n, 1, -1)
 
         state = TensorDict({}, [self.num_envs])
         state["state_drones"] = obs["state_self"].squeeze(2)    # [num_envs, drone.n, drone_state_dim]
-        state["state_frame"] = frame_state                # [num_envs, 1, frame_state_dim]
+        state["state_frame"] = platform_state                # [num_envs, 1, platform_state_dim]
         
-        pos_error = torch.norm(self.target_frame_rpos, dim=-1, keepdim=True)
-        heading_alignment = torch.sum(self.frame_heading * self.target_heading, dim=-1, keepdim=True)
+        pos_error = torch.norm(self.target_platform_rpos, dim=-1)
+        heading_alignment = torch.sum(self.platform_heading * self.target_heading.unsqueeze(1), dim=-1)
         self.info["pos_error"].mul_(self.alpha).add_((1-self.alpha) * pos_error)
         self.info["heading_alignment"].mul_(self.alpha).add_((1-self.alpha) * heading_alignment)
 
@@ -247,17 +211,17 @@ class PlatformHover(IsaacEnv):
         )
 
     def _compute_reward_and_done(self):
-        vels = self.frame_view.get_velocities()
+        platform_vels = self.platform.get_velocities()
 
-        distance = torch.norm(self.target_frame_rpose, dim=-1, keepdim=True)
+        distance = torch.norm(self.target_platform_rpose, dim=-1)
         
         reward = torch.zeros(self.num_envs, 4, 1, device=self.device)
         reward_pose = 1 / (1 + torch.square(distance * self.reward_distance_scale))
         
-        up = torch.sum(self.frame_up * self.target_up, dim=-1, keepdim=True)
+        up = torch.sum(self.platform_up * self.target_up.unsqueeze(1), dim=-1)
         reward_up = torch.square((up + 1) / 2)
 
-        spinnage = vels[:, -3:].abs().sum(-1, keepdim=True)
+        spinnage = platform_vels[:, -3:].abs().sum(-1)
         reward_spin = 1. / (1 + torch.square(spinnage))
         
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort).mean(-1, keepdim=True)

@@ -1,5 +1,5 @@
 from .mappo import MAPPOPolicy
 from .happo import HAPPOPolicy
 
-from .sac import MASACPolicy
+from .sac import SACPolicy
 from .td3 import TD3Policy

@@ -90,13 +90,17 @@ class TransportHover(IsaacEnv):
         self.alpha = 0.7
         
         info_spec = CompositeSpec({
-            "payload_mass": UnboundedContinuousTensorSpec((1,)),
+            "payload_mass": UnboundedContinuousTensorSpec(1),
+        }).expand(self.num_envs).to(self.device)
+        stats_spec = CompositeSpec({
             "payload_pos_error": UnboundedContinuousTensorSpec((1,)),
             "heading_alignment": UnboundedContinuousTensorSpec((1,)),
             "uprightness": UnboundedContinuousTensorSpec((1,)),
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["info"] = info_spec
+        self.observation_spec["stats"] = stats_spec
         self.info = info_spec.zero()
+        self.stats = stats_spec.zero()
 
     def _design_scene(self):
         cfg = RobotCfg()
@@ -151,14 +155,14 @@ class TransportHover(IsaacEnv):
             env_indices=env_ids
         )
 
-        self.info["payload_mass"][env_ids] = payload_masses.unsqueeze(-1).clone()
-        self.info["payload_pos_error"][env_ids] = torch.norm(
+        self.stats["payload_mass"][env_ids] = payload_masses.unsqueeze(-1).clone()
+        self.stats["payload_pos_error"][env_ids] = torch.norm(
             self.payload_target_pos - pos, dim=-1, keepdim=True
         )
-        self.info["heading_alignment"][env_ids] = torch.sum(
+        self.stats["heading_alignment"][env_ids] = torch.sum(
             self.payload_target_heading[env_ids] * heading, dim=-1, keepdim=True
         )
-        self.info["uprightness"][env_ids] = up[:, 2].unsqueeze(-1)
+        self.stats["uprightness"][env_ids] = up[:, 2].unsqueeze(-1)
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("action", "drone.action")]
@@ -210,14 +214,14 @@ class TransportHover(IsaacEnv):
         heading_alignment = torch.sum(
             self.payload_heading * self.payload_target_heading, dim=-1, keepdim=True
         )
-        self.info["payload_pos_error"].mul_(self.alpha).add_((1-self.alpha) * pos_error)
-        self.info["heading_alignment"].mul_(self.alpha).add_((1-self.alpha) * heading_alignment)
-        self.info["uprightness"].mul_(self.alpha).add_((1-self.alpha) * self.payload_up[:, 2].unsqueeze(-1))
+        self.stats["payload_pos_error"].mul_(self.alpha).add_((1-self.alpha) * pos_error)
+        self.stats["heading_alignment"].mul_(self.alpha).add_((1-self.alpha) * heading_alignment)
+        self.stats["uprightness"].mul_(self.alpha).add_((1-self.alpha) * self.payload_up[:, 2].unsqueeze(-1))
 
         return TensorDict({
             "drone.obs": obs, 
             "drone.state": state,
-            "info": self.info
+            "stats": self.stats
         }, self.num_envs)
 
     def _compute_reward_and_done(self):

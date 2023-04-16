@@ -64,15 +64,24 @@ class RobotBase(abc.ABC):
         RobotBase.REGISTRY[cls.__name__] = cls
         RobotBase.REGISTRY[cls.__name__.lower()] = cls
 
-    def spawn(self, translations=[(0.0, 0.0, 0.5)], prim_paths: Sequence[str] = None):
+    def spawn(
+        self, 
+        translations=[(0.0, 0.0, 0.5)], 
+        orientations=None,
+        prim_paths: Sequence[str] = None
+    ):
         if SimulationContext.instance()._physics_sim_view is not None:
             raise RuntimeError(
                 "Cannot spawn robots after simulation_context.reset() is called."
             )
+        
         translations = torch.atleast_2d(
             torch.as_tensor(translations, device=self.device)
         )
         n = translations.shape[0]
+
+        if orientations is None:
+            orientations = [None for _ in range(n)]
 
         if prim_paths is None:
             prim_paths = [f"{TEMPLATE_PRIM_PATH}/{self.name}_{i}" for i in range(n)]
@@ -81,13 +90,14 @@ class RobotBase(abc.ABC):
             raise ValueError
 
         prims = []
-        for prim_path, translation in zip(prim_paths, translations):
+        for prim_path, translation, orientation in zip(prim_paths, translations, orientations):
             if prim_utils.is_prim_path_valid(prim_path):
                 raise RuntimeError(f"Duplicate prim at {prim_path}.")
             prim = prim_utils.create_prim(
                 prim_path,
                 usd_path=self.usd_path,
                 translation=translation,
+                orientation=orientation,
             )
             # apply rigid body properties
             kit_utils.set_nested_rigid_body_properties(

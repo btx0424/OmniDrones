@@ -22,7 +22,7 @@ from omni_drones.utils.torchrl import AgentSpec
 from tensordict import TensorDict
 from .common import soft_update
 
-class MASACPolicy(object):
+class SACPolicy(object):
 
     def __init__(self,
         cfg,

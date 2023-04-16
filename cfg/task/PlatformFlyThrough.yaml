@@ -8,10 +8,12 @@ env:
   num_envs: 1024
 
 drone_model: Hummingbird
+num_drones: 4
 
 reward_effort_weight: 0.1
 reward_distance_scale: 1.0
 arm_length: 0.85
+joint_damping: 0.001
 obstacle_spacing: 1.
 reset_on_collision: false
 

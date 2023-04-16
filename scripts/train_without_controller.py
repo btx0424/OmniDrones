@@ -17,7 +17,12 @@ from omni_drones.utils.envs.transforms import (
     flatten_composite
 )
 from omni_drones.utils.wandb import init_wandb
-from omni_drones.learning import MAPPOPolicy, HAPPOPolicy
+from omni_drones.learning import (
+    MAPPOPolicy, 
+    HAPPOPolicy,
+    SACPolicy,
+    TD3Policy
+)
 
 from setproctitle import setproctitle
 from tensordict import TensorDict
@@ -41,7 +46,12 @@ def main(cfg):
 
     from omni_drones.envs.isaac_env import IsaacEnv
     from omni_drones.sensors.camera import Camera, PinholeCameraCfg
-    algos = {"mappo": MAPPOPolicy, "happo": HAPPOPolicy}
+    algos = {
+        "mappo": MAPPOPolicy, 
+        "happo": HAPPOPolicy,
+        "sac": SACPolicy,
+        "td3": TD3Policy
+    }
 
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
     base_env = env_class(cfg, headless=cfg.headless)
@@ -163,6 +173,7 @@ def main(cfg):
             info.update(evaluate())
 
         run.log(info)
+        print(OmegaConf.to_yaml(info))
 
         pbar.set_postfix({
             "rollout_fps": collector._fps,

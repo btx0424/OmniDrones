@@ -93,12 +93,12 @@ class PlatformHover(IsaacEnv):
         self.target_up = torch.zeros(self.num_envs, 3, device=self.device)
 
         self.alpha = 0.7
-        info_spec = CompositeSpec({
+        stats_spec = CompositeSpec({
             "pos_error": UnboundedContinuousTensorSpec(1),
             "heading_alignment": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
-        self.observation_spec["info"] = info_spec
-        self.info = info_spec.zero()
+        self.observation_spec["stats"] = stats_spec
+        self.stats = stats_spec.zero()
 
     def _design_scene(self):
         drone_model = self.cfg.task.drone_model
@@ -179,8 +179,8 @@ class PlatformHover(IsaacEnv):
             env_indices=env_ids
         )
 
-        self.info["pos_error"][env_ids] = 0
-        self.info["heading_alignment"][env_ids] = 0
+        self.stats["pos_error"][env_ids] = 0
+        self.stats["heading_alignment"][env_ids] = 0
 
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
@@ -234,14 +234,14 @@ class PlatformHover(IsaacEnv):
         
         pos_error = torch.norm(self.target_frame_rpos, dim=-1, keepdim=True)
         heading_alignment = torch.sum(self.frame_heading * self.target_heading, dim=-1, keepdim=True)
-        self.info["pos_error"].mul_(self.alpha).add_((1-self.alpha) * pos_error)
-        self.info["heading_alignment"].mul_(self.alpha).add_((1-self.alpha) * heading_alignment)
+        self.stats["pos_error"].mul_(self.alpha).add_((1-self.alpha) * pos_error)
+        self.stats["heading_alignment"].mul_(self.alpha).add_((1-self.alpha) * heading_alignment)
 
         return TensorDict(
             {
                 "drone.obs": obs,
                 "drone.state": state,
-                "info": self.info
+                "stats": self.stats
             },
             self.batch_size,
         )

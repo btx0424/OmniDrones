@@ -117,12 +117,17 @@ class TransportFlyThrough(IsaacEnv):
         
         info_spec = CompositeSpec({
             "payload_mass": UnboundedContinuousTensorSpec(1),
+        }).expand(self.num_envs).to(self.device)
+        stats_spec = CompositeSpec({
             "payload_pos_error": UnboundedContinuousTensorSpec(1),
             "collision": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["info"] = info_spec
+        self.observation_spec["stats"] = stats_spec
         self.info = TensorDict({
             "payload_mass": torch.zeros((self.num_envs, 1), device=self.device),
+        }, [])
+        self.stats = TensorDict({
             "payload_pos_error": torch.zeros((self.num_envs, 1), device=self.device),
             "collision": torch.zeros((self.num_envs, 1), device=self.device),
         }, [])
@@ -180,11 +185,11 @@ class TransportFlyThrough(IsaacEnv):
         self.group.set_joint_velocities(self.init_joint_vel[env_ids], env_ids)
 
         payload_masses = self.payload_mass_dist.sample(env_ids.shape)
-        self.info["payload_mass"][env_ids] = payload_masses.unsqueeze(-1)
+        self.stats["payload_mass"][env_ids] = payload_masses.unsqueeze(-1)
 
         self.payload.set_masses(payload_masses, env_ids)
-        self.info["payload_pos_error"][env_ids] = 0
-        self.info["collision"][env_ids] = 0
+        self.stats["payload_pos_error"][env_ids] = 0
+        self.stats["collision"][env_ids] = 0
 
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
@@ -237,12 +242,12 @@ class TransportFlyThrough(IsaacEnv):
 
         payload_pos_error = torch.norm(self.target_payload_rpos, dim=-1, keepdim=True)
     
-        self.info["payload_pos_error"].mul_(self.alpha).add_((1-self.alpha) * payload_pos_error)
+        self.stats["payload_pos_error"].mul_(self.alpha).add_((1-self.alpha) * payload_pos_error)
 
         return TensorDict({
             "drone.obs": obs, 
             "drone.state": state,
-            "info": self.info
+            "stats": self.stats
         }, self.num_envs).apply(lambda x: torch.nan_to_num(x, 0))
 
     def _compute_reward_and_done(self):
@@ -264,7 +269,7 @@ class TransportFlyThrough(IsaacEnv):
             .any(-1, keepdim=True)
         )
         collision_reward = collision.float()
-        self.info["collision"] += collision_reward
+        self.stats["collision"] += collision_reward
 
         reward[:] = (
             reward_separation * (

@@ -17,7 +17,7 @@ from omni_drones.robots.drone import MultirotorBase
 from omni_drones.utils.scene import design_scene
 from omni_drones.utils.torch import euler_to_quaternion
 
-from .utils import create_frame, OveractuatedPlatform
+from .utils import create_frame, OveractuatedPlatform, PlatformCfg
 
 
 def compose_transform(
@@ -87,31 +87,35 @@ class PlatformHover(IsaacEnv):
         self.target_up = torch.zeros(self.num_envs, 3, device=self.device)
 
         self.alpha = 0.7
-        info_spec = CompositeSpec({
+        stats_spec = CompositeSpec({
             "pos_error": UnboundedContinuousTensorSpec(1),
             "heading_alignment": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
-        self.observation_spec["info"] = info_spec
-        self.info = info_spec.zero()
+        self.observation_spec["stats"] = stats_spec
+        self.stats = stats_spec.zero()
 
     def _design_scene(self):
         drone_model = self.cfg.task.drone_model
         self.drone: MultirotorBase = MultirotorBase.REGISTRY[drone_model]()
 
-        arm_length = self.cfg.task.arm_length
-        self.platform = OveractuatedPlatform(drone=self.drone,)
+        platform_cfg = PlatformCfg(
+            num_drones=self.cfg.task.num_drones,
+            arm_length=self.cfg.task.arm_length,
+            joint_damping=self.cfg.task.joint_damping
+        )
+        self.platform = OveractuatedPlatform(
+            cfg=platform_cfg,
+            drone=self.drone,
+        )
         self.platform.spawn(
             translations=[0., 0., 2.],
-            arm_lengths=[arm_length],
             enable_collision=True
         )
 
         # for visulization
-        target_prim_path = create_frame(
+        target_prim_path = self.platform._create_frame(
             "/World/envs/env_0/target",
-            [torch.pi / 2 * j for j in range(4)],
-            [arm_length for j in range(4)],
-            enable_collision=False,
+            enable_collision=False
         ).GetPath().pathString
         kit_utils.set_rigid_body_properties(target_prim_path, disable_gravity=True)
 
@@ -143,8 +147,8 @@ class PlatformHover(IsaacEnv):
             env_indices=env_ids
         )
 
-        self.info["pos_error"][env_ids] = 0
-        self.info["heading_alignment"][env_ids] = 0
+        self.stats["pos_error"][env_ids] = 0
+        self.stats["heading_alignment"][env_ids] = 0
 
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
@@ -198,14 +202,14 @@ class PlatformHover(IsaacEnv):
         
         pos_error = torch.norm(self.target_platform_rpos, dim=-1)
         heading_alignment = torch.sum(self.platform_heading * self.target_heading.unsqueeze(1), dim=-1)
-        self.info["pos_error"].mul_(self.alpha).add_((1-self.alpha) * pos_error)
-        self.info["heading_alignment"].mul_(self.alpha).add_((1-self.alpha) * heading_alignment)
+        self.stats["pos_error"].mul_(self.alpha).add_((1-self.alpha) * pos_error)
+        self.stats["heading_alignment"].mul_(self.alpha).add_((1-self.alpha) * heading_alignment)
 
         return TensorDict(
             {
                 "drone.obs": obs,
                 "drone.state": state,
-                "info": self.info
+                "stats": self.stats
             },
             self.batch_size,
         )

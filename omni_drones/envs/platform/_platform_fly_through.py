@@ -19,7 +19,7 @@ from omni_drones.robots.drone import MultirotorBase
 from omni_drones.utils.scene import design_scene
 from omni_drones.utils.torch import euler_to_quaternion
 
-from .utils import create_frame, OveractuatedPlatform
+from .utils import create_frame, OveractuatedPlatform, PlatformCfg
 
 
 def compose_transform(
@@ -114,12 +114,12 @@ class PlatformFlyThrough(IsaacEnv):
         self.target_up = torch.zeros(self.num_envs, 3, device=self.device)
 
         self.alpha = 0.7
-        info_spec = CompositeSpec({
+        stats_spec = CompositeSpec({
             "pos_error": UnboundedContinuousTensorSpec(1),
             "collision": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
-        self.observation_spec["info"] = info_spec
-        self.info = TensorDict({
+        self.observation_spec["stats"] = stats_spec
+        self.stats = TensorDict({
             "pos_error": torch.zeros(self.num_envs, 1, device=self.device),
             "collision": torch.zeros(self.num_envs, 1, device=self.device)
         }, self.num_envs)
@@ -128,11 +128,17 @@ class PlatformFlyThrough(IsaacEnv):
         drone_model = self.cfg.task.drone_model
         self.drone: MultirotorBase = MultirotorBase.REGISTRY[drone_model]()
         
-        arm_length = self.cfg.task.arm_length
-        self.platform = OveractuatedPlatform(drone=self.drone,)
+        platform_cfg = PlatformCfg(
+            num_drones=self.cfg.task.num_drones,
+            arm_length=self.cfg.task.arm_length,
+            joint_damping=self.cfg.task.joint_damping
+        )
+        self.platform = OveractuatedPlatform(
+            cfg=platform_cfg,
+            drone=self.drone,
+        )
         self.platform.spawn(
             translations=[-1.5, 0., 2.],
-            arm_lengths=[arm_length],
             enable_collision=True
         )
         design_scene()
@@ -155,8 +161,8 @@ class PlatformFlyThrough(IsaacEnv):
         self.platform.set_joint_positions(self.init_joint_pos[env_ids], env_ids)
         self.platform.set_joint_velocities(self.init_joint_vel[env_ids], env_ids)
 
-        self.info["pos_error"][env_ids] = 0
-        self.info["collision"][env_ids] = 0
+        self.stats["pos_error"][env_ids] = 0
+        self.stats["collision"][env_ids] = 0
 
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
@@ -205,12 +211,12 @@ class PlatformFlyThrough(IsaacEnv):
         state["obstacles"] = obstacle_platform_rpos    # [num_envs, 3, 2]
         
         pos_error = torch.norm(self.target_platform_rpos, dim=-1)
-        self.info["pos_error"].mul_(self.alpha).add_((1-self.alpha) * pos_error)
+        self.stats["pos_error"].mul_(self.alpha).add_((1-self.alpha) * pos_error)
         return TensorDict(
             {
                 "drone.obs": obs,
                 "drone.state": state,
-                "info": self.info
+                "stats": self.stats
             },
             self.batch_size,
         )
@@ -233,7 +239,7 @@ class PlatformFlyThrough(IsaacEnv):
         #     .any(-1, keepdim=True)
         # )
         # collision_reward = collision.float()
-        # self.info["collision"] += collision_reward
+        # self.stats["collision"] += collision_reward
 
         reward[:] = (
             (

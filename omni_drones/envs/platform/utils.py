@@ -1,4 +1,5 @@
 from typing import Sequence, Union, Optional
+from dataclasses import dataclass
 
 import omni.isaac.core.utils.prims as prim_utils
 import omni.isaac.core.utils.stage as stage_utils
@@ -10,7 +11,7 @@ import torch
 from pxr import Gf, Usd, UsdGeom, UsdPhysics, PhysxSchema
 from scipy.spatial.transform.rotation import Rotation
 
-from omni_drones.robots import RobotBase
+from omni_drones.robots import RobotBase, RobotCfg
 from omni_drones.robots.drone import MultirotorBase
 from omni_drones.views import RigidPrimView
 
@@ -90,24 +91,36 @@ def create_frame(
     return prim_xform
 
 
+@dataclass
+class PlatformCfg(RobotCfg):
+    num_drones: int = 4
+    rotate_drones: bool = True
+    arm_length: float = 0.85
+    # frame_mass: float = 0.2
+    joint_damping: float = 0.001
+
 class OveractuatedPlatform(RobotBase):
 
     def __init__(
         self,
         name: str="Platform",
         drone: Union[str, RobotBase]="Hummingbird",
-        cfg=None,
+        cfg: PlatformCfg=None,
         is_articulation: bool=True
     ):
         super().__init__(name, cfg, is_articulation)
         drone.is_articulation = False
         self.drone = drone
-    
+
+        self.joint_damping = cfg.joint_damping
+        self.rotate_drones = cfg.rotate_drones
+        self.arm_angles = torch.linspace(0, torch.pi*2, cfg.num_drones+1)[:-1]
+        self.arm_lengths = torch.full(cfg.num_drones, cfg.arm_length)
+
     def spawn(
         self, 
         translations=..., 
         prim_paths: Sequence[str] = None,
-        arm_lengths: Sequence[float] = None,
         enable_collision: bool = False,
     ):
         translations = torch.atleast_2d(
@@ -119,23 +132,30 @@ class OveractuatedPlatform(RobotBase):
             prim_paths = [f"/World/envs/env_0/{self.name}_{i}" for i in range(n)]
         
         prims = []
-        for i, (prim_path, translation, arm_length) in enumerate(zip(prim_paths, translations, arm_lengths)):
+        for i, (prim_path, translation) in enumerate(zip(prim_paths, translations)):
+            
             if prim_utils.is_prim_path_valid(prim_path):
                 raise RuntimeError(f"Duplicate prim at {prim_path}.")
+
             xform = prim_utils.create_prim(
                 prim_path,
                 translation=translation,
             )
 
-            drone_translations = torch.tensor([
-                [-arm_length, 0.0, 0.0], 
-                [0.0, arm_length, 0.0], 
-                [arm_length, 0.0, 0.0], 
-                [0.0, -arm_length, 0.0]
-            ], device=self.device)
+            drone_translations = torch.stack([
+                torch.cos(self.arm_angles), 
+                torch.sin(self.arm_angles), 
+                torch.zeros_like(self.arm_angles)
+            ], dim=-1) * self.arm_lengths
+
+            drone_rotations = torch.tensor(
+                Rotation.from_euler("z", self.arm_angles)
+                .as_quat()[:, [3, 0, 1, 2]]
+            )
 
             drone_prims = self.drone.spawn(
                 translations=drone_translations,
+                orientations=drone_rotations if self.rotate_drones else None,
                 prim_paths=[
                     f"/World/envs/env_0/{self.name}_{i}/{self.drone.name}_{j}" for j in range(4)
                 ],
@@ -152,16 +172,13 @@ class OveractuatedPlatform(RobotBase):
                     prim=drone_prim,
                 )
 
-            create_frame(
+            self._create_frame(
                 f"/World/envs/env_0/{self.name}_{i}/frame",
-                [torch.pi / 2 * j for j in range(4)],
-                [arm_length for j in range(4)],
                 [
                     f"/World/envs/env_0/{self.name}_{i}/{self.drone.name}_{j}/base_link"
                     for j in range(4)
                 ],
                 enable_collision=enable_collision,
-                exclude_from_articulation=False
             )
             UsdPhysics.ArticulationRootAPI.Apply(xform)
             PhysxSchema.PhysxArticulationAPI.Apply(xform)
@@ -192,4 +209,21 @@ class OveractuatedPlatform(RobotBase):
     
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
+
+    def _create_frame(
+        self, 
+        prim_path: str,
+        to_prims: Sequence[str]=None,
+        enable_collision: bool=False
+    ):
+        frame_prim = create_frame(
+            prim_path,
+            self.arm_angles,
+            self.arm_lengths,
+            to_prims,
+            joint_damping=self.joint_damping,
+            enable_collision=enable_collision,
+            exclude_from_articulation=False
+        )
+        return frame_prim
 

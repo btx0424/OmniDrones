@@ -125,12 +125,12 @@ class PlatformFlyThrough(IsaacEnv):
         self.target_up = torch.zeros(self.num_envs, 3, device=self.device)
 
         self.alpha = 0.7
-        info_spec = CompositeSpec({
+        stats_spec = CompositeSpec({
             "pos_error": UnboundedContinuousTensorSpec(1),
             "collision": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
-        self.observation_spec["info"] = info_spec
-        self.info = info_spec.zero()
+        self.observation_spec["stats"] = stats_spec
+        self.stats = stats_spec.zero()
 
     def _design_scene(self):
         drone_model = self.cfg.task.drone_model
@@ -193,8 +193,8 @@ class PlatformFlyThrough(IsaacEnv):
         self.drone.set_world_poses(drone_pos, drone_rot, env_ids)
         self.drone.set_velocities(self.init_drone_vels[env_ids], env_ids)
 
-        self.info["pos_error"][env_ids] = 0
-        self.info["collision"][env_ids] = 0
+        self.stats["pos_error"][env_ids] = 0
+        self.stats["collision"][env_ids] = 0
 
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
@@ -243,12 +243,12 @@ class PlatformFlyThrough(IsaacEnv):
         # state["obstacles"] = obstacle_frame_rpos    # [num_envs, 3, 2]
         
         pos_error = torch.norm(self.target_frame_rpos, dim=-1, keepdim=True)
-        self.info["pos_error"].mul_(self.alpha).add_((1-self.alpha) * pos_error)
+        self.stats["pos_error"].mul_(self.alpha).add_((1-self.alpha) * pos_error)
         return TensorDict(
             {
                 "drone.obs": obs,
                 "drone.state": state,
-                "info": self.info
+                "stats": self.stats
             },
             self.batch_size,
         )

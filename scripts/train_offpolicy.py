@@ -32,12 +32,12 @@ def main(cfg):
     print(OmegaConf.to_yaml(cfg))
 
     from omni_drones.envs.isaac_env import IsaacEnv
-    from omni_drones.learning import MASACPolicy, TD3Policy
+    from omni_drones.learning import SACPolicy, TD3Policy
     from omni_drones.learning.qmix import QMIX
     from omni_drones.learning.dqn import DQN
-    from omni_drones.sensors.camera import Camera
+    from omni_drones.sensors.camera import Camera, PinholeCameraCfg
 
-    policies = {"qmix": QMIX, "sac": MASACPolicy, "dqn": DQN, "td3": TD3Policy}
+    policies = {"qmix": QMIX, "sac": SACPolicy, "dqn": DQN, "td3": TD3Policy}
 
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
     base_env = env_class(cfg, headless=cfg.headless)
@@ -72,8 +72,20 @@ def main(cfg):
 
     env = TransformedEnv(base_env, Compose(*transforms)).train()
 
-    camera = Camera()
-    camera.spawn(["/World/Camera"], translations=[(6, 6, 3)], targets=[(0, 0, 1)])
+    camera_cfg = PinholeCameraCfg(
+        sensor_tick=0,
+        resolution=(960, 720),
+        data_types=["rgb"],
+        usd_params=PinholeCameraCfg.UsdCameraCfg(
+            focal_length=24.0,
+            focus_distance=400.0,
+            horizontal_aperture=20.955,
+            clipping_range=(0.1, 1.0e5),
+        ),
+    )
+    
+    camera = Camera(camera_cfg)
+    camera.spawn(["/World/Camera"], translations=[(7.5, 7.5, 7.5)], targets=[(0, 0, 0.5)])
     camera.initialize("/World/Camera")
 
     # TODO: create a agent_spec view for TransformedEnv

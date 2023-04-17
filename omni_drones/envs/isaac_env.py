@@ -2,17 +2,16 @@ import abc
 
 from typing import Dict, List, Optional, Tuple, Type, Union, Callable
 
-import omni.replicator.core as rep
-
 import omni.usd
 import torch
 import logging
+import carb
 from omni.isaac.cloner import GridCloner
 from omni.isaac.core.simulation_context import SimulationContext
 from omni.isaac.core.utils import prims as prim_utils, stage as stage_utils
-from omni.isaac.core.utils.carb import set_carb_setting
-from omni.isaac.core.utils.extensions import disable_extension
+from omni.isaac.core.utils.extensions import enable_extension
 from omni.isaac.core.utils.viewports import set_camera_view
+
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import CompositeSpec, TensorSpec, DiscreteTensorSpec
 from torchrl.envs import EnvBase
@@ -57,6 +56,10 @@ class IsaacEnv(EnvBase):
         self.num_envs = self.cfg.env.num_envs
         self.max_episode_length = self.cfg.env.max_episode_length
         self.min_episode_length = self.cfg.env.min_episode_length
+
+        torch.backends.cudnn.benchmark = True
+        torch.backends.cudnn.deterministic = False
+
         # check that simulation is running
         if stage_utils.get_current_stage() is None:
             raise RuntimeError(
@@ -228,29 +231,33 @@ class IsaacEnv(EnvBase):
         raise NotImplementedError
 
     def _set_seed(self, seed: Optional[int] = -1):
-        torch.manual_seed(seed)
+        import omni.replicator.core as rep
         rep.set_global_seed(seed)
+        torch.manual_seed(seed)
 
     def _configure_simulation_flags(self, sim_params: dict = None):
-        """Configure the various flags for performance.
-
-        This function enables flat-cache for speeding up GPU pipeline, enables hydra scene-graph
-        instancing for visualizing multiple instances when flatcache is enabled, and disables the
-        viewport if running in headless mode.
-        """
-        # enable flat-cache for speeding up GPU pipeline
-        if self.sim.get_physics_context().use_gpu_pipeline:
-            self.sim.get_physics_context().enable_flatcache(True)
+        """Configure various simulation flags for performance improvements at load and run time."""
+        # acquire settings interface
+        carb_settings_iface = carb.settings.get_settings()
         # enable hydra scene-graph instancing
-        # Think: Create your own carb-settings instance?
-        set_carb_setting(
-            self.sim._settings, "/persistent/omnihydra/useSceneGraphInstancing", True
-        )
-        # check viewport settings
-        if sim_params and "enable_viewport" in sim_params:
-            # if viewport is disabled, then don't create a window (minor speedups)
-            if not sim_params["enable_viewport"]:
-                disable_extension("omni.kit.viewport.window")
+        # note: this allows rendering of instanceable assets on the GUI
+        carb_settings_iface.set_bool("/persistent/omnihydra/useSceneGraphInstancing", True)
+        # change dispatcher to use the default dispatcher in PhysX SDK instead of carb tasking
+        # note: dispatcher handles how threads are launched for multi-threaded physics
+        carb_settings_iface.set_bool("/physics/physxDispatcher", True)
+        # disable contact processing in omni.physx if requested
+        # note: helpful when creating contact reporting over limited number of objects in the scene
+        # if sim_params["disable_contact_processing"]:
+        #     carb_settings_iface.set_bool("/physics/disableContactProcessing", True)
+
+        # enable scene querying if rendering is enabled
+        # this is needed for some GUI features
+        sim_params["enable_scene_query_support"] = True
+        # enable viewport extension if not running in headless mode
+        enable_extension("omni.kit.viewport.bundle")
+        # enable isaac replicator extension
+        # note: moved here since it requires to have the viewport extension to be enabled first.
+        enable_extension("omni.replicator.isaac")
 
     def to(self, device) -> EnvBase:
         if torch.device(device) != self.device:

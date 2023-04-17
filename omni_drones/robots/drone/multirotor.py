@@ -13,7 +13,7 @@ from omni_drones.actuators.rotor_group import RotorGroup
 from omni_drones.controllers import LeePositionController
 
 from omni_drones.robots import RobotBase
-from omni_drones.utils.math import normalize
+from omni_drones.utils.torch import normalize, off_diag
 
 
 class MultirotorBase(RobotBase):
@@ -78,6 +78,8 @@ class MultirotorBase(RobotBase):
         self.forces = torch.zeros(*self.shape, self.num_rotors, 3, device=self.device)
         self.torques = torch.zeros(*self.shape, 3, device=self.device)
 
+        self.pos, self.rot = self.get_world_poses(True)
+
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
         rotor_cmds = actions.expand(*self.shape, self.num_rotors)
         thrusts, moments = vmap(vmap(self.rotors, randomness="different"), randomness="same")(
@@ -88,21 +90,33 @@ class MultirotorBase(RobotBase):
         # self.articulations.set_joint_velocities(
         #     (self.throttle * self.directions * self.MAX_ROT_VEL).reshape(-1, self.num_rotors)
         # )
+
+        # TODO: global downwash
+        downwash_forces = vmap(self.downwash)(
+            self.pos,
+            self.pos,
+            vmap(torch_utils.quat_rotate)(self.rot, self.forces.sum(-2))
+        ).sum(-2)
+        torques = vmap(torch_utils.quat_rotate)(self.rot, self.torques)
+
         self.rotors_view.apply_forces(self.forces.reshape(-1, 3), is_global=False)
         self.base_link.apply_forces_and_torques_at_pos(
-            None, self.torques.reshape(-1, 3), is_global=False
+            downwash_forces.reshape(-1, 3), 
+            torques.reshape(-1, 3), 
+            is_global=True
         )
+
         return self.throttle.sum(-1)
 
     def get_state(self, env=True):
-        pos, rot = self.get_world_poses(True)
+        self.pos[:], self.rot[:] = self.get_world_poses(True)
         if env:
-            pos = pos - RobotBase._envs_positions
+            self.pos[:] = self.pos[:] - RobotBase._envs_positions
         vel = self.get_velocities(True)
         thr = self.throttle * 2 - 1
-        heading = vmap(torch_utils.quat_axis)(rot, axis=0)
-        up = vmap(torch_utils.quat_axis)(rot, axis=2)
-        state = torch.cat([pos, rot, vel, heading, up, thr], dim=-1)
+        heading = vmap(torch_utils.quat_axis)(self.rot, axis=0)
+        up = vmap(torch_utils.quat_axis)(self.rot, axis=2)
+        state = torch.cat([self.pos, self.rot, vel, heading, up, thr], dim=-1)
         # assert not torch.isnan(state).any()
         return state
 
@@ -136,7 +150,7 @@ class MultirotorBase(RobotBase):
         z, r = separation(p0, p1, normalize(p1_t))
         z = torch.clip(z, 0)
         v = torch.exp(-0.5 * torch.square(kr * r / z)) / (1 + kz * z)**2
-        f = v * - p1_t
+        f = off_diag(v * - p1_t)
         return f
 
 def separation(p0, p1, p1_d):

@@ -363,13 +363,13 @@ class MAPPOPolicy(object):
                 )
 
         train_info = {k: v.mean().item() for k, v in torch.stack(train_info).items()}
-        train_info["advantages_mean"] = advantages_mean
-        train_info["advantages_std"] = advantages_std
-        train_info["action_norm"] = (
-            tensordict[self.act_name].float().norm(dim=-1).mean()
-        )
+        train_info["advantages_mean"] = advantages_mean.item()
+        train_info["advantages_std"] = advantages_std.item()
+        if isinstance(self.agent_spec.action_spec, BoundedTensorSpec):
+            train_info["action_norm"] = tensordict[self.act_name].norm(dim=-1).mean().item()
         if hasattr(self, "value_normalizer"):
-            train_info["value_running_mean"] = self.value_normalizer.running_mean.mean()
+            train_info["value_running_mean"] = self.value_normalizer.running_mean.mean().item()
+        
         self.n_updates += 1
         return {f"{self.agent_spec.name}/{k}": v for k, v in train_info.items()}
 

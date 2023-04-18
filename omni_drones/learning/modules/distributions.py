@@ -304,10 +304,11 @@ class MultiCategorical(D.Distribution):
 class MultiCategoricalModule(nn.Module):
     def __init__(
         self,
+        input_dim: int,
         output_dims: Union[List[int], torch.Tensor],
     ):
         super().__init__()
-        self.operator = nn.LazyLinear(sum(output_dims))
+        self.operator = nn.Linear(input_dim, sum(output_dims))
         self.output_dims = (
             output_dims.tolist()
             if isinstance(output_dims, torch.Tensor)

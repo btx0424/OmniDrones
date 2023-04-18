@@ -185,7 +185,7 @@ class TransportFlyThrough(IsaacEnv):
         self.group.set_joint_velocities(self.init_joint_vel[env_ids], env_ids)
 
         payload_masses = self.payload_mass_dist.sample(env_ids.shape)
-        self.stats["payload_mass"][env_ids] = payload_masses.unsqueeze(-1)
+        self.info["payload_mass"][env_ids] = payload_masses.unsqueeze(-1).clone()
 
         self.payload.set_masses(payload_masses, env_ids)
         self.stats["payload_pos_error"][env_ids] = 0
@@ -247,10 +247,16 @@ class TransportFlyThrough(IsaacEnv):
         return TensorDict({
             "drone.obs": obs, 
             "drone.state": state,
+            "info": self.info,
             "stats": self.stats
         }, self.num_envs).apply(lambda x: torch.nan_to_num(x, 0))
 
     def _compute_reward_and_done(self):
+        joint_positions = (
+            self.group.get_joint_positions()[..., :16]
+            / self.group.joint_limits[..., :16]
+        )
+        
         distance = torch.norm(self.target_payload_rpos, dim=-1, keepdim=True)
         separation = self.drone_pdist.min(dim=-2).values.min(dim=-2).values
 
@@ -261,6 +267,7 @@ class TransportFlyThrough(IsaacEnv):
 
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort).mean(-1, keepdim=True)
         reward_separation = torch.square(separation / self.safe_distance).clamp(0, 1)
+        reward_joint_limit = 0.5 * torch.mean(1 - torch.square(joint_positions), dim=-1)
 
         collision = (
             self.obstacles
@@ -275,11 +282,12 @@ class TransportFlyThrough(IsaacEnv):
             reward_separation * (
                 reward_pose 
                 + reward_pose * reward_up 
+                + reward_joint_limit
                 + reward_effort
             ) * (1 - collision_reward)
         ).unsqueeze(1)
 
-        done_misbehave = (self.drone_states[..., 2] < 0.2)| (self.drone_states[..., 2] > 3.)
+        done_misbehave = (self.drone_states[..., 2] < 0.2) | (self.drone_states[..., 2] > 3.)
         
         done = (
             (self.progress_buf >= self.max_episode_length).unsqueeze(-1) 

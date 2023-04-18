@@ -33,22 +33,41 @@ def main(cfg):
         backend="torch",
         device=cfg.sim.device,
     )
-    n = 3
+    n = 4
 
     drone = Firefly(cfg=RobotCfg())
 
-    translations = torch.zeros(n, 3)
-    translations[:, 1] = torch.arange(n) * 0.5
-    translations[:, 2] = torch.arange(n) + 1.0
+    translations = torch.tensor([
+        [0, -1, 1.5],
+        [0, 0., 1.5],
+        [0, 1., 1.5],
+        [0., 2., 2.5]
+    ])
     drone.spawn(translations=translations)
-
     scene_utils.design_scene()
+
+    camera_cfg = PinholeCameraCfg(
+        sensor_tick=0,
+        resolution=(960, 720),
+        data_types=["rgb"],
+        usd_params=PinholeCameraCfg.UsdCameraCfg(
+            focal_length=24.0,
+            focus_distance=400.0,
+            horizontal_aperture=20.955,
+            clipping_range=(0.1, 1.0e5),
+        ),
+    )
+    camera = Camera(camera_cfg)
+    camera.spawn(
+        ["/World/Camera"],
+        translations=[(8, 2., 2.)],
+        targets=[(0., 0., 1.75)]
+    )
 
     sim.reset()
     drone.initialize()
+    camera.initialize("/World/Camera")
 
-    init_poses = drone.get_world_poses(clone=True)
-    init_vels = drone.get_velocities(clone=True)
     controller = drone.DEFAULT_CONTROLLER(
         dt=sim.get_physics_dt(), g=9.81, uav_params=drone.params
     ).to(sim.device)
@@ -61,6 +80,7 @@ def main(cfg):
     action = drone.action_spec.zero((n,))
     
     
+    frames = []
     from tqdm import tqdm
     t = tqdm(range(2000))
     for i in t:
@@ -69,16 +89,25 @@ def main(cfg):
         if not sim.is_playing():
             continue
         root_state = drone.get_state(env=False)[..., :13].squeeze(0)
-        downwash_forces = MultirotorBase.downwash(
-            root_state[:, :3],
-            root_state[:, :3],
-            drone.forces.squeeze(0).sum(1)
-        )
+        distance = torch.norm(root_state[-1, :2] - control_target[-1, :2])
+        if distance < 0.05:
+            control_target[-1, 1] = -control_target[-1, 1]
         action, controller_state = vmap(controller)(
             root_state, control_target, controller_state
         )
         drone.apply_action(action)
-        sim.step()
+        sim.step(i % 2 == 0)
+
+        if i % 2 == 0 and len(frames) < 1000:
+            frame = camera.get_images()
+            frames.append(frame.cpu())
+
+    from torchvision.io import write_video
+
+    for k, v in torch.stack(frames).cpu().items():
+        for i, vv in enumerate(v.unbind(1)):
+            if vv.shape[1] == 4: # rgba
+                write_video(f"{k}_{i}.mp4", vv[:, :3].permute(0, 2, 3, 1), fps=50)
 
     simulation_app.close()
 

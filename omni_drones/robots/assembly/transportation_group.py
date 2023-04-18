@@ -135,6 +135,7 @@ class TransportationGroup(RobotBase):
             track_contact_forces=track_contact_forces
         )
         self.payload_view.initialize()
+        self.joint_limits = self._view.get_dof_limits().clone()
 
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
         self.drone.apply_action(actions)

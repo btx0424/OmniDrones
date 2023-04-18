@@ -60,14 +60,14 @@ def main(cfg):
         print(OmegaConf.to_yaml(info))
         run.log(info)
 
-    info_keys = [
+    stats_keys = [
         k for k in base_env.observation_spec.keys(True, True) 
-        if isinstance(k, tuple) and k[0]=="info"
+        if isinstance(k, tuple) and k[0]=="stats"
     ]
     logger = LogOnEpisode(
         cfg.env.num_envs,
-        in_keys=["return", "progress", *info_keys],
-        log_keys=["return", "ep_length", *info_keys],
+        in_keys=["return", "progress", *stats_keys],
+        log_keys=["return", "ep_length", *stats_keys],
         logger_func=log,
     )
     transforms = [InitTracker(), logger]
@@ -173,7 +173,7 @@ def main(cfg):
             info.update(evaluate())
 
         run.log(info)
-        print(OmegaConf.to_yaml(info))
+        print(OmegaConf.to_yaml({k: v for k, v in info.items() if isinstance(v, float)}))
 
         pbar.set_postfix({
             "rollout_fps": collector._fps,

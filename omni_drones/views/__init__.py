@@ -176,6 +176,13 @@ class ArticulationView(_ArticulationView):
             joint_indices
         )
 
+    def get_dof_limits(self) -> torch.Tensor:
+        return (
+            super().get_dof_limits()
+            .unflatten(0, self.shape)
+            .to(self._device)
+        )
+
     def get_body_masses(
         self, env_indices: Optional[torch.Tensor] = None, clone: bool = True
     ) -> torch.Tensor:

@@ -155,7 +155,7 @@ class TransportHover(IsaacEnv):
             env_indices=env_ids
         )
 
-        self.stats["payload_mass"][env_ids] = payload_masses.unsqueeze(-1).clone()
+        self.info["payload_mass"][env_ids] = payload_masses.unsqueeze(-1).clone()
         self.stats["payload_pos_error"][env_ids] = torch.norm(
             self.payload_target_pos - pos, dim=-1, keepdim=True
         )
@@ -221,20 +221,25 @@ class TransportHover(IsaacEnv):
         return TensorDict({
             "drone.obs": obs, 
             "drone.state": state,
+            "info": self.info,
             "stats": self.stats
         }, self.num_envs)
 
     def _compute_reward_and_done(self):
         vels = self.payload.get_velocities()
-
+        joint_positions = (
+            self.group.get_joint_positions()[..., :16]
+            / self.group.joint_limits[..., :16, 0].abs()
+        )
+        
         distance = torch.norm(
             torch.cat([self.target_payload_rpos, self.target_payload_rheading], dim=-1)
         , dim=-1, keepdim=True)
         separation = self.drone_pdist.min(dim=-2).values.min(dim=-2).values
 
         reward = torch.zeros(self.num_envs, self.drone.n, 1, device=self.device)
-        reward_pose = 1 / (1 + torch.square(distance * self.reward_distance_scale))
-        # reward_pose = torch.exp(-distance * self.reward_distance_scale)
+        # reward_pose = 1 / (1 + torch.square(distance * self.reward_distance_scale))
+        reward_pose = torch.exp(-distance * self.reward_distance_scale)
 
         up = self.payload_up[:, 2]
         reward_up = torch.square((up + 1) / 2).unsqueeze(-1)
@@ -247,11 +252,13 @@ class TransportHover(IsaacEnv):
 
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort).mean(-1, keepdim=True)
         reward_separation = torch.square(separation / self.safe_distance).clamp(0, 1)
+        reward_joint_limit = 0.5 * torch.mean(1 - torch.square(joint_positions), dim=-1)
 
         reward[:] = (
             reward_separation * (
                 reward_pose 
                 + reward_pose * (reward_up + reward_spin + reward_swing) 
+                + reward_joint_limit
                 + reward_effort
             )
         ).unsqueeze(-1)

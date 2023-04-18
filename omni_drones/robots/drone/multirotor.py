@@ -92,17 +92,21 @@ class MultirotorBase(RobotBase):
         # )
 
         # TODO: global downwash
-        downwash_forces = vmap(self.downwash)(
-            self.pos,
-            self.pos,
-            vmap(torch_utils.quat_rotate)(self.rot, self.forces.sum(-2))
-        ).sum(-2)
-        torques = vmap(torch_utils.quat_rotate)(self.rot, self.torques)
+        if self.n > 1:
+            downwash_forces = vmap(self.downwash)(
+                self.pos,
+                self.pos,
+                vmap(torch_utils.quat_rotate)(self.rot, self.forces.sum(-2)),
+                kz=0.3
+            ).sum(-2).reshape(-1, 3)
+        else:
+            downwash_forces = None
+        torques = vmap(torch_utils.quat_rotate)(self.rot, self.torques).reshape(-1, 3)
 
         self.rotors_view.apply_forces(self.forces.reshape(-1, 3), is_global=False)
         self.base_link.apply_forces_and_torques_at_pos(
-            downwash_forces.reshape(-1, 3), 
-            torques.reshape(-1, 3), 
+            downwash_forces, 
+            torques, 
             is_global=True
         )
 

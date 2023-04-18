@@ -19,7 +19,7 @@ from omni_drones.robots.drone import MultirotorBase
 from omni_drones.utils.scene import design_scene
 from omni_drones.utils.torch import euler_to_quaternion
 
-from .utils import create_frame, OveractuatedPlatform, PlatformCfg
+from .utils import OveractuatedPlatform, PlatformCfg
 
 
 def compose_transform(
@@ -93,7 +93,7 @@ class PlatformFlyThrough(IsaacEnv):
         }).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone",
-            4,
+            self.drone.n,
             observation_spec,
             self.drone.action_spec.to(self.device),
             UnboundedContinuousTensorSpec(1).to(self.device),
@@ -117,12 +117,10 @@ class PlatformFlyThrough(IsaacEnv):
         stats_spec = CompositeSpec({
             "pos_error": UnboundedContinuousTensorSpec(1),
             "collision": UnboundedContinuousTensorSpec(1),
+            "effort": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
-        self.stats = TensorDict({
-            "pos_error": torch.zeros(self.num_envs, 1, device=self.device),
-            "collision": torch.zeros(self.num_envs, 1, device=self.device)
-        }, self.num_envs)
+        self.stats = stats_spec.zero()
 
     def _design_scene(self):
         drone_model = self.cfg.task.drone_model
@@ -168,6 +166,7 @@ class PlatformFlyThrough(IsaacEnv):
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("action", "drone.action")]
         self.effort = self.drone.apply_action(actions)
+        self.stats["effort"][env_ids] = 0
 
     def _compute_state_and_obs(self):
         self.drone_states = self.drone.get_state()
@@ -224,7 +223,7 @@ class PlatformFlyThrough(IsaacEnv):
     def _compute_reward_and_done(self):
         distance = torch.norm(self.target_platform_rpos, dim=-1)
         
-        reward = torch.zeros(self.num_envs, 4, 1, device=self.device)
+        reward = torch.zeros(self.num_envs, self.drone.n, 1, device=self.device)
         reward_pose = 1 / (1 + torch.square(distance * self.reward_distance_scale))
         
         spinnage = self.platform_vels[:, -3:].abs().sum(-1)

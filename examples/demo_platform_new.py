@@ -19,7 +19,7 @@ def main(cfg):
     import omni_drones.utils.scene as scene_utils
     from omni.isaac.core.simulation_context import SimulationContext
     from omni_drones.robots.drone import MultirotorBase
-    from omni_drones.envs.platform.utils import OveractuatedPlatform
+    from omni_drones.envs.platform.utils import OveractuatedPlatform, PlatformCfg
 
     sim = SimulationContext(
         stage_units_in_meters=1.0,
@@ -31,14 +31,13 @@ def main(cfg):
     )
 
     drone_model = "Hummingbird"
-    n = 4
 
     drone: MultirotorBase = MultirotorBase.REGISTRY[drone_model]()
-    platform = OveractuatedPlatform(drone=drone)
+    platform_cfg = PlatformCfg(num_drones=6)
+    platform = OveractuatedPlatform(cfg=platform_cfg, drone=drone)
 
     platform.spawn(
         [(0., 0., 2.)],
-        arm_lengths=[0.85],
         enable_collision=True,
     )
 
@@ -53,7 +52,7 @@ def main(cfg):
             sim.step()
             continue
         print(platform.get_world_poses())
-        action = drone.action_spec.rand((4,))
+        action = drone.action_spec.rand((drone.n,))
         action[:] = -1
         drone.apply_action(action)
         sim.step()

@@ -17,7 +17,7 @@ from omni_drones.robots.drone import MultirotorBase
 from omni_drones.utils.scene import design_scene
 from omni_drones.utils.torch import euler_to_quaternion
 
-from .utils import create_frame, OveractuatedPlatform, PlatformCfg
+from .utils import OveractuatedPlatform, PlatformCfg
 
 
 def compose_transform(
@@ -63,7 +63,7 @@ class PlatformHover(IsaacEnv):
         }).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone",
-            4,
+            self.drone.n,
             observation_spec,
             self.drone.action_spec.to(self.device),
             UnboundedContinuousTensorSpec(1).to(self.device),
@@ -90,6 +90,7 @@ class PlatformHover(IsaacEnv):
         stats_spec = CompositeSpec({
             "pos_error": UnboundedContinuousTensorSpec(1),
             "heading_alignment": UnboundedContinuousTensorSpec(1),
+            "effort": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
         self.stats = stats_spec.zero()
@@ -149,6 +150,7 @@ class PlatformHover(IsaacEnv):
 
         self.stats["pos_error"][env_ids] = 0
         self.stats["heading_alignment"][env_ids] = 0
+        self.stats["effort"][env_ids] = 0
 
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
@@ -219,7 +221,7 @@ class PlatformHover(IsaacEnv):
 
         distance = torch.norm(self.target_platform_rpose, dim=-1)
         
-        reward = torch.zeros(self.num_envs, 4, 1, device=self.device)
+        reward = torch.zeros(self.num_envs, self.drone.n, 1, device=self.device)
         reward_pose = 1 / (1 + torch.square(distance * self.reward_distance_scale))
         
         up = torch.sum(self.platform_up * self.target_up.unsqueeze(1), dim=-1)

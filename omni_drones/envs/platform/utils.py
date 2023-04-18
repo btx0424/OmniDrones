@@ -115,7 +115,7 @@ class OveractuatedPlatform(RobotBase):
         self.joint_damping = cfg.joint_damping
         self.rotate_drones = cfg.rotate_drones
         self.arm_angles = torch.linspace(0, torch.pi*2, cfg.num_drones+1)[:-1]
-        self.arm_lengths = torch.full(cfg.num_drones, cfg.arm_length)
+        self.arm_lengths = torch.ones(cfg.num_drones) * cfg.arm_length
 
     def spawn(
         self, 
@@ -146,10 +146,10 @@ class OveractuatedPlatform(RobotBase):
                 torch.cos(self.arm_angles), 
                 torch.sin(self.arm_angles), 
                 torch.zeros_like(self.arm_angles)
-            ], dim=-1) * self.arm_lengths
+            ], dim=-1) * self.arm_lengths.unsqueeze(1)
 
             drone_rotations = torch.tensor(
-                Rotation.from_euler("z", self.arm_angles)
+                Rotation.from_euler("z", -self.arm_angles)
                 .as_quat()[:, [3, 0, 1, 2]]
             )
 
@@ -157,7 +157,8 @@ class OveractuatedPlatform(RobotBase):
                 translations=drone_translations,
                 orientations=drone_rotations if self.rotate_drones else None,
                 prim_paths=[
-                    f"/World/envs/env_0/{self.name}_{i}/{self.drone.name}_{j}" for j in range(4)
+                    f"/World/envs/env_0/{self.name}_{i}/{self.drone.name}_{j}" 
+                    for j in range(drone_translations.shape[0])
                 ],
             )
             for drone_prim in drone_prims:
@@ -175,8 +176,8 @@ class OveractuatedPlatform(RobotBase):
             self._create_frame(
                 f"/World/envs/env_0/{self.name}_{i}/frame",
                 [
-                    f"/World/envs/env_0/{self.name}_{i}/{self.drone.name}_{j}/base_link"
-                    for j in range(4)
+                    f"{drone_prim.GetPath().pathString}/base_link"
+                    for drone_prim in drone_prims
                 ],
                 enable_collision=enable_collision,
             )

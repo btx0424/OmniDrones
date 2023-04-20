@@ -1,0 +1,28 @@
+name: dreamer
+
+encoder:
+  hidden_units: [128]
+  layer_norm: true
+
+  proj_units: [128]
+
+decoder:
+
+deter_dim: 128
+stoch_dim: 32
+discrete_dim: 32
+
+actor:
+  units: [128]
+sequence_model:
+  units: [128]
+dynamics_pred:
+  units: [128]
+value_pred:
+  head: twohot_symlog
+  units: [128]
+reward_pred:
+  head: twohot_symlog
+  units: [128]
+discont_pred:
+  units: [128]

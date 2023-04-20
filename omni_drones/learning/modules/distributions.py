@@ -319,3 +319,26 @@ class MultiCategoricalModule(nn.Module):
         logits = self.operator(tensor)
         logits = logits.split(self.output_dims, dim=-1)
         return MultiCategorical(logits=logits)
+
+
+class MultiOneHotCategorical(D.Independent):
+    def __init__(
+        self,
+        logits: torch.Tensor = None,
+        probs: torch.Tensor = None,
+        unimix: float = 0.0
+    ):
+        if (probs is None) == (logits is None):
+            raise ValueError(
+                "Either `probs` or `logits` must be specified, but not both."
+            )
+        
+        if logits is not None:
+            probs = F.softmax(logits)
+        
+        probs = probs * (1. - unimix) + unimix / probs.shape[-1]
+        super.__init__(
+            D.OneHotCategoricalStraightThrough(probs=probs),
+            1
+        )
+

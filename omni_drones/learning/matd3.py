@@ -62,10 +62,12 @@ class MATD3Policy(object):
         self.policy_in_keys = [self.obs_name]
         self.policy_out_keys = [self.act_name, f"{self.agent_spec.name}.logp"]
         
-        encoder = make_encoder(self.cfg.actor, self.agent_spec.observation_spec)
-        create_actor = lambda : TensorDictModule(
+        def create_actor():
+            encoder = make_encoder(self.cfg.actor, self.agent_spec.observation_spec)
+            return TensorDictModule(
                 nn.Sequential(
                     encoder,
+                    nn.ELU(),
                     nn.Linear(encoder.output_shape.numel(), self.action_dim),
                     nn.Tanh()
                 ),
@@ -79,11 +81,8 @@ class MATD3Policy(object):
             self.actor_params = make_functional(self.actor).expand(self.agent_spec.n)
             self.actor_target_params = self.actor_params.clone()
         else:
-            self.actor = create_actor()
-            make_functional(self.actor)
-            actors = nn.ModuleList([
-                create_actor() for _ in range(self.agent_spec.n)
-            ])
+            actors = nn.ModuleList([create_actor() for _ in range(self.agent_spec.n)])
+            self.actor = actors[0]
             self.actor_opt = torch.optim.Adam(actors.parameters(), lr=self.cfg.actor.lr)
             self.actor_params = torch.stack([make_functional(actor) for actor in actors])
             self.actor_target_params = self.actor_params.clone()
@@ -114,9 +113,7 @@ class MATD3Policy(object):
         self.critic_loss_fn = {"mse": F.mse_loss, "smooth_l1": F.smooth_l1_loss}[self.cfg.critic_loss]
 
     def __call__(self, tensordict: TensorDict, deterministic: bool=False) -> TensorDict:
-        actor_input = tensordict.select(*self.policy_in_keys)
-        actor_input.batch_size = [*actor_input.batch_size, self.agent_spec.n]
-        actor_output = vmap(self.actor, in_dims=(1, 0), out_dims=1)(actor_input, self.actor_params)
+        actor_output = self._call_actor(tensordict, self.actor_params)
         action_noise = (
             actor_output[self.act_name]
             .clone()
@@ -127,6 +124,12 @@ class MATD3Policy(object):
         actor_output["action"].batch_size = tensordict.batch_size
         tensordict.update(actor_output)
         return tensordict
+
+    def _call_actor(self, tensordict: TensorDict, params: TensorDict):
+        actor_input = tensordict.select(*self.policy_in_keys)
+        actor_input.batch_size = [*actor_input.batch_size, self.agent_spec.n]
+        actor_output = vmap(self.actor, in_dims=(1, 0), out_dims=1)(actor_input, params)
+        return actor_output
 
     def train_op(self, data: TensorDict):
         self.replay_buffer.extend(data.reshape(-1))
@@ -151,8 +154,7 @@ class MATD3Policy(object):
                 next_state  = transition[("next", self.state_name)]
 
                 with torch.no_grad():
-
-                    next_action: torch.Tensor = vmap(self.actor, in_dims=(1, 0), out_dims=1)(
+                    next_action: torch.Tensor = self._call_actor(
                         transition["next"], self.actor_target_params
                     )[self.act_name]
 
@@ -186,9 +188,7 @@ class MATD3Policy(object):
 
                     with hold_out_net(self.critic):
 
-                        actor_output = vmap(self.actor, in_dims=(1, 0), out_dims=1)(
-                            transition, self.actor_params
-                        )
+                        actor_output = self._call_actor(transition, self.actor_params)
                         actions_new = actor_output[self.act_name]
 
                         actor_losses = []
@@ -223,7 +223,7 @@ class MATD3Policy(object):
         return infos
 
 def soft_update_td(target_params: TensorDict, params: TensorDict, tau: float):
-    for target_param, param in zip(target_params.values(), params.values()):
+    for target_param, param in zip(target_params.values(True, True), params.values(True, True)):
         target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
 
 from .modules.networks import MLP

@@ -11,7 +11,7 @@ gradient_steps: 2048
 target_noise: 0.1
 policy_noise: 0.1
 noise_clip: 0.2
-share_actor: true
+share_actor: false
 
 actor:
   hidden_units: [256, 128]

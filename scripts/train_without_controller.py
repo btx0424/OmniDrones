@@ -21,7 +21,8 @@ from omni_drones.learning import (
     MAPPOPolicy, 
     HAPPOPolicy,
     SACPolicy,
-    TD3Policy
+    TD3Policy,
+    MATD3Policy
 )
 
 from setproctitle import setproctitle
@@ -50,7 +51,8 @@ def main(cfg):
         "mappo": MAPPOPolicy, 
         "happo": HAPPOPolicy,
         "sac": SACPolicy,
-        "td3": TD3Policy
+        "td3": TD3Policy,
+        "matd3": MATD3Policy
     }
 
     env_class = IsaacEnv.REGISTRY[cfg.task.name]

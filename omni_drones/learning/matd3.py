@@ -76,8 +76,8 @@ class MATD3Policy(object):
         if self.cfg.share_actor:
             self.actor = create_actor()
             self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=self.cfg.actor.lr)
-            self.actor_params = make_functional(self.actor)
-            self.actor_target_param = self.actor_param.clone()
+            self.actor_params = make_functional(self.actor).expand(self.agent_spec.n)
+            self.actor_target_params = self.actor_params.clone()
         else:
             self.actor = create_actor()
             make_functional(self.actor)
@@ -86,13 +86,15 @@ class MATD3Policy(object):
             ])
             self.actor_opt = torch.optim.Adam(actors.parameters(), lr=self.cfg.actor.lr)
             self.actor_params = torch.stack([make_functional(actor) for actor in actors])
+            self.actor_target_params = self.actor_params.clone()
 
         if self.agent_spec.state_spec is not None:
             self.value_in_keys = [self.state_name, self.act_name]
             self.value_out_keys = [f"{self.agent_spec.name}.q"]
 
             self.critic = Critic(
-                self.cfg.critic, 
+                self.cfg.critic,
+                self.agent_spec.n,
                 self.agent_spec.state_spec,
                 self.agent_spec.action_spec
             ).to(self.device)
@@ -151,7 +153,7 @@ class MATD3Policy(object):
                 with torch.no_grad():
 
                     next_action: torch.Tensor = vmap(self.actor, in_dims=(1, 0), out_dims=1)(
-                        transition["next"]
+                        transition["next"], self.actor_target_params
                     )[self.act_name]
 
                     action_noise = (
@@ -184,7 +186,9 @@ class MATD3Policy(object):
 
                     with hold_out_net(self.critic):
 
-                        actor_output = vmap(self.actor)(transition)
+                        actor_output = vmap(self.actor, in_dims=(1, 0), out_dims=1)(
+                            transition, self.actor_params
+                        )
                         actions_new = actor_output[self.act_name]
 
                         actor_losses = []
@@ -198,7 +202,9 @@ class MATD3Policy(object):
                         actor_loss = torch.stack(actor_losses).sum()
                         self.actor_opt.zero_grad()
                         actor_loss.backward()
-                        actor_grad_norm = nn.utils.clip_grad_norm_(self.actor.parameters(), self.cfg.max_grad_norm)
+                        actor_grad_norm = nn.utils.clip_grad_norm_(
+                            self.actor_opt.param_groups[0]["params"], self.cfg.max_grad_norm
+                        )
                         self.actor_opt.step()
 
                         infos_actor.append(TensorDict({
@@ -207,7 +213,7 @@ class MATD3Policy(object):
                         }, []))
                     
                     with torch.no_grad():
-                        soft_update(self.actor_target, self.actor, self.cfg.tau)
+                        soft_update_td(self.actor_target_params, self.actor_params, self.cfg.tau)
                         soft_update(self.critic_target, self.critic, self.cfg.tau)
 
                 t.set_postfix({"critic_loss": critic_loss.item()})
@@ -215,6 +221,10 @@ class MATD3Policy(object):
         infos = {**torch.stack(infos_actor), **torch.stack(infos_critic)}
         infos = {k: torch.mean(v).item() for k, v in infos.items()}
         return infos
+
+def soft_update_td(target_params: TensorDict, params: TensorDict, tau: float):
+    for target_param, param in zip(target_params.values(), params.values()):
+        target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
 
 from .modules.networks import MLP
 from .common import make_encoder

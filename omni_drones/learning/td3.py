@@ -130,7 +130,7 @@ class TD3Policy(object):
                 transition = self.replay_buffer.sample(self.batch_size)
 
                 state   = transition[self.state_name]
-                actions = transition[self.act_name]
+                action_taken = transition[self.act_name]
 
                 reward  = transition[("next", "reward", f"{self.agent_spec.name}.reward")]
                 next_dones  = transition[("next", "done")].float().unsqueeze(-1)
@@ -153,7 +153,7 @@ class TD3Policy(object):
                     assert not torch.isinf(target_q).any()
                     assert not torch.isnan(target_q).any()
 
-                qs = self.critic(state, actions)
+                qs = self.critic(state, action_taken)
                 critic_loss = sum(self.critic_loss_fn(q, target_q) for q in qs.unbind(-1))
                 self.critic_opt.zero_grad()
                 critic_loss.backward()

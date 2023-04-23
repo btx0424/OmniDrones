@@ -10,8 +10,8 @@ max_grad_norm: 5
 gradient_steps: 2048
 target_noise: 0.1
 policy_noise: 0.1
-noise_clip: 0.2
-share_actor: false
+noise_clip: 0.1
+share_actor: true
 
 actor:
   hidden_units: [256, 128]

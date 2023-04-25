@@ -222,7 +222,8 @@ class PlatformHover(IsaacEnv):
         distance = torch.norm(self.target_platform_rpose, dim=-1)
         
         reward = torch.zeros(self.num_envs, self.drone.n, 1, device=self.device)
-        reward_pose = 1 / (1 + torch.square(distance * self.reward_distance_scale))
+        # reward_pose = 1 / (1 + torch.square(distance * self.reward_distance_scale))
+        reward_pose = torch.exp(- self.reward_distance_scale * distance)
         
         up = torch.sum(self.platform_up * self.target_up.unsqueeze(1), dim=-1)
         reward_up = torch.square((up + 1) / 2)
@@ -233,7 +234,7 @@ class PlatformHover(IsaacEnv):
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort).mean(-1, keepdim=True)
 
         reward[:] = (
-            reward_pose 
+            reward_pose * 2.
             + reward_pose * (reward_up + reward_spin) 
             + reward_effort
         ).unsqueeze(1)

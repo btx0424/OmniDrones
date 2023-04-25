@@ -22,7 +22,8 @@ from omni_drones.learning import (
     HAPPOPolicy,
     SACPolicy,
     TD3Policy,
-    MATD3Policy
+    MATD3Policy,
+    DreamerPolicy
 )
 
 from setproctitle import setproctitle
@@ -52,7 +53,8 @@ def main(cfg):
         "happo": HAPPOPolicy,
         "sac": SACPolicy,
         "td3": TD3Policy,
-        "matd3": MATD3Policy
+        "matd3": MATD3Policy,
+        "dreamer": DreamerPolicy
     }
 
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
@@ -154,6 +156,7 @@ def main(cfg):
             callback=record_frame,
             auto_reset=True,
             break_when_any_done=False,
+            return_contiguous=False
         )
         base_env.enable_render(not cfg.headless)
         env.reset()

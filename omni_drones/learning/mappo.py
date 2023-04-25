@@ -233,7 +233,7 @@ class MAPPOPolicy(object):
                 actor_input, self.actor_params, eval_action=True
             )
         else: # [N, A, *]
-            actor_output = vmap(self.actor, in_dims=(1, 0), out_dims=1)(
+            actor_output = vmap(self.actor, in_dims=(1, 0), out_dims=1, randomness="different")(
                 actor_input, self.actor_params, eval_action=True
             )
 
@@ -399,6 +399,7 @@ def make_dataset_naive(
 
 from .modules.distributions import (
     DiagGaussian,
+    IndependentNormalModule,
     MultiCategoricalModule,
 )
 
@@ -421,8 +422,8 @@ def make_ppo_actor(cfg, observation_spec: TensorSpec, action_spec: TensorSpec):
         act_dist = MultiCategoricalModule(encoder.output_shape.numel(), [action_spec.space.n])
     elif isinstance(action_spec, (UnboundedTensorSpec, BoundedTensorSpec)):
         action_dim = action_spec.shape[-1]
-        act_dist = DiagGaussian(encoder.output_shape.numel(), action_dim, True, 0.01)
-        # act_dist = IndependentNormalModule(inputs_dim, action_dim, True)
+        # act_dist = DiagGaussian(encoder.output_shape.numel(), action_dim, False, 0.01)
+        act_dist = IndependentNormalModule(encoder.output_shape.numel(), action_dim, False)
     else:
         raise NotImplementedError(action_spec)
 

@@ -49,6 +49,9 @@ class MyBuffer:
         )
         return sub_trajs
 
+    def __len__(self):
+        return self.storage._len
+
 def sample_sub_traj(traj, seq_len):
     t = torch.randint(0, traj.shape[0] - seq_len, (1,))
     t = t + torch.arange(seq_len)

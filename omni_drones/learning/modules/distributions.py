@@ -185,19 +185,31 @@ class IndependentNormalModule(nn.Module):
         return IndependentNormal(loc, scale)
 
 
+class TanhNormalWithEntropy(TanhNormal):
+
+    def entropy(self):
+        return -self.log_prob(self.sample())
+
+
 class TanhIndependentNormalModule(nn.Module):
     def __init__(
         self,
         input_dim: int,
         output_dim: int,
-        scale_mapping: str = "exp",
+        scale_mapping: str = "softplus",
+        state_dependent_std: bool = True,
         scale_lb: float = 1e-4,
         min: Union[torch.Tensor, Number] = -1.0,
         max: Union[torch.Tensor, Number] = 1.0,
         event_dims=1,
     ):
         super().__init__()
-        self.operator = nn.Linear(input_dim, output_dim * 2)
+        self.state_dependent_std = state_dependent_std
+        if self.state_dependent_std:
+            self.operator = nn.Linear(input_dim, output_dim * 2)
+        else:
+            self.operator = nn.Linear(input_dim, output_dim)
+            self.log_std = nn.Parameter(torch.zeros(output_dim))
         if isinstance(scale_mapping, str):
             self.scale_mapping = _mappings[scale_mapping]
         elif callable(self.scale_mapping):
@@ -206,12 +218,16 @@ class TanhIndependentNormalModule(nn.Module):
             raise ValueError("scale_mapping must be a string or a callable function.")
         self.scale_lb = scale_lb
         self.dist_cls = functools.partial(
-            TanhNormal, min=min, max=max, event_dims=event_dims
+            TanhNormalWithEntropy, min=min, max=max, event_dims=event_dims
         )
 
     def forward(self, tensor: torch.Tensor) -> Tuple[torch.Tensor]:
-        loc, scale = self.operator(tensor).chunk(2, -1)
-        scale = self.scale_mapping(scale).clamp_min(self.scale_lb)
+        if self.state_dependent_std:
+            loc, scale = self.operator(tensor).chunk(2, -1)
+            scale = self.scale_mapping(scale).clamp_min(self.scale_lb)
+        else:
+            loc = self.operator(tensor)
+            scale = self.scale_mapping(self.log_std).clamp_min(self.scale_lb)
         return self.dist_cls(loc, scale)
 
 
@@ -326,7 +342,7 @@ class MultiOneHotCategorical(D.Independent):
         self,
         logits: torch.Tensor = None,
         probs: torch.Tensor = None,
-        unimix: float = 0.0
+        unimix: float = 0.01
     ):
         if (probs is None) == (logits is None):
             raise ValueError(
@@ -334,11 +350,55 @@ class MultiOneHotCategorical(D.Independent):
             )
         
         if logits is not None:
-            probs = F.softmax(logits)
+            probs = F.softmax(logits, dim=-1)
         
         probs = probs * (1. - unimix) + unimix / probs.shape[-1]
-        super.__init__(
+        super().__init__(
             D.OneHotCategoricalStraightThrough(probs=probs),
             1
         )
+
+class TwoHot(D.Distribution):
+    def __init__(
+        self, 
+        logits: torch.Tensor, 
+        low=-20.0, 
+        high=20.0, 
+    ):
+        super().__init__(batch_shape=logits.shape[:-1])
+        self.logits = logits
+        self.probs = torch.softmax(logits, -1)
+        self.buckets = torch.linspace(low, high, steps=logits.shape[-1]).to(logits.device)
+
+    @property
+    def mean(self):
+        return torch.sum(self.probs * self.buckets, -1, keepdim=True)
+
+    @property
+    def mode(self):
+        return self.mean
+
+    def log_prob(self, x):
+        # x(time, batch, 1)
+        below = torch.sum((self.buckets <= x[..., None]).to(torch.int32), dim=-1) - 1
+        above = len(self.buckets) - torch.sum(
+            (self.buckets > x[..., None]).to(torch.int32), dim=-1
+        )
+        below = torch.clip(below, 0, len(self.buckets) - 1)
+        above = torch.clip(above, 0, len(self.buckets) - 1)
+        equal = below == above
+
+        dist_to_below = torch.where(equal, 1, torch.abs(self.buckets[below] - x))
+        dist_to_above = torch.where(equal, 1, torch.abs(self.buckets[above] - x))
+        total = dist_to_below + dist_to_above
+        weight_below = dist_to_above / total
+        weight_above = dist_to_below / total
+        target = (
+            F.one_hot(below, num_classes=len(self.buckets)) * weight_below[..., None]
+            + F.one_hot(above, num_classes=len(self.buckets)) * weight_above[..., None]
+        )
+        log_pred = self.logits - torch.logsumexp(self.logits, -1, keepdim=True)
+        target = target.squeeze(-2)
+
+        return (target * log_pred).sum(-1)
 

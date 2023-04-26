@@ -7,22 +7,41 @@ encoder:
   proj_units: [128]
 
 decoder:
+  hidden_units: [128]
 
-deter_dim: 128
-stoch_dim: 32
-discrete_dim: 32
+world_model:
+  deter_dim: 129
+  stoch_dim: 32
+  discrete_dim: 32
+  hidden_units: [128] # cat([stoch, action]) -> gru_input
+  prior_hidden_units: [128] # gru_output -> prior_logits
+  post_hidden_units: [128] # cat([embed, deter]) -> post_logits
+  lr: 1e-4
+  kl_free: 1.
 
 actor:
-  units: [128]
-sequence_model:
-  units: [128]
-dynamics_pred:
-  units: [128]
-value_pred:
-  head: twohot_symlog
-  units: [128]
+  hidden_units: [128]
+  lr: 3e-5
+critic:
+  value_pred_dist: twohot_symlog
+  hidden_units: [128]
+  lr: 3e-5
+
 reward_pred:
   head: twohot_symlog
-  units: [128]
-discont_pred:
-  units: [128]
+  hidden_units: [128]
+discount_pred:
+  hidden_units: [128]
+
+discount: 0.95
+gradient_steps: 1
+buffer_size: 1024
+train_every: 64
+batch_size: 16
+batch_length: 64
+
+max_grad_norm: 100
+return_lambda: 0.95
+imag_horizon: 15
+actor_grad: dynamics
+actor_entropy_coeff: 0.001

@@ -1,0 +1,41 @@
+program: train_without_controller.py
+name: MultiOffpolicy
+project: gpu-onpolicy
+entity: marl-drones
+method: grid
+
+metric:
+  name: train/return
+  goal: maximize
+
+parameters:
+
+  algo:
+    values:
+    - matd3
+
+  task: 
+    values: 
+    - TransportHover
+    - PlatformHover
+
+  task.env.num_envs:
+    value: 512
+
+  total_frames: 
+    value: 25_000_000
+
+  headless:
+    value: true
+  
+  seed:
+    values: [0, 42, 81]
+
+  task.drone_model:
+    values: [Firefly, Hummingbird]
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args_no_hyphens}

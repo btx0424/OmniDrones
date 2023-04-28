@@ -34,13 +34,13 @@ class Gate(IsaacEnv):
             shape=[self.num_envs, 1]
         )
         self.gate.initialize()
-        # self.gate_frame = RigidPrimView(
-        #     "/World/envs/env_*/Gate/frame",
-        #     reset_xform_properties=False,
-        #     shape=[self.num_envs, 1],
-        #     track_contact_forces=True
-        # )
-        # self.gate_frame.initialize()
+        self.gate_frame = RigidPrimView(
+            "/World/envs/env_*/Gate/frame",
+            reset_xform_properties=False,
+            shape=[self.num_envs, 1],
+            track_contact_forces=True
+        )
+        self.gate_frame.initialize()
         # self.gate_frame.post_reset()
 
         self.target = RigidPrimView(
@@ -229,7 +229,7 @@ class Gate(IsaacEnv):
 
         gate_reward = torch.where(
             distance_to_gate_plane > 0.,
-            (0.5 - distance_to_gate_center).sum(-1) * torch.exp(-distance_to_gate_plane),
+            (0.4 - distance_to_gate_center).sum(-1) * torch.exp(-distance_to_gate_plane),
             1.
         )
 
@@ -246,28 +246,23 @@ class Gate(IsaacEnv):
         spin = torch.square(vels[..., -1])
         spin_reward = 1. / (1.0 + torch.square(spin))
 
-        # collision_frame = (
-        #     self.gate_frame
-        #     .get_net_contact_forces()
-        #     .any(-1)
-        #     .any(-1, keepdim=True)
-        # )
-        # collision_drone = (
-        #     self.drone.base_link
-        #     .get_net_contact_forces()
-        #     .any(-1)
-        # )
+        collision_frame = (
+            self.gate_frame
+            .get_net_contact_forces()
+            .any(-1)
+            .any(-1, keepdim=True)
+        )
 
         assert pose_reward.shape == up_reward.shape == spin_reward.shape
         reward = (
-            pose_reward * 1.6
+            pose_reward * 1.4
             + gate_reward
             + (pose_reward + 0.3) * (up_reward + spin_reward) 
             + effort_reward
         )
         
         done_invalid = (crossing_plane & ~through_gate)
-        done_misbehave = ((pos[..., 2] < 0.2) | (distance_to_target > 6.))
+        done_misbehave = ((pos[..., 2] < 0.2) | (distance_to_target > 6.) | collision_frame)
         done_hasnan = torch.isnan(self.drone_state).any(-1)
         self.stats["hasnan"] += done_hasnan.float()
         done = (

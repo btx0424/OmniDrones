@@ -68,22 +68,26 @@ class Gate(IsaacEnv):
         self.agent_spec["drone"] = AgentSpec(
             "drone",
             1,
-            UnboundedContinuousTensorSpec(drone_state_dim + 3).to(self.device),
+            UnboundedContinuousTensorSpec(drone_state_dim + 6).to(self.device),
             self.drone.action_spec.to(self.device),
             UnboundedContinuousTensorSpec(1).to(self.device),
         )
 
         self.init_pos_dist = D.Uniform(
             torch.tensor([-2.5, -1.5, 1.5], device=self.device),
-            torch.tensor([-1.5, 1.5, 2.5], device=self.device)
+            torch.tensor([-2.0, 1.5, 2.5], device=self.device)
         )
         self.init_rpy_dist = D.Uniform(
             torch.tensor([-.2, -.2, 0.], device=self.device) * torch.pi,
             torch.tensor([.2, .2, 2], device=self.device) * torch.pi
         )
+        self.init_gate_pos_dist = D.Uniform(
+            torch.tensor([-1.5], device=self.device),
+            torch.tensor([1.5], device=self.device)
+        )
         self.target_pos_dist = D.Uniform(
-            torch.tensor([1.5, -1.5, 1.5], device=self.device),
-            torch.tensor([2.5, 1.5, 2.5], device=self.device)
+            torch.tensor([1.5, -1., 1.5], device=self.device),
+            torch.tensor([2.5, 1., 2.5], device=self.device)
         )
 
         self.alpha = 0.7
@@ -91,7 +95,6 @@ class Gate(IsaacEnv):
         stats_spec = CompositeSpec({
             "pos_error": UnboundedContinuousTensorSpec(1),
             "drone_uprightness": UnboundedContinuousTensorSpec(1),
-            "invalid": UnboundedContinuousTensorSpec(1),
             "hasnan": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
@@ -100,7 +103,6 @@ class Gate(IsaacEnv):
         self.stats = TensorDict({
             "pos_error": torch.zeros(self.num_envs, 1, device=self.device),
             "drone_uprightness": torch.zeros(self.num_envs, 1, device=self.device),
-            "invalid": torch.zeros(self.num_envs, 1, device=self.device),
             "hasnan": torch.zeros(self.num_envs, 1, device=self.device),
         }, self.num_envs)
 
@@ -138,7 +140,7 @@ class Gate(IsaacEnv):
 
         prim_utils.create_prim(
             "/World/envs/env_0/Gate",
-            usd_path=ASSET_PATH + "/usd/gate.usd",
+            usd_path=ASSET_PATH + "/usd/gate_sliding.usd",
             translation=(0., 0., 2.0)
         )
         target = objects.DynamicSphere(
@@ -170,10 +172,19 @@ class Gate(IsaacEnv):
         self.target.set_world_poses(
             target_pos + self.envs_positions[env_ids].unsqueeze(1), env_indices=env_ids
         )
+        gate_pos = self.init_gate_pos_dist.sample(env_ids.shape)
+        self.gate.set_joint_positions(
+            gate_pos, env_indices=env_ids
+        )
+        self.gate.set_joint_velocities(
+            torch.zeros_like(gate_pos), env_indices=env_ids
+        )
+        self.gate.set_joint_position_targets(
+            torch.zeros_like(gate_pos), env_indices=env_ids
+        )
 
         self.stats["pos_error"][env_ids] = 0
         self.stats["drone_uprightness"][env_ids] = 0
-        self.stats["invalid"][env_ids] = 0
         self.stats["hasnan"][env_ids] = 0
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
@@ -183,7 +194,8 @@ class Gate(IsaacEnv):
     def _compute_state_and_obs(self):
         self.drone_state = self.drone.get_state()
         self.drone_up = self.drone_state[..., 16:19]
-        self.gate_pos, self.gate_vel = self.get_env_poses(self.gate.get_world_poses())
+        self.gate_pos, _ = self.get_env_poses(self.gate.get_world_poses())
+        self.gate_vel = self.gate.get_velocities()
 
         # relative position and heading
         self.target_drone_rpos = self.target_pos - self.drone_state[..., :3]
@@ -193,6 +205,7 @@ class Gate(IsaacEnv):
             self.drone_state[..., 3:],
             self.target_drone_rpos,
             self.gate_drone_rpos,
+            self.gate_vel[..., :3],
         ], dim=-1)
 
         pos_error = torch.norm(self.target_drone_rpos, dim=-1)
@@ -210,12 +223,20 @@ class Gate(IsaacEnv):
         crossed_plane = pos[..., 0] > 0.
         crossing_plane = (crossed_plane & (~self.crossed_plane))
         self.crossed_plane |= crossed_plane
-        through_gate = (torch.abs(pos[..., 1:] - self.gate_pos[..., 1:]) < 0.5).all(-1)
+        distance_to_gate_plane = 0. - pos[..., 0]
+        distance_to_gate_center = torch.abs(pos[..., 1:] - self.gate_pos[..., 1:])
+        through_gate = (distance_to_gate_center < 0.5).all(-1)
+
+        gate_reward = torch.where(
+            distance_to_gate_plane > 0.,
+            (0.5 - distance_to_gate_center).sum(-1) * torch.exp(-distance_to_gate_plane),
+            1.
+        )
 
         # pose reward
-        distance = torch.norm(self.target_drone_rpos, dim=-1)
+        distance_to_target = torch.norm(self.target_drone_rpos, dim=-1)
 
-        pose_reward = 1.0 / (1.0 + torch.square(self.reward_distance_scale * distance))
+        pose_reward = 1.0 / (1.0 + torch.square(self.reward_distance_scale * distance_to_target))
 
         # uprightness
         up_reward = torch.square((self.drone_up[..., 2] + 1) / 2)
@@ -223,7 +244,7 @@ class Gate(IsaacEnv):
         effort_reward = self.reward_effort_weight * torch.exp(-self.effort)
 
         spin = torch.square(vels[..., -1])
-        spin_reward = 0.5 / (1.0 + torch.square(spin))
+        spin_reward = 1. / (1.0 + torch.square(spin))
 
         # collision_frame = (
         #     self.gate_frame
@@ -239,15 +260,15 @@ class Gate(IsaacEnv):
 
         assert pose_reward.shape == up_reward.shape == spin_reward.shape
         reward = (
-            pose_reward 
-            + pose_reward * (up_reward + spin_reward) 
+            pose_reward * 1.6
+            + gate_reward
+            + (pose_reward + 0.3) * (up_reward + spin_reward) 
             + effort_reward
         )
         
         done_invalid = (crossing_plane & ~through_gate)
-        done_misbehave = ((pos[..., 2] < 0.2) | (distance > 6.))
+        done_misbehave = ((pos[..., 2] < 0.2) | (distance_to_target > 6.))
         done_hasnan = torch.isnan(self.drone_state).any(-1)
-        self.stats["invalid"] += done_invalid.float()
         self.stats["hasnan"] += done_hasnan.float()
         done = (
             (self.progress_buf >= self.max_episode_length).unsqueeze(-1)

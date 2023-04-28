@@ -1,0 +1,15 @@
+name: Gate
+
+defaults:
+  - /env_base
+  - /sim_base
+
+env:
+  num_envs: 4096
+
+drone_model: Hummingbird
+
+reward_effort_weight: 0.1
+reward_distance_scale: 1.0
+
+action_transform: null

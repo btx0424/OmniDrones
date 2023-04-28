@@ -2,6 +2,12 @@ import torch
 from typing import Optional, Tuple, List
 from contextlib import contextmanager
 
+from typing import List, Optional, Tuple, Union
+import numpy as np
+import carb
+from omni.isaac.core.utils.prims import get_prim_parent, get_prim_at_path, set_prim_property, get_prim_property
+from pxr import Usd, UsdGeom, UsdPhysics, PhysxSchema
+from omni.isaac.core.utils.types import JointsState, ArticulationActions
 from omni.isaac.core.articulations import ArticulationView as _ArticulationView
 from omni.isaac.core.prims import RigidPrimView as _RigidPrimView
 from omni.isaac.core.prims import XFormPrimView
@@ -50,8 +56,171 @@ class ArticulationView(_ArticulationView):
     
     @require_sim_initialized
     def initialize(self, physics_sim_view: omni.physics.tensors.SimulationView = None) -> None:
-        super().initialize(physics_sim_view)
-        return self
+        """Create a physics simulation view if not passed and creates an articulation view using physX tensor api.
+
+        Args:
+            physics_sim_view (omni.physics.tensors.SimulationView, optional): current physics simulation view. Defaults to None.
+        """
+        if physics_sim_view is None:
+            physics_sim_view = omni.physics.tensors.create_simulation_view(self._backend)
+            physics_sim_view.set_subspace_roots("/")
+        carb.log_info("initializing view for {}".format(self._name))
+        # TODO: add a callback to set physics view to None once stop is called
+        self._physics_view = physics_sim_view.create_articulation_view(
+            self._regex_prim_paths.replace(".*", "*"), self._enable_dof_force_sensors
+        )
+        assert self._physics_view.is_homogeneous
+        self._physics_sim_view = physics_sim_view
+        if not self._is_initialized:
+            self._metadata = self._physics_view.shared_metatype
+            self._num_dof = self._physics_view.max_dofs
+            self._num_bodies = self._physics_view.max_links
+            self._num_shapes = self._physics_view.max_shapes
+            self._num_fixed_tendons = self._physics_view.max_fixed_tendons
+            self._body_names = self._metadata.link_names
+            self._body_indices = dict(zip(self._body_names, range(len(self._body_names))))
+            self._dof_names = self._metadata.dof_names
+            self._dof_indices = self._metadata.dof_indices
+            self._dof_types = self._metadata.dof_types
+            self._dof_paths = self._physics_view.dof_paths
+            self._prim_paths = self._physics_view.prim_paths
+            carb.log_info("Articulation Prim View Device: {}".format(self._device))
+            self._is_initialized = True
+            self._default_kps, self._default_kds = self.get_gains(clone=True)
+            default_actions = self.get_applied_actions(clone=True)
+            # TODO: implement effort part
+            if self.num_dof > 0:
+                if self._default_joints_state is None:
+                    self._default_joints_state = JointsState(positions=None, velocities=None, efforts=None)
+                if self._default_joints_state.positions is None:
+                    self._default_joints_state.positions = default_actions.joint_positions
+                if self._default_joints_state.velocities is None:
+                    self._default_joints_state.velocities = default_actions.joint_velocities
+                if self._default_joints_state.efforts is None:
+                    self._default_joints_state.efforts = self._backend_utils.create_zeros_tensor(
+                        shape=[self.count, self.num_dof], dtype="float32", device=self._device
+                    )
+        return
+    
+    def get_gains(
+        self,
+        indices: Optional[Union[np.ndarray, List, torch.Tensor]] = None,
+        joint_indices: Optional[Union[np.ndarray, List, torch.Tensor]] = None,
+        clone: bool = True,
+    ) -> Tuple[Union[np.ndarray, torch.Tensor], Union[np.ndarray, torch.Tensor]]:
+        """
+        Gets stiffness and damping of articulations in the view.
+
+        Args:
+            indices (Optional[Union[np.ndarray, List, torch.Tensor]], optional): indicies to specify which prims 
+                                                                                 to query. Shape (M,).
+                                                                                 Where M <= size of the encapsulated prims in the view.
+                                                                                 Defaults to None (i.e: all prims in the view).
+            joint_indices (Optional[Union[np.ndarray, List, torch.Tensor]], optional): joint indicies to specify which joints 
+                                                                                 to query. Shape (K,).
+                                                                                 Where K <= num of dofs.
+                                                                                 Defaults to None (i.e: all dofs).
+            clone (bool, optional): True to return clones of the internal buffers. Otherwise False. Defaults to True.
+
+        Returns:
+            Tuple[Union[np.ndarray, torch.Tensor], Union[np.ndarray, torch.Tensor]]: stiffness and damping of
+                                                             articulations in the view respectively. shapes are (M, K).
+        """
+        if not self._is_initialized:
+            carb.log_warn("ArticulationView needs to be initialized.")
+            return None
+        if not omni.timeline.get_timeline_interface().is_stopped() and self._physics_view is not None:
+            indices = self._backend_utils.resolve_indices(indices, self.count, device="cpu")
+            joint_indices = self._backend_utils.resolve_indices(joint_indices, self.num_dof, device="cpu")
+            if joint_indices.numel() == 0:
+                return None, None
+            kps = self._physics_view.get_dof_stiffnesses()
+            kds = self._physics_view.get_dof_dampings()
+            result_kps = self._backend_utils.move_data(
+                kps[self._backend_utils.expand_dims(indices, 1), joint_indices], device=self._device
+            )
+            result_kds = self._backend_utils.move_data(
+                kds[self._backend_utils.expand_dims(indices, 1), joint_indices], device=self._device
+            )
+            if clone:
+                result_kps = self._backend_utils.clone_tensor(result_kps, device=self._device)
+                result_kds = self._backend_utils.clone_tensor(result_kds, device=self._device)
+            return result_kps, result_kds
+        else:
+            indices = self._backend_utils.resolve_indices(indices, self.count, self._device)
+            dof_types = self.get_dof_types()
+            joint_indices = self._backend_utils.resolve_indices(joint_indices, self.num_dof, self._device)
+            if joint_indices.numel() == 0:
+                return None, None
+            kps = self._backend_utils.create_zeros_tensor(
+                shape=[indices.shape[0], joint_indices.shape[0]], dtype="float32", device=self._device
+            )
+            kds = self._backend_utils.create_zeros_tensor(
+                shape=[indices.shape[0], joint_indices.shape[0]], dtype="float32", device=self._device
+            )
+            articulation_write_idx = 0
+            for i in indices:
+                dof_write_idx = 0
+                for dof_index in joint_indices:
+                    drive_type = (
+                        "angular" if dof_types[dof_index] == omni.physics.tensors.DofType.Rotation else "linear"
+                    )
+                    prim = get_prim_at_path(self._dof_paths[i][dof_index])
+                    if prim.HasAPI(UsdPhysics.DriveAPI):
+                        drive = UsdPhysics.DriveAPI(prim, drive_type)
+                    else:
+                        drive = UsdPhysics.DriveAPI.Apply(prim, drive_type)
+                    if drive.GetStiffnessAttr().Get() == 0.0 or drive_type == "linear":
+                        kps[articulation_write_idx][dof_write_idx] = drive.GetStiffnessAttr().Get()
+                    else:
+                        kps[articulation_write_idx][dof_write_idx] = self._backend_utils.convert(
+                            1.0 / omni.isaac.core.utils.numpy.deg2rad(float(1.0 / drive.GetStiffnessAttr().Get())),
+                            device=self._device,
+                        )
+                    if drive.GetDampingAttr().Get() == 0.0 or drive_type == "linear":
+                        kds[articulation_write_idx][dof_write_idx] = drive.GetDampingAttr().Get()
+                    else:
+                        kds[articulation_write_idx][dof_write_idx] = self._backend_utils.convert(
+                            1.0 / omni.isaac.core.utils.numpy.deg2rad(float(1.0 / drive.GetDampingAttr().Get())),
+                            device=self._device,
+                        )
+                    dof_write_idx += 1
+                articulation_write_idx += 1
+            return kps, kds
+    
+    def get_applied_actions(self, clone: bool = True) -> ArticulationActions:
+        """Gets current applied actions in an ArticulationActions object.
+
+        Args:
+            clone (bool, optional): True to return clones of the internal buffers. Otherwise False. Defaults to True.
+
+        Returns:
+            ArticulationActions: current applied actions (i.e: current position targets and velocity targets)
+        """
+        if not self._is_initialized:
+            carb.log_warn("ArticulationView needs to be initialized.")
+            return None
+        if not omni.timeline.get_timeline_interface().is_stopped() and self._physics_view is not None:
+            if self.num_dof == 0:
+                return None
+            self._physics_sim_view.enable_warnings(False)
+            joint_positions = self._physics_view.get_dof_position_targets()
+            if clone:
+                joint_positions = self._backend_utils.clone_tensor(joint_positions, device=self._device)
+            joint_velocities = self._physics_view.get_dof_velocity_targets()
+            if clone:
+                joint_velocities = self._backend_utils.clone_tensor(joint_velocities, device=self._device)
+            self._physics_sim_view.enable_warnings(True)
+            # TODO: implement the effort part
+            return ArticulationActions(
+                joint_positions=joint_positions,
+                joint_velocities=joint_velocities,
+                joint_efforts=None,
+                joint_indices=None,
+            )
+        else:
+            carb.log_warn("Physics Simulation View is not created yet in order to use get_applied_actions")
+            return None
 
     def get_world_poses(
         self, env_indices: Optional[torch.Tensor] = None, clone: bool = True

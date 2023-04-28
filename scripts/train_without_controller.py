@@ -162,10 +162,11 @@ def main(cfg):
         env.reset()
         env.train()
 
-        video_array = torch.stack(frames)
-        info["recording"] = wandb.Video(
-            video_array, fps=1 / cfg.sim.dt, format="mp4"
-        )
+        if len(frames):
+            video_array = torch.stack(frames)
+            info["recording"] = wandb.Video(
+                video_array, fps=1 / cfg.sim.dt, format="mp4"
+            )
         return info
 
     pbar = tqdm(collector)

@@ -15,6 +15,7 @@ from omni_drones.utils.torch import euler_to_quaternion
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.robots.config import RobotCfg
 from omni_drones.robots.drone import MultirotorBase
+from omni_drones.sensors.camera import Camera, PinholeCameraCfg
 from omni_drones.views import ArticulationView, RigidPrimView
 
 from omni_drones.robots import ASSET_PATH
@@ -33,14 +34,14 @@ class Gate(IsaacEnv):
             shape=[self.num_envs, 1]
         )
         self.gate.initialize()
-        self.gate_frame = RigidPrimView(
-            "/World/envs/env_*/Gate/frame",
-            reset_xform_properties=False,
-            shape=[self.num_envs, 1],
-            track_contact_forces=True
-        )
-        self.gate_frame.initialize()
-        self.gate_frame.post_reset()
+        # self.gate_frame = RigidPrimView(
+        #     "/World/envs/env_*/Gate/frame",
+        #     reset_xform_properties=False,
+        #     shape=[self.num_envs, 1],
+        #     track_contact_forces=True
+        # )
+        # self.gate_frame.initialize()
+        # self.gate_frame.post_reset()
 
         self.target = RigidPrimView(
             "/World/envs/env_*/target",
@@ -57,6 +58,13 @@ class Gate(IsaacEnv):
         self.crossed_plane = torch.zeros(self.num_envs, 1, device=self.device, dtype=bool)
 
         drone_state_dim = self.drone.state_spec.shape[-1]
+        observation_spec = CompositeSpec({
+            "state": UnboundedContinuousTensorSpec(drone_state_dim + 3),
+        })
+        if self.visual_obs:
+            observation_spec.update({
+                "distance_to_camera": UnboundedContinuousTensorSpec((1, *self.camera.shape))
+            })
         self.agent_spec["drone"] = AgentSpec(
             "drone",
             1,
@@ -75,7 +83,7 @@ class Gate(IsaacEnv):
         )
         self.target_pos_dist = D.Uniform(
             torch.tensor([1.5, -1.5, 1.5], device=self.device),
-            torch.tensor([2.0, 1.5, 2.5], device=self.device)
+            torch.tensor([2.5, 1.5, 2.5], device=self.device)
         )
 
         self.alpha = 0.7
@@ -84,6 +92,7 @@ class Gate(IsaacEnv):
             "pos_error": UnboundedContinuousTensorSpec(1),
             "drone_uprightness": UnboundedContinuousTensorSpec(1),
             "invalid": UnboundedContinuousTensorSpec(1),
+            "hasnan": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
         # self.stats = stats_spec.zero()
@@ -91,7 +100,8 @@ class Gate(IsaacEnv):
         self.stats = TensorDict({
             "pos_error": torch.zeros(self.num_envs, 1, device=self.device),
             "drone_uprightness": torch.zeros(self.num_envs, 1, device=self.device),
-            "invalid": torch.zeros(self.num_envs, 1, device=self.device)
+            "invalid": torch.zeros(self.num_envs, 1, device=self.device),
+            "hasnan": torch.zeros(self.num_envs, 1, device=self.device),
         }, self.num_envs)
 
     def _design_scene(self):
@@ -106,7 +116,26 @@ class Gate(IsaacEnv):
             restitution=0.0,
         )
         
-        self.drone.spawn(translations=[(-2., 0.0, 2.0)])
+        drone_prims = self.drone.spawn(translations=[(-2., 0.0, 2.0)])
+        self.visual_obs = self.cfg.task.visual_obs
+        if self.visual_obs:
+            camera_cfg = PinholeCameraCfg(
+                sensor_tick=0,
+                resolution=(320, 240),
+                data_types=["distance_to_camera"],
+                usd_params=PinholeCameraCfg.UsdCameraCfg(
+                    focal_length=24.0,
+                    focus_distance=400.0,
+                    horizontal_aperture=20.955,
+                    clipping_range=(0.2, 30),
+                ),
+            )
+            self.camera = Camera(camera_cfg)
+            camera_paths = [
+                f"{prim.GetPath()}/base_link/Camera" for prim in drone_prims
+            ]
+            self.camera.spawn(camera_paths, targets=[(1., 0., 0.1) for _ in range(len(camera_paths))])
+
         prim_utils.create_prim(
             "/World/envs/env_0/Gate",
             usd_path=ASSET_PATH + "/usd/gate.usd",
@@ -123,7 +152,6 @@ class Gate(IsaacEnv):
         return ["/World/defaultGroundPlane"]
 
     def _reset_idx(self, env_ids: torch.Tensor):
-        print(f"reset {len(env_ids)} envs")
         self.drone._reset_idx(env_ids)
         
         drone_pos = self.init_pos_dist.sample((*env_ids.shape, 1))
@@ -146,6 +174,7 @@ class Gate(IsaacEnv):
         self.stats["pos_error"][env_ids] = 0
         self.stats["drone_uprightness"][env_ids] = 0
         self.stats["invalid"][env_ids] = 0
+        self.stats["hasnan"][env_ids] = 0
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("action", "drone.action")]
@@ -181,7 +210,7 @@ class Gate(IsaacEnv):
         crossed_plane = pos[..., 0] > 0.
         crossing_plane = (crossed_plane & (~self.crossed_plane))
         self.crossed_plane |= crossed_plane
-        through_gate = (torch.abs(pos[..., 1:2] - self.gate_pos[..., 1:2]) < 0.5).all(-1)
+        through_gate = (torch.abs(pos[..., 1:] - self.gate_pos[..., 1:]) < 0.5).all(-1)
 
         # pose reward
         distance = torch.norm(self.target_drone_rpos, dim=-1)
@@ -196,12 +225,17 @@ class Gate(IsaacEnv):
         spin = torch.square(vels[..., -1])
         spin_reward = 0.5 / (1.0 + torch.square(spin))
 
-        collision = (
-            self.gate_frame
-            .get_net_contact_forces()
-            .any(-1)
-            .any(-1, keepdim=True)
-        )
+        # collision_frame = (
+        #     self.gate_frame
+        #     .get_net_contact_forces()
+        #     .any(-1)
+        #     .any(-1, keepdim=True)
+        # )
+        # collision_drone = (
+        #     self.drone.base_link
+        #     .get_net_contact_forces()
+        #     .any(-1)
+        # )
 
         assert pose_reward.shape == up_reward.shape == spin_reward.shape
         reward = (
@@ -210,16 +244,16 @@ class Gate(IsaacEnv):
             + effort_reward
         )
         
-        done_invalid = (crossing_plane & ~through_gate) | collision
-        done_misbehave = ((pos[..., 2] < 0.2) | (pos[..., 1].abs() > 3.))
+        done_invalid = (crossing_plane & ~through_gate)
+        done_misbehave = ((pos[..., 2] < 0.2) | (distance > 6.))
         done_hasnan = torch.isnan(self.drone_state).any(-1)
         self.stats["invalid"] += done_invalid.float()
-
+        self.stats["hasnan"] += done_hasnan.float()
         done = (
             (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-            # | done_misbehave
-            # | done_invalid
-            # | done_hasnan
+            | done_misbehave
+            | done_invalid
+            | done_hasnan
         )
 
         self._tensordict["return"] += reward.unsqueeze(-1)

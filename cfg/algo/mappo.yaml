@@ -30,11 +30,11 @@ actor:
   attn_encoder: PartialAttentionEncoder
   use_orthogonal: true
 
-  # rnn:
-  #   cls: gru
-  #   kwargs:
-  #     hidden_size: 128
-  #   train_seq_len: 8
+  rnn:
+    cls: gru
+    kwargs:
+      hidden_size: 128
+    train_seq_len: 8
 
 critic:
   num_critics: 1
@@ -57,11 +57,11 @@ critic:
   use_huber_loss: true
   huber_delta: 10
 
-  # rnn:
-  #   cls: gru
-  #   kwargs:
-  #     hidden_size: 128
-  #   train_seq_len: 8
+  rnn:
+    cls: gru
+    kwargs:
+      hidden_size: 128
+    train_seq_len: 8
 
   attn_encoder: PartialAttentionEncoder
   use_feature_normalization: true

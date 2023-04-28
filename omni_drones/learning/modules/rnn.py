@@ -14,6 +14,9 @@ class GRU(nn.Module):
     ) -> None:
         super().__init__()
         self.cell = nn.GRUCell(input_size=input_size, hidden_size=hidden_size)
+        nn.init.orthogonal_(self.cell.weight_hh)
+        nn.init.orthogonal_(self.cell.weight_ih)
+        self.layer_norm = nn.LayerNorm(hidden_size)
 
     def forward(
         self,
@@ -54,7 +57,10 @@ class GRU(nn.Module):
             mask = (1 - is_initial.float()).reshape(N, 1)
             output = h = self.cell(input, h * mask)
 
-        output = output + input
+        # output = output + input # 0
+        output = self.layer_norm(output + input) # 1
+        # output = self.layer_norm(output) + input # 2
+        # output = self.layer_norm(output) # 3
         if has_time_dim:
             h = h.unsqueeze(1).expand(N, L, -1)  # pad to the same length
         return output, h

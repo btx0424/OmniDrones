@@ -3,7 +3,9 @@ import os
 import time
 
 import hydra
+from tensordict.tensordict import TensorDictBase
 import torch
+from torchrl.data.tensor_specs import TensorSpec
 import wandb
 from functorch import vmap
 from omegaconf import OmegaConf
@@ -14,7 +16,8 @@ from omni_drones.utils.envs.transforms import (
     LogOnEpisode, 
     FromMultiDiscreteAction, 
     FromDiscreteAction,
-    flatten_composite
+    flatten_composite,
+    VelController
 )
 from omni_drones.utils.wandb import init_wandb
 from omni_drones.learning import (
@@ -94,6 +97,17 @@ def main(cfg):
             nbins = int(action_transform.split(":")[1])
             transform = FromDiscreteAction(("action", "drone.action"), nbins=nbins)
             transforms.append(transform)
+        elif action_transform == "controller":
+            controller_cls = base_env.drone.DEFAULT_CONTROLLER
+            controller = controller_cls(
+                base_env.dt, 
+                9.81, 
+                base_env.drone.params
+            ).to(base_env.device)
+            transform = VelController(vmap(vmap(controller)), ("action", "drone.action"))
+            transforms.append(transform)
+        else:
+            raise NotImplementedError(f"Unknown action transform: {action_transform}")
     
     env = TransformedEnv(base_env, Compose(*transforms)).train()
     env.set_seed(cfg.seed)

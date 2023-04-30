@@ -41,7 +41,7 @@ class MultirotorBase(RobotBase):
             self.base_link = RigidPrimView(
                 prim_paths_expr=f"{self.prim_paths_expr}/base_link",
                 name="base_link",
-                track_contact_forces=True,
+                # track_contact_forces=True,
                 shape=self.shape,
             )
             self.base_link.initialize()

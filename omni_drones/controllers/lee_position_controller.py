@@ -3,13 +3,25 @@ import torch.nn as nn
 from tensordict import TensorDict
 
 from .utils import normalize, quaternion_to_rotation_matrix
-
+import yaml
+import os.path as osp
 
 class LeePositionController(nn.Module):
-    def __init__(self, dt: float, g: float, uav_params) -> None:
+    def __init__(
+        self, 
+        dt: float, 
+        g: float, 
+        uav_params,
+    ) -> None:
         super().__init__()
-        self.pos_gain = nn.Parameter(torch.tensor([6.0, 6.0, 6.0]))
-        self.vel_gain = nn.Parameter(torch.tensor([4.7, 4.7, 4.7]))
+        controller_param_path = osp.join(
+            osp.dirname(__file__), "cfg", f"lee_controller_{uav_params['name']}.yaml"
+        )
+        with open(controller_param_path, "r") as f:
+            controller_params = yaml.safe_load(f)
+        
+        self.pos_gain = nn.Parameter(torch.as_tensor(controller_params["position_gain"]).float())
+        self.vel_gain = nn.Parameter(torch.as_tensor(controller_params["velocity_gain"]).float())
         self.mass = nn.Parameter(torch.tensor(uav_params["mass"]))
         self.g = nn.Parameter(torch.tensor([0.0, 0.0, g]).abs())
 
@@ -38,16 +50,15 @@ class LeePositionController(nn.Module):
 
         self.mixer = nn.Parameter(A.T @ (A @ A.T).inverse() @ I)
         self.attitute_gain = nn.Parameter(
-            torch.tensor([3, 3, 0.15]) @ I[:3, :3].inverse()
+            torch.as_tensor(controller_params["attitude_gain"]).float() @ I[:3, :3].inverse()
         )
         self.ang_rate_gain = nn.Parameter(
-            torch.tensor([0.52, 0.52, 0.18]) @ I[:3, :3].inverse()
+            torch.as_tensor(controller_params["angular_rate_gain"]).float() @ I[:3, :3].inverse()
         )
 
         # print(A)
         # print(self.mixer)
-        for p in self.parameters():
-            p.requires_grad_(False)
+        self.requires_grad_(False)
 
     def forward(
         self,

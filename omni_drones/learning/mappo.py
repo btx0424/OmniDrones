@@ -29,7 +29,7 @@ LR_SCHEDULER = lr_scheduler._LRScheduler
 
 class MAPPOPolicy(object):
     def __init__(
-        self, cfg, agent_spec: AgentSpec, act_name: str = None, device="cuda"
+        self, cfg, agent_spec: AgentSpec, device="cuda"
     ) -> None:
         super().__init__()
 
@@ -56,7 +56,7 @@ class MAPPOPolicy(object):
             )
 
         self.obs_name = f"{self.agent_spec.name}.obs"
-        self.act_name = act_name or ("action", f"{self.agent_spec.name}.action")
+        self.act_name = ("action", f"{self.agent_spec.name}.action")
         self.state_name = f"{self.agent_spec.name}.state"
         self.reward_name = f"{self.agent_spec.name}.reward"
 
@@ -422,8 +422,8 @@ def make_ppo_actor(cfg, observation_spec: TensorSpec, action_spec: TensorSpec):
         act_dist = MultiCategoricalModule(encoder.output_shape.numel(), [action_spec.space.n])
     elif isinstance(action_spec, (UnboundedTensorSpec, BoundedTensorSpec)):
         action_dim = action_spec.shape[-1]
-        # act_dist = DiagGaussian(encoder.output_shape.numel(), action_dim, False, 0.01)
-        act_dist = IndependentNormalModule(encoder.output_shape.numel(), action_dim, False)
+        act_dist = DiagGaussian(encoder.output_shape.numel(), action_dim, False, 0.01)
+        # act_dist = IndependentNormalModule(encoder.output_shape.numel(), action_dim, False)
     else:
         raise NotImplementedError(action_spec)
 

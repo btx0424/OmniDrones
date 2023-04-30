@@ -1,3 +1,4 @@
+name: omav
 mass: 4.04
 rotor_configuration:
   arm_lengths:

@@ -1,3 +1,4 @@
+name: crazyflie
 inertia:
   xx: 1.4e-5
   xy: 0.0

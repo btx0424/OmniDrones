@@ -12,6 +12,7 @@ from torchrl.envs.transforms import (
 from torchrl.data import (
     TensorSpec,
     BoundedTensorSpec,
+    UnboundedContinuousTensorSpec,
     DiscreteTensorSpec,
     MultiDiscreteTensorSpec,
     CompositeSpec,
@@ -201,3 +202,41 @@ def flatten_composite(spec: CompositeSpec, key: str):
         )
     else:
         raise TypeError
+
+
+class VelController(Transform):
+    def __init__(
+        self,
+        controller,
+        action_key: str,
+    ):
+        super().__init__([], in_keys_inv=[("info", "drone_state"), "controller_state"])
+        self.controller = controller
+        self.action_key = action_key
+    
+    def transform_input_spec(self, input_spec: TensorSpec) -> TensorSpec:
+        action_spec = input_spec[self.action_key]
+        spec = UnboundedContinuousTensorSpec(action_spec.shape[:-1]+(3,), device=action_spec.device)
+        input_spec[self.action_key] = spec
+        return input_spec
+    
+    def reset(self, tensordict: TensorDictBase) -> TensorDictBase:
+        shape = tensordict[("info", "drone_state")].shape
+        tensordict.set("controller_state", TensorDict({}, shape[:-1]))
+        return tensordict
+    
+    def _inv_call(self, tensordict: TensorDictBase) -> TensorDictBase:
+        drone_state = tensordict[("info", "drone_state")][..., :13]
+        controller_state = tensordict["controller_state"]
+        target_vel = tensordict[("action", "drone.action")]
+        control_target = torch.cat([
+            drone_state[..., :3],
+            target_vel,
+            torch.zeros_like(target_vel[..., [0]]),
+        ], dim=-1)
+        cmds, controller_state = self.controller(drone_state, control_target, controller_state)
+        torch.nan_to_num_(cmds, 0.)
+        tensordict.set(("action", "drone.action"), cmds)
+        tensordict.set("controller_state", controller_state)
+        return tensordict
+

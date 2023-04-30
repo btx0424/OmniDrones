@@ -26,6 +26,7 @@ class Gate(IsaacEnv):
         self.reward_effort_weight = self.cfg.task.reward_effort_weight
         self.reward_distance_scale = self.cfg.task.reward_distance_scale
         self.reset_on_collision = self.cfg.task.reset_on_collision
+        self.gate_moving_range = self.cfg.task.gate_moving_range
 
         self.drone.initialize()
         
@@ -82,8 +83,8 @@ class Gate(IsaacEnv):
             torch.tensor([.2, .2, 0.], device=self.device) * torch.pi
         )
         self.init_gate_pos_dist = D.Uniform(
-            torch.tensor([-1.], device=self.device),
-            torch.tensor([1.0], device=self.device)
+            torch.tensor([-self.gate_moving_range], device=self.device),
+            torch.tensor([self.gate_moving_range], device=self.device)
         )
         self.target_pos_dist = D.Uniform(
             torch.tensor([1.5, -1., 1.5], device=self.device),
@@ -95,7 +96,6 @@ class Gate(IsaacEnv):
         stats_spec = CompositeSpec({
             "pos_error": UnboundedContinuousTensorSpec(1),
             "drone_uprightness": UnboundedContinuousTensorSpec(1),
-            "hasnan": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
         info_spec = CompositeSpec({
             "drone_state": UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim)),
@@ -184,7 +184,6 @@ class Gate(IsaacEnv):
 
         self.stats["pos_error"][env_ids] = 0
         self.stats["drone_uprightness"][env_ids] = 0
-        self.stats["hasnan"][env_ids] = 0
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("action", "drone.action")]
@@ -266,7 +265,6 @@ class Gate(IsaacEnv):
             )
             done_misbehave.bitwise_or_(collision_frame)
         done_hasnan = torch.isnan(self.drone_state).any(-1)
-        self.stats["hasnan"].add_(done_hasnan.float())
         done = (
             (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
             | done_misbehave

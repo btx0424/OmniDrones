@@ -118,7 +118,7 @@ class TD3Policy(object):
         self.replay_buffer.extend(data.reshape(-1))
 
         if len(self.replay_buffer) < self.cfg.buffer_size:
-            print(f"{len(self.replay_buffer)} < {self.cfg.buffer_size}")
+            print(f"filling buffer: {len(self.replay_buffer)}/{self.cfg.buffer_size}")
             return {}
         
         infos_critic = []

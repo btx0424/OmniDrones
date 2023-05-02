@@ -61,19 +61,20 @@ class TOLD(nn.Module):
             nn.ELU(),
             nn.Linear(encoder.output_shape.numel(), cfg.hidden_dim)
         )
+        self.action_proj = nn.Linear(action_dim, cfg.hidden_dim)
         self.dynamics = MLP(
-            [cfg.hidden_dim + action_dim, *cfg.dynamics.hidden_units, cfg.hidden_dim], 
+            [cfg.hidden_dim * 2, *cfg.dynamics.hidden_units, cfg.hidden_dim], 
             nn.LayerNorm
         )
         self.reward = MLP(
-            [cfg.hidden_dim + action_dim, 1],
+            [cfg.hidden_dim * 2, 1],
             nn.LayerNorm
         )
         self.cont = MLP(
-            [cfg.hidden_dim + action_dim, 1],
+            [cfg.hidden_dim * 2, 1],
             nn.LayerNorm
         )
-        q_units = [cfg.hidden_dim + action_dim, cfg.hidden_dim, cfg.hidden_dim, 1]
+        q_units = [cfg.hidden_dim * 2, cfg.hidden_dim, cfg.hidden_dim, 1]
         self.q1 = MLP(q_units, nn.LayerNorm)
         self.q2 = MLP(q_units, nn.LayerNorm)
         self.apply(orthogonal_init)
@@ -82,10 +83,12 @@ class TOLD(nn.Module):
         return self.encoder(obs)
     
     def next(self, z, a):
+        a = self.action_proj(a)
         x = torch.cat([z, a], dim=-1)
         return self.dynamics(x), self.reward(x), self.cont(x)
     
     def q(self, z, a):
+        a = self.action_proj(a)
         x = torch.cat([z, a], dim=-1)
         return torch.cat([self.q1(x), self.q2(x)], dim=-1)
 
@@ -175,7 +178,7 @@ class TDMPCPolicy:
         for t in range(actions.shape[0]):
             z, r, c = self.model.next(z, actions[t])
             G += discount * r
-            discount *= self.cfg.gamma
+            discount *= self.cfg.gamma * c.round()
         qs = self.model.q(z, self.pi(z, self.cfg.min_std))
         G += discount * qs.min(-1, keepdims=True).values
         return G

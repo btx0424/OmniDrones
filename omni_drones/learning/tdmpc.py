@@ -290,17 +290,20 @@ class TDMPCPolicy:
             model_grad_norm = nn.utils.clip_grad.clip_grad_norm_(self.model.parameters(), self.cfg.max_grad_norm)
             self.model_opt.step()
             
-            actor_loss = 0
-            with hold_out_net(self.model):
-                for t, z in enumerate(zs):
-                    # a = self.pi(z, self.cfg.min_std)
-                    a = self.pi(z, 0)
-                    q = self.model.q(z, a).min(-1, keepdims=True).values
-                    actor_loss += -q.mean() * (self.cfg.rho ** t)
-            self.actor_opt.zero_grad()
-            actor_loss.backward()
-            actor_grad_norm = nn.utils.clip_grad.clip_grad_norm_(self.actor.parameters(), self.cfg.max_grad_norm)
-            self.actor_opt.step()
+            if step % self.cfg.actor_delay == 0:
+                actor_loss = 0
+                with hold_out_net(self.model):
+                    for t, z in enumerate(zs):
+                        # a = self.pi(z, self.cfg.min_std)
+                        a = self.pi(z, 0)
+                        q = self.model.q(z, a).min(-1, keepdims=True).values
+                        actor_loss += -q.mean() * (self.cfg.rho ** t)
+                self.actor_opt.zero_grad()
+                actor_loss.backward()
+                actor_grad_norm = nn.utils.clip_grad.clip_grad_norm_(self.actor.parameters(), self.cfg.max_grad_norm)
+                self.actor_opt.step()
+                metrics["actor_loss"].append(actor_loss)
+                metrics["actor_grad_norm"].append(actor_grad_norm)
 
             if step % self.cfg.target_update_interval == 0:
                 soft_update(self.model_target, self.model, self.cfg.tau)
@@ -310,8 +313,6 @@ class TDMPCPolicy:
             metrics["model_loss/cont"].append(cont_loss)
             metrics["model_grad_norm"].append(model_grad_norm)
             metrics["value_loss"].append(value_loss)
-            metrics["actor_loss"].append(actor_loss)
-            metrics["actor_grad_norm"].append(actor_grad_norm)
 
         metrics = {k: torch.stack(v).mean().item() for k, v in metrics.items()}
         metrics["horizon"] = self.horizon_schedule(self._step)

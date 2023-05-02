@@ -145,7 +145,8 @@ def main(cfg):
 
     frames_per_batch = env.num_envs * int(cfg.algo.train_every)
     total_frames = cfg.get("total_frames", -1) // frames_per_batch * frames_per_batch
-    eval_interval = cfg.get("eval_interval", 50)
+    eval_interval = cfg.get("eval_interval", -1)
+    save_interval = cfg.get("save_interval", -1)
 
     collector = SyncDataCollector(
         env.train(),
@@ -194,6 +195,10 @@ def main(cfg):
             logging.info(f"Eval at {collector._frames} steps.")
             info.update(evaluate())
 
+        if save_interval > 0 and i % save_interval == 0:
+            ckpt_path = os.path.join(run.dir, f"checkpoint_{collector._frames}.pt")
+            torch.save(policy.state_dict(), ckpt_path)
+
         run.log(info)
         print(OmegaConf.to_yaml({k: v for k, v in info.items() if isinstance(v, float)}))
 
@@ -206,6 +211,9 @@ def main(cfg):
     info = {"env_frames": collector._frames}
     info.update(evaluate())
     run.log(info)
+
+    ckpt_path = os.path.join(run.dir, "checkpoint_final.pt")
+    torch.save(policy.state_dict(), ckpt_path)
 
     simulation_app.close()
 

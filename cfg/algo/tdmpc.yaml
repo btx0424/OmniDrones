@@ -15,7 +15,7 @@ max_grad_norm: 100
 
 # cem planning
 num_samples: 512
-min_std: 0.1
+min_std: 0.05
 mixture_coef: 0.05
 gamma: 0.99
 cem_momentum: 0.1
@@ -32,10 +32,11 @@ target_update_interval: 2
 tau: 0.01
 rho: 0.8
 
-buffer_size: 1024
-batch_size: 256
+buffer_size: 2048
+batch_size: 512
 train_every: 64
-gradient_steps: 1024
+gradient_steps: 512
+actor_delay: 1
 
 horizon_schedule: "linear(1, ${.horizon}, 25000)"
 std_schedule: "linear(0.5, ${.min_std}, 25000)"

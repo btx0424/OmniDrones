@@ -5,6 +5,7 @@ env: ${task.env}
 
 total_frames: -1
 eval_interval: -1
+save_interval: -1
 seed: 0
 
 viewer:

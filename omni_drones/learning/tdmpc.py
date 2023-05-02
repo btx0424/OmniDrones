@@ -157,18 +157,19 @@ class TDMPCPolicy:
         obs = tensordict[self.obs_name]
         is_init = tensordict.get("is_init").unsqueeze(-1)
         prev_mean = self._prev_mean * (1 - is_init.float())
-        action, mean, std, elite_value = vmap(self.plan, randomness="different")(
+        action, mean, std, elite_value, pi_value = vmap(self.plan, randomness="different")(
             obs.squeeze(1), prev_mean, step=self._step
         )
         self._prev_mean = mean
         self._plan_std = std
         self._plan_elite_value = elite_value
+        self._pi_value = pi_value
         tensordict.set(self.action_name, action)
         return tensordict
     
     def pi(self, z, std):
         action = torch.tanh(self.actor(z))
-        action_noise = action.clone().normal_(0, std)
+        action_noise = action.clone().normal_(0, std).clip(-0.2, 0.2)
         action = torch.clamp(action + action_noise, -1, 1)
         return action
 
@@ -228,7 +229,8 @@ class TDMPCPolicy:
         action = elite_actions[0][action_idx.unsqueeze(0)]
         if not eval_mode:
             action = torch.clamp(action + std[0] * torch.randn_like(action), -1, 1)
-        return action, mean, std, elite_value
+        pi_value = value[-self.num_pi_trajs:]
+        return action, mean, std, elite_value, pi_value
 
     def train_op(self, data: TensorDict):
         self.buffer.extend(data)
@@ -280,13 +282,14 @@ class TDMPCPolicy:
 
             self.model_opt.zero_grad()
             total_loss.backward()
-            grad_norm = nn.utils.clip_grad.clip_grad_norm_(self.model.parameters(), self.cfg.max_grad_norm)
+            model_grad_norm = nn.utils.clip_grad.clip_grad_norm_(self.model.parameters(), self.cfg.max_grad_norm)
             self.model_opt.step()
             
             actor_loss = 0
             with hold_out_net(self.model):
                 for t, z in enumerate(zs):
-                    a = self.pi(z, self.cfg.min_std)
+                    # a = self.pi(z, self.cfg.min_std)
+                    a = self.pi(z, 0)
                     q = self.model.q(z, a).min(-1, keepdims=True).values
                     actor_loss += -q.mean() * (self.cfg.rho ** t)
             self.actor_opt.zero_grad()
@@ -299,7 +302,7 @@ class TDMPCPolicy:
             metrics["model_loss/cosistency"].append(consistency_loss)
             metrics["model_loss/reward"].append(reward_loss)
             metrics["model_loss/cont"].append(cont_loss)
-            metrics["model_grad_norm"].append(grad_norm)
+            metrics["model_grad_norm"].append(model_grad_norm)
             metrics["value_loss"].append(value_loss)
             metrics["actor_loss"].append(actor_loss)
 
@@ -308,5 +311,6 @@ class TDMPCPolicy:
         metrics["std"] = self.std_schedule(self._step)
         metrics["plan_std"] = self._plan_std.mean().item()
         metrics["plan_elite_value"] = self._plan_elite_value.mean().item()
+        metrics["plan_pi_value"] = self._pi_value.mean().item()
         return metrics
 

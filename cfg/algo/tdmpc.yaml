@@ -24,13 +24,13 @@ cem_num_elites: 64
 cem_temperature: 0.5
 
 # model learning
-horizon: 5
+horizon: 6
 reward_coef: 0.5
 value_coef: 2.0
 consistency_coef: 2
 target_update_interval: 2
 tau: 0.01
-rho: 0.5
+rho: 0.8
 
 buffer_size: 1024
 batch_size: 256

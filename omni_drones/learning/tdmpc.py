@@ -197,7 +197,7 @@ class TDMPCPolicy:
             prev_mean[1:],
             torch.zeros(horizon-(prev_mean.shape[0]-1), self.action_dim, device=self.device)
         ])
-        std = torch.ones_like(mean)
+        std = 2 * torch.ones_like(mean)
         std_lb = self.std_schedule(step)
         
         z = z0.repeat(self.num_samples+self.num_pi_trajs, 1)

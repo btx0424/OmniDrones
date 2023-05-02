@@ -169,7 +169,12 @@ class TDMPCPolicy:
     
     def pi(self, z, std):
         action = torch.tanh(self.actor(z))
-        action_noise = action.clone().normal_(0, std).clip(-0.2, 0.2)
+        action_noise = (
+            action
+            .clone()
+            .normal_(0, std)
+            .clip(-0.2, 0.2)
+        )
         action = torch.clamp(action + action_noise, -1, 1)
         return action
 
@@ -294,6 +299,7 @@ class TDMPCPolicy:
                     actor_loss += -q.mean() * (self.cfg.rho ** t)
             self.actor_opt.zero_grad()
             actor_loss.backward()
+            actor_grad_norm = nn.utils.clip_grad.clip_grad_norm_(self.actor.parameters(), self.cfg.max_grad_norm)
             self.actor_opt.step()
 
             if step % self.cfg.target_update_interval == 0:
@@ -305,6 +311,7 @@ class TDMPCPolicy:
             metrics["model_grad_norm"].append(model_grad_norm)
             metrics["value_loss"].append(value_loss)
             metrics["actor_loss"].append(actor_loss)
+            metrics["actor_grad_norm"].append(actor_grad_norm)
 
         metrics = {k: torch.stack(v).mean().item() for k, v in metrics.items()}
         metrics["horizon"] = self.horizon_schedule(self._step)

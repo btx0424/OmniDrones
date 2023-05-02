@@ -66,10 +66,16 @@ class TOLD(nn.Module):
             nn.LayerNorm
         )
         self.reward = MLP(
-            [cfg.hidden_dim + action_dim, 1]
+            [cfg.hidden_dim + action_dim, 1],
+            nn.LayerNorm
         )
-        self.q1 = MLP([cfg.hidden_dim + action_dim, 1], nn.LayerNorm)
-        self.q2 = MLP([cfg.hidden_dim + action_dim, 1], nn.LayerNorm)
+        self.cont = MLP(
+            [cfg.hidden_dim + action_dim, 1],
+            nn.LayerNorm
+        )
+        q_units = [cfg.hidden_dim + action_dim, cfg.hidden_dim, cfg.hidden_dim, 1]
+        self.q1 = MLP(q_units, nn.LayerNorm)
+        self.q2 = MLP(q_units, nn.LayerNorm)
         self.apply(orthogonal_init)
     
     def h(self, obs):
@@ -77,7 +83,7 @@ class TOLD(nn.Module):
     
     def next(self, z, a):
         x = torch.cat([z, a], dim=-1)
-        return self.dynamics(x), self.reward(x)
+        return self.dynamics(x), self.reward(x), self.cont(x)
     
     def q(self, z, a):
         x = torch.cat([z, a], dim=-1)
@@ -87,6 +93,11 @@ class TOLD(nn.Module):
 def mse_loss(input, target, weights):
     return torch.mean(F.mse_loss(input, target, reduction="none") * weights)
 
+__REDUCE__ = lambda b: 'mean' if b else 'none'
+
+def mse(pred, target, reduce=False):
+	"""Computes the MSE loss between predictions and targets."""
+	return F.mse_loss(pred, target, reduction=__REDUCE__(reduce))
 
 class TDMPCPolicy:
     def __init__(
@@ -162,7 +173,7 @@ class TDMPCPolicy:
         G = 0
         discount = 1
         for t in range(actions.shape[0]):
-            z, r = self.model.next(z, actions[t])
+            z, r, c = self.model.next(z, actions[t])
             G += discount * r
             discount *= self.cfg.gamma
         qs = self.model.q(z, self.pi(z, self.cfg.min_std))
@@ -179,7 +190,7 @@ class TDMPCPolicy:
         for t in range(horizon):
             pi_action = self.pi(z, self.cfg.min_std)
             pi_actions.append(pi_action)
-            z, _ = self.model.next(z, pi_action)
+            z, _, _ = self.model.next(z, pi_action)
         pi_actions = torch.stack(pi_actions)
 
         mean = torch.cat([
@@ -213,7 +224,7 @@ class TDMPCPolicy:
         action_idx = D.Categorical(probs=score.squeeze(-1)).sample()
         action = elite_actions[0][action_idx.unsqueeze(0)]
         if not eval_mode:
-            action += std[0] * torch.randn_like(action)
+            action = torch.clamp(action + std[0] * torch.randn_like(action), -1, 1)
         return action, mean, std, elite_value
 
     def train_op(self, data: TensorDict):
@@ -227,56 +238,54 @@ class TDMPCPolicy:
         metrics = defaultdict(list)
 
         for step in tqdm(range(self.cfg.gradient_steps)):
-            batch = self.buffer.sample(self.cfg.batch_size, self.cfg.batch_length)
+            batch = self.buffer.sample(self.cfg.batch_size, self.cfg.horizon)
 
-            obs = batch[self.obs_name]
-            next_obs = batch[("next", self.obs_name)]
-            action = batch[self.action_name]
-            reward = batch[self.reward_name]
-            not_done = 1. - batch[("next", "done")].float()
+            obs = batch[self.obs_name].squeeze(1)
+            next_obs = batch[("next", self.obs_name)].squeeze(1)
+            action = batch[self.action_name].squeeze(1)
+            reward = batch[self.reward_name].squeeze(1)
+            not_done = (1. - batch[("next", "done")].float()).unsqueeze(-1)
 
             # Representation
             z = self.model.h(obs[:, 0])
-            zs = []
-            rs = []
-            qs = []
+            zs = [z.detach()]
+            consistency_loss, reward_loss, cont_loss, value_loss = 0, 0, 0, 0
+            rho = not_done[:, 0]
             for t in range(self.cfg.horizon):
-                qs.append(self.model.q(z, action[:, t]))
-                z, r = self.model.next(z, action[:, t])
-                zs.append(z)
-                rs.append(r)
-            
-            zs = torch.stack(zs, 1)
-            rs = torch.stack(rs, 1)
-            qs = torch.stack(qs, 1)
-            with torch.no_grad():
-                target_zs = self.model_target.h(next_obs)
-                new_action = self.pi(self.model.h(next_obs), self.cfg.min_std)
-                qs_target = self.model_target.q(target_zs, new_action)
-                td_target = reward + self.cfg.gamma * qs_target.min(-1, keepdims=True).values
-            
-            weights = torch.cumprod(not_done * self.cfg.rho, dim=1).unsqueeze(-1) / self.cfg.rho
-            consistency_loss = mse_loss(zs, target_zs, weights)
-            reward_loss = mse_loss(rs, reward, weights)
-            value_loss = sum(
-                mse_loss(q.unsqueeze(-1), td_target, weights) 
-                for q in qs.unbind(-1)
-            )
+                qs = self.model.q(z, action[:, t])
+                z, r, c = self.model.next(z, action[:, t])
+                with torch.no_grad():
+                    next_z = self.model_target.h(next_obs[:, t])
+                    next_action = self.pi(next_z, self.cfg.min_std)
+                    next_qs = self.model_target.q(next_z, next_action)
+                    td_target = reward[:, t] + self.cfg.gamma * not_done[:, t] * next_qs.min(-1, keepdims=True).values
+                zs.append(z.detach())
+
+                # Losses
+                consistency_loss += rho * torch.mean(mse(z, next_z), dim=-1, keepdim=True)
+                reward_loss += rho * mse(r, reward[:, t])
+                cont_loss += rho * mse(c, not_done[:, t])
+                value_loss += rho * (mse(qs[..., 0:1], td_target) + mse(qs[..., 1:2], td_target))
+                rho = rho * self.cfg.rho * not_done[:, t]
             
             total_loss = (
                 self.cfg.consistency_coef * consistency_loss
                 + self.cfg.reward_coef * reward_loss
+                + self.cfg.reward_coef * cont_loss
                 + self.cfg.value_coef * value_loss
-            ) 
+            ).mean()
+
             self.model_opt.zero_grad()
             total_loss.backward()
             grad_norm = nn.utils.clip_grad.clip_grad_norm_(self.model.parameters(), self.cfg.max_grad_norm)
             self.model_opt.step()
             
+            actor_loss = 0
             with hold_out_net(self.model):
-                zs = self.model.h(obs)
-                qs = self.model.q(zs, self.pi(zs, self.cfg.min_std))
-                actor_loss = - torch.mean(qs.min(-1, keepdims=True).values * weights)
+                for t, z in enumerate(zs):
+                    a = self.pi(z, self.cfg.min_std)
+                    q = self.model.q(z, a).min(-1, keepdims=True).values
+                    actor_loss += -q.mean() * (self.cfg.rho ** t)
             self.actor_opt.zero_grad()
             actor_loss.backward()
             self.actor_opt.step()
@@ -284,10 +293,11 @@ class TDMPCPolicy:
             if step % self.cfg.target_update_interval == 0:
                 soft_update(self.model_target, self.model, self.cfg.tau)
 
-            metrics["cosistency_loss"].append(consistency_loss)
-            metrics["reward_loss"].append(reward_loss)
-            metrics["value_loss"].append(value_loss)
+            metrics["model_loss/cosistency"].append(consistency_loss)
+            metrics["model_loss/reward"].append(reward_loss)
+            metrics["model_loss/cont"].append(cont_loss)
             metrics["model_grad_norm"].append(grad_norm)
+            metrics["value_loss"].append(value_loss)
             metrics["actor_loss"].append(actor_loss)
 
         metrics = {k: torch.stack(v).mean().item() for k, v in metrics.items()}

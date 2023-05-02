@@ -18,6 +18,8 @@ from torchrl.envs.transforms import CatTensors
 from torchrl.data import UnboundedContinuousTensorSpec, BoundedTensorSpec
 from torchrl.modules.distributions import NormalParamWrapper
 
+from tqdm import tqdm
+
 def symlog(x):
     return torch.sign(x) * torch.log(torch.abs(x) + 1.0)
 
@@ -70,10 +72,9 @@ def rollout(module: TensorDictModule, tensordict: TensorDict):
     update_values = tensordict.exclude(*module.out_keys)
     for t in range(time_steps):
         if "is_init" in _tensordict.keys():
-            is_init = _tensordict.get("is_init")
-            if is_init.any():
-                _tensordict["deter"][is_init.squeeze(-1)] *= 0.
-                _tensordict["prior_logits"][is_init.squeeze(-1)] *= 0.
+            mask = 1. - _tensordict.get("is_init").float()
+            _tensordict["deter"] = _tensordict["deter"] *  mask[..., None]
+            _tensordict["prior_logits"] = _tensordict["prior_logits"] * mask[..., None, None]
         module(_tensordict)
         tensordict_out.append(_tensordict)
         if t < time_steps - 1:
@@ -213,8 +214,6 @@ class DreamerPolicy():
         self.device = device
 
         self.obs_pred_dist = lambda loc: D.Independent(D.Normal(loc, 1), 1)
-        self.value_pred_dist = TwoHotSymlog
-        self.reward_pred_dist = TwoHotSymlog
         self.discount_pred_dist = lambda logits: D.Independent(Bernouli(logits), 1)
         
         stoch_dim = cfg.world_model.stoch_dim
@@ -236,14 +235,24 @@ class DreamerPolicy():
                 cfg.world_model.hidden_units, # cat([stoch, action]) -> gru_input
                 cfg.world_model.prior_hidden_units
             ),
-            "reward_pred": MLP([latent_dim] + cfg.reward_pred.hidden_units + [255], nn.LayerNorm),
             "discount_pred": MLP([latent_dim] + cfg.discount_pred.hidden_units + [1], nn.LayerNorm),
             "decoder": make_decoder(cfg.decoder, agent_spec.observation_spec, latent_dim),
         }).to(self.device)
+        if self.cfg.reward_pred.dist == "TwoHotSymlog":
+            self.value_pred_dist = lambda logits: TwoHotSymlog(logits=logits)
+            self.wm["reward_pred"] = MLP([latent_dim] + cfg.reward_pred.hidden_units + [255], nn.LayerNorm).to(self.device)
+        else:
+            self.value_pred_dist = lambda loc: D.Independent(D.Normal(loc, 1), 1)
+            self.wm["reward_pred"] = MLP([latent_dim] + cfg.reward_pred.hidden_units + [1], nn.LayerNorm).to(self.device)
 
         self.task_actor = Actor(latent_dim, action_dim, self.cfg.actor.hidden_units).to(self.device)
-        self.critic = MLP([latent_dim] + cfg.critic.hidden_units + [255], nn.LayerNorm).to(self.device)
-
+        if self.cfg.critic.dist == "TwoHotSymlog":
+            self.reward_pred_dist = lambda logits: TwoHotSymlog(logits=logits)
+            self.critic = MLP([latent_dim] + cfg.critic.hidden_units + [255], nn.LayerNorm).to(self.device)
+        else:
+            self.reward_pred_dist = lambda loc: D.Independent(D.Normal(loc, 1), 1)
+            self.critic = MLP([latent_dim] + cfg.critic.hidden_units + [1], nn.LayerNorm).to(self.device)
+        
         self.model_opt = torch.optim.Adam(self.wm.parameters(), self.cfg.world_model.lr)
         self.actor_opt = torch.optim.Adam(self.task_actor.parameters(), self.cfg.actor.lr)
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), self.cfg.critic.lr)
@@ -290,10 +299,9 @@ class DreamerPolicy():
                 "deter": torch.zeros(*tensordict.batch_size, 1, self.cfg.world_model.deter_dim, device=tensordict.device),
                 "prior_logits": torch.zeros(*tensordict.batch_size, 1, *logits_shape, device=tensordict.device)
             })
-        is_init = tensordict.get("is_init")
-        if is_init.any():
-            tensordict["deter"][is_init.squeeze(-1)] = 0.
-            tensordict["prior_logits"][is_init.squeeze(-1)] = 0.
+        mask = 1. - tensordict.get("is_init").float()
+        tensordict["deter"] = tensordict["deter"] *  mask[..., None]
+        tensordict["prior_logits"] = tensordict["prior_logits"] * mask[..., None, None]
         tensordict = self.observe_step(tensordict)
         tensordict = self.policy(tensordict)
         tensordict = self.imagine_step(tensordict)
@@ -305,9 +313,12 @@ class DreamerPolicy():
             return {}
         
         metrics = defaultdict(list)
-        torch.autograd.set_detect_anomaly(True)
-        for _ in range(self.cfg.gradient_steps):
+        for _ in tqdm(range(self.cfg.gradient_steps)):
             batch = self.buffer.sample(self.cfg.batch_size, self.cfg.batch_length)
+            batch = batch.exclude("collector", "progress")
+            batch.batch_size = [*batch.batch_size, 1]
+            batch = batch.squeeze(2)
+
             reward = batch[("next", "reward", f"{self.agent_spec.name}.reward")]
             discount = (1. - batch[("next", "done")].float()).unsqueeze(-1)
 
@@ -332,9 +343,10 @@ class DreamerPolicy():
                 .clip(self.cfg.world_model.kl_free)
                 .mean()
             )
-            model_losses["reward"] = - torch.mean(reward_pred.log_prob(reward))
+            # model_losses["reward"] = - torch.mean(reward_pred.log_prob(reward))
+            model_losses["reward"] = F.mse_loss(reward_pred.base_dist.loc, reward)
             model_losses["discount"] = - torch.mean(discount_pred.log_prob(discount))
-            model_losses["obs"] = - torch.mean(obs_pred.log_prob(batch[self.obs_name]))
+            model_losses["obs"] = - torch.mean(obs_pred.log_prob(batch[self.obs_name])) / 26
 
             model_loss = torch.mean(sum(model_losses.values()))
             self.model_opt.zero_grad()
@@ -344,6 +356,11 @@ class DreamerPolicy():
 
             metrics["model_loss"].append(model_loss)
             metrics["wm_grad_norm"].append(wm_grad_norm)
+            metrics["model_loss/dyn"].append(model_losses["dyn"])
+            metrics["model_loss/rep"].append(model_losses["rep"])
+            metrics["model_loss/rew"].append(model_losses["reward"])
+            metrics["model_loss/cont"].append(model_losses["discount"])
+            metrics["model_loss/obs"].append(model_losses["obs"])
 
             imag_traj = []
             _tensordict = batch.reshape(-1).select(*self.imagine.in_keys).detach()

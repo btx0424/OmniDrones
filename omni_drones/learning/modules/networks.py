@@ -36,10 +36,10 @@ class MLP(nn.Module):
             normalization = getattr(nn, normalization, None)
         for i, (in_dim, out_dim) in enumerate(zip(num_units[:-1], num_units[1:])):
             layers.append(nn.Linear(in_dim, out_dim))
-            if i < len(num_units) - 1:
+            if i < len(num_units) - 2:
                 layers.append(activation_class())
-            if normalization is not None:
-                layers.append(normalization(out_dim))
+                if normalization is not None:
+                    layers.append(normalization(out_dim))
         self.layers = nn.Sequential(*layers)
         self.input_dim = num_units[0]
         self.output_shape = torch.Size((num_units[-1],))

@@ -58,25 +58,24 @@ class TOLD(nn.Module):
         encoder = make_encoder(cfg.encoder, observation_spec)
         self.encoder = nn.Sequential(
             encoder,
-            nn.ELU(),
             nn.Linear(encoder.output_shape.numel(), cfg.hidden_dim)
         )
         self.action_proj = nn.Linear(action_dim, cfg.hidden_dim)
-        self.dynamics = MLP(
-            [cfg.hidden_dim * 2, *cfg.dynamics.hidden_units, cfg.hidden_dim], 
-            nn.LayerNorm
+        self.dynamics = nn.Sequential(
+            MLP([cfg.hidden_dim * 2, *cfg.dynamics.hidden_units], nn.LayerNorm),
+            nn.Linear(cfg.dynamics.hidden_units[-1], cfg.hidden_dim)
         )
-        self.reward = MLP(
-            [cfg.hidden_dim * 2, 1],
-            nn.LayerNorm
+        self.reward = nn.Sequential(
+            MLP([cfg.hidden_dim * 2, cfg.hidden_dim], nn.LayerNorm),
+            nn.Linear(cfg.hidden_dim, 1)
         )
-        self.cont = MLP(
-            [cfg.hidden_dim * 2, 1],
-            nn.LayerNorm
+        self.cont =  nn.Sequential(
+            MLP([cfg.hidden_dim * 2, cfg.hidden_dim], nn.LayerNorm),
+            nn.Linear(cfg.hidden_dim, 1)
         )
-        q_units = [cfg.hidden_dim * 2, cfg.hidden_dim, cfg.hidden_dim, 1]
-        self.q1 = MLP(q_units, nn.LayerNorm)
-        self.q2 = MLP(q_units, nn.LayerNorm)
+        q_units = [cfg.hidden_dim * 2, cfg.hidden_dim]
+        self.q1 = nn.Sequential(MLP(q_units, nn.LayerNorm), nn.Linear(q_units[-1], 1))
+        self.q2 = nn.Sequential(MLP(q_units, nn.LayerNorm), nn.Linear(q_units[-1], 1))
         self.apply(orthogonal_init)
     
     def h(self, obs):
@@ -126,9 +125,9 @@ class TDMPCPolicy:
         self.model_opt = torch.optim.Adam(self.model.parameters(), lr=self.cfg.model.lr)
         
         self.action_dim = self.agent_spec.action_spec.shape[-1]
-        self.actor = MLP(
-            [self.cfg.model.hidden_dim, *self.cfg.actor.hidden_units, self.action_dim],
-            nn.LayerNorm
+        self.actor = nn.Sequential(
+            MLP([self.cfg.model.hidden_dim, *self.cfg.actor.hidden_units], nn.LayerNorm),
+            nn.Linear(self.cfg.actor.hidden_units[-1], self.action_dim)
         ).to(self.device)
         self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=self.cfg.actor.lr)
 

@@ -35,7 +35,7 @@ rho: 0.8
 buffer_size: 2048
 batch_size: 512
 train_every: 64
-gradient_steps: 512
+gradient_steps: 1024
 actor_delay: 1
 
 horizon_schedule: "linear(1, ${.horizon}, 25000)"

@@ -292,11 +292,16 @@ class TDMPCPolicy:
             if step % self.cfg.actor_delay == 0:
                 actor_loss = 0
                 with hold_out_net(self.model):
-                    for t, z in enumerate(zs):
-                        # a = self.pi(z, self.cfg.min_std)
-                        a = self.pi(z, 0)
-                        q = self.model.q(z, a).min(-1, keepdims=True).values
-                        actor_loss += -q.mean() * (self.cfg.rho ** t)
+                    # for t, z in enumerate(zs):
+                    #     # a = self.pi(z, self.cfg.min_std)
+                    #     a = self.pi(z, 0)
+                    #     q = self.model.q(z, a).min(-1, keepdims=True).values
+                    #     actor_loss += -q.mean() * (self.cfg.rho ** t)
+                    zs = torch.stack(zs)
+                    a = self.pi(zs, self.cfg.min_std)
+                    q = self.model.q(zs, a).min(-1, keepdims=True).values
+                    rho = torch.cumprod(torch.ones_like(q) * self.cfg.rho, 0) / self.cfg.rho
+                    actor_loss = -(q * rho).mean()
                 self.actor_opt.zero_grad()
                 actor_loss.backward()
                 actor_grad_norm = nn.utils.clip_grad.clip_grad_norm_(self.actor.parameters(), self.cfg.max_grad_norm)
@@ -321,3 +326,10 @@ class TDMPCPolicy:
         metrics["plan_pi_value"] = self._pi_value.mean().item()
         return metrics
 
+    def state_dict(self):
+        state_dict = {
+            "actor": self.actor.state_dict(),
+            "model": self.model.state_dict(),
+            "step": self._step
+        }
+        return state_dict

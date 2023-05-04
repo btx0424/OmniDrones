@@ -1,5 +1,5 @@
-program: train_without_controller.py
-name: MultiOffpolicy
+program: train.py
+name: SingleOffpolicy
 project: gpu-onpolicy
 entity: marl-drones
 method: grid
@@ -12,18 +12,21 @@ parameters:
 
   algo:
     values:
-    - matd3
+    - sac
+    - td3
 
   task: 
     values: 
-    - TransportHover
-    - PlatformHover
+    - Hover
+    - InvertedPendulum
+    - FlyThrough
+    - InvertedPendulumFlyThrough
 
   task.env.num_envs:
     value: 512
 
   total_frames: 
-    value: 25_000_000
+    value: 15_000_000
 
   headless:
     value: true

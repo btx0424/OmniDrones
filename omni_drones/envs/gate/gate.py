@@ -35,7 +35,6 @@ class Gate(IsaacEnv):
             "/World/envs/env_*/Gate",
             reset_xform_properties=False,
             shape=[self.num_envs, 1],
-            scales=torch.ones(self.num_envs, 3) * self.gate_scale,
         )
         self.gate.initialize()
         self.gate_frame = RigidPrimView(
@@ -61,17 +60,18 @@ class Gate(IsaacEnv):
         self.crossed_plane = torch.zeros(self.num_envs, 1, device=self.device, dtype=bool)
 
         drone_state_dim = self.drone.state_spec.shape[-1]
-        observation_spec = CompositeSpec({
-            "state": UnboundedContinuousTensorSpec(drone_state_dim + 3),
-        })
         if self.visual_obs:
-            observation_spec.update({
+            self.camera.initialize(f"/World/envs/env_*/{self.drone.name}_*/base_link/Camera")
+            observation_spec = CompositeSpec({
+                "state": UnboundedContinuousTensorSpec(drone_state_dim),
                 "distance_to_camera": UnboundedContinuousTensorSpec((1, *self.camera.shape))
             })
+        else:
+            observation_spec = UnboundedContinuousTensorSpec(drone_state_dim + 6)
         self.agent_spec["drone"] = AgentSpec(
             "drone",
             1,
-            UnboundedContinuousTensorSpec(drone_state_dim + 6).to(self.device),
+            observation_spec.to(self.device),
             self.drone.action_spec.to(self.device),
             UnboundedContinuousTensorSpec(1).to(self.device),
         )
@@ -140,10 +140,12 @@ class Gate(IsaacEnv):
             ]
             self.camera.spawn(camera_paths, targets=[(1., 0., 0.1) for _ in range(len(camera_paths))])
 
+        scale = torch.ones(3) * self.cfg.task.gate_scale
         prim_utils.create_prim(
             "/World/envs/env_0/Gate",
             usd_path=ASSET_PATH + "/usd/gate_sliding.usd",
-            translation=(0., 0., 2.0)
+            translation=(0., 0., 2.0),
+            scale=scale
         )
         target = objects.DynamicSphere(
             "/World/envs/env_0/target",
@@ -200,16 +202,27 @@ class Gate(IsaacEnv):
         self.gate_pos, _ = self.get_env_poses(self.gate.get_world_poses())
         self.gate_vel = self.gate.get_velocities()
 
-        # relative position and heading
+        # relative position
         self.target_drone_rpos = self.target_pos - self.drone_state[..., :3]
         self.gate_drone_rpos = self.gate_pos - self.drone_state[..., :3]
         
-        obs = torch.cat([
-            self.drone_state[..., 3:],
-            self.target_drone_rpos,
-            self.gate_drone_rpos,
-            self.gate_vel[..., :3],
-        ], dim=-1)
+        if self.visual_obs:
+            obs_state = torch.cat([
+                self.drone_state[..., 3:],
+                self.target_drone_rpos,
+            ], dim=-1)
+            obs_images = self.camera.get_images().reshape(self.drone.shape)
+            obs = TensorDict({
+                "state": obs_state,
+                "distance_to_camera": obs_images
+            }, [self.num_envs])
+        else:
+            obs = torch.cat([
+                self.drone_state[..., 3:],
+                self.target_drone_rpos,
+                self.gate_drone_rpos,
+                self.gate_vel[..., :3],
+            ], dim=-1)
 
         pos_error = torch.norm(self.target_drone_rpos, dim=-1)
         self.stats["pos_error"].mul_(self.alpha).add_((1-self.alpha) * pos_error)

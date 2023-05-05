@@ -425,6 +425,7 @@ class RigidPrimView(_RigidPrimView):
     @require_sim_initialized
     def initialize(self, physics_sim_view: omni.physics.tensors.SimulationView = None):
         super().initialize(physics_sim_view)
+        self.shape = torch.arange(self.count).reshape(self.shape).shape
         return self
 
     def get_world_poses(

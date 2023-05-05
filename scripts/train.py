@@ -88,7 +88,7 @@ def main(cfg):
     if cfg.task.get("flatten_state", False):
         transforms.append(flatten_composite(base_env.observation_spec, "drone.state"))
     
-    # optionally discretize the action space
+    # optionally discretize the action space or use a controller
     action_transform = cfg.task.get("action_transform", None)
     if action_transform is not None:
         if action_transform.startswith("multidiscrete"):
@@ -196,8 +196,10 @@ def main(cfg):
             info.update(evaluate())
 
         if save_interval > 0 and i % save_interval == 0:
-            ckpt_path = os.path.join(run.dir, f"checkpoint_{collector._frames}.pt")
-            torch.save(policy.state_dict(), ckpt_path)
+            if hasattr(policy, "state_dict"):
+                ckpt_path = os.path.join(run.dir, f"checkpoint_{collector._frames}.pt")
+                logging.info(f"Save checkpoint to {str(ckpt_path)}")
+                torch.save(policy.state_dict(), ckpt_path)
 
         run.log(info)
         print(OmegaConf.to_yaml({k: v for k, v in info.items() if isinstance(v, float)}))
@@ -212,9 +214,12 @@ def main(cfg):
     info.update(evaluate())
     run.log(info)
 
-    ckpt_path = os.path.join(run.dir, "checkpoint_final.pt")
-    torch.save(policy.state_dict(), ckpt_path)
+    if hasattr(policy, "state_dict"):
+        ckpt_path = os.path.join(run.dir, "checkpoint_final.pt")
+        logging.info(f"Save checkpoint to {str(ckpt_path)}")
+        torch.save(policy.state_dict(), ckpt_path)
 
+    wandb.save()
     simulation_app.close()
 
 

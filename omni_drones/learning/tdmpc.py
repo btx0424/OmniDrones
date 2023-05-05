@@ -58,25 +58,24 @@ class TOLD(nn.Module):
         encoder = make_encoder(cfg.encoder, observation_spec)
         self.encoder = nn.Sequential(
             encoder,
-            nn.ELU(),
             nn.Linear(encoder.output_shape.numel(), cfg.hidden_dim)
         )
         self.action_proj = nn.Linear(action_dim, cfg.hidden_dim)
-        self.dynamics = MLP(
-            [cfg.hidden_dim * 2, *cfg.dynamics.hidden_units, cfg.hidden_dim], 
-            nn.LayerNorm
+        self.dynamics = nn.Sequential(
+            MLP([cfg.hidden_dim * 2, *cfg.dynamics.hidden_units], nn.LayerNorm),
+            nn.Linear(cfg.dynamics.hidden_units[-1], cfg.hidden_dim)
         )
-        self.reward = MLP(
-            [cfg.hidden_dim * 2, 1],
-            nn.LayerNorm
+        self.reward = nn.Sequential(
+            MLP([cfg.hidden_dim * 2, cfg.hidden_dim], nn.LayerNorm),
+            nn.Linear(cfg.hidden_dim, 1)
         )
-        self.cont = MLP(
-            [cfg.hidden_dim * 2, 1],
-            nn.LayerNorm
+        self.cont =  nn.Sequential(
+            MLP([cfg.hidden_dim * 2, cfg.hidden_dim], nn.LayerNorm),
+            nn.Linear(cfg.hidden_dim, 1)
         )
-        q_units = [cfg.hidden_dim * 2, cfg.hidden_dim, cfg.hidden_dim, 1]
-        self.q1 = MLP(q_units, nn.LayerNorm)
-        self.q2 = MLP(q_units, nn.LayerNorm)
+        q_units = [cfg.hidden_dim * 2, cfg.hidden_dim]
+        self.q1 = nn.Sequential(MLP(q_units, nn.LayerNorm), nn.Linear(q_units[-1], 1))
+        self.q2 = nn.Sequential(MLP(q_units, nn.LayerNorm), nn.Linear(q_units[-1], 1))
         self.apply(orthogonal_init)
     
     def h(self, obs):
@@ -126,9 +125,9 @@ class TDMPCPolicy:
         self.model_opt = torch.optim.Adam(self.model.parameters(), lr=self.cfg.model.lr)
         
         self.action_dim = self.agent_spec.action_spec.shape[-1]
-        self.actor = MLP(
-            [self.cfg.model.hidden_dim, *self.cfg.actor.hidden_units, self.action_dim],
-            nn.LayerNorm
+        self.actor = nn.Sequential(
+            MLP([self.cfg.model.hidden_dim, *self.cfg.actor.hidden_units], nn.LayerNorm),
+            nn.Linear(self.cfg.actor.hidden_units[-1], self.action_dim)
         ).to(self.device)
         self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=self.cfg.actor.lr)
 
@@ -247,7 +246,7 @@ class TDMPCPolicy:
         self._step += data[("next", "done")].sum().item()
         metrics = defaultdict(list)
 
-        for step in tqdm(range(self.cfg.gradient_steps)):
+        for step in tqdm(range(self.cfg.gradient_steps)) if self.cfg.verbose else range(self.cfg.gradient_steps):
             batch = self.buffer.sample(self.cfg.batch_size, self.cfg.horizon)
 
             obs = batch[self.obs_name].squeeze(1)
@@ -293,11 +292,16 @@ class TDMPCPolicy:
             if step % self.cfg.actor_delay == 0:
                 actor_loss = 0
                 with hold_out_net(self.model):
-                    for t, z in enumerate(zs):
-                        # a = self.pi(z, self.cfg.min_std)
-                        a = self.pi(z, 0)
-                        q = self.model.q(z, a).min(-1, keepdims=True).values
-                        actor_loss += -q.mean() * (self.cfg.rho ** t)
+                    # for t, z in enumerate(zs):
+                    #     # a = self.pi(z, self.cfg.min_std)
+                    #     a = self.pi(z, 0)
+                    #     q = self.model.q(z, a).min(-1, keepdims=True).values
+                    #     actor_loss += -q.mean() * (self.cfg.rho ** t)
+                    zs = torch.stack(zs)
+                    a = self.pi(zs, self.cfg.min_std)
+                    q = self.model.q(zs, a).min(-1, keepdims=True).values
+                    rho = torch.cumprod(torch.ones_like(q) * self.cfg.rho, 0) / self.cfg.rho
+                    actor_loss = -(q * rho).mean()
                 self.actor_opt.zero_grad()
                 actor_loss.backward()
                 actor_grad_norm = nn.utils.clip_grad.clip_grad_norm_(self.actor.parameters(), self.cfg.max_grad_norm)
@@ -322,3 +326,10 @@ class TDMPCPolicy:
         metrics["plan_pi_value"] = self._pi_value.mean().item()
         return metrics
 
+    def state_dict(self):
+        state_dict = {
+            "actor": self.actor.state_dict(),
+            "model": self.model.state_dict(),
+            "step": self._step
+        }
+        return state_dict

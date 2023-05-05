@@ -1,5 +1,5 @@
-program: train_without_controller.py
-name: SinglePPO
+program: train.py
+name: MultiPPO
 project: gpu-onpolicy
 entity: marl-drones
 method: grid
@@ -10,15 +10,29 @@ metric:
 
 parameters:
 
+  algo:
+    values:
+    - mappo
+    - happo
+  
+  algo.actor.hidden_units:
+    value: [256, 128, 128]
+
+  algo.critic.hidden_units:
+    value: [256, 128, 128]
+
+  algo.critic_input:
+    value: state
+
   task: 
     values: 
-    # - Hover
-    # - InvertedPendulum
-    - FlyThrough
-    - InvertedPendulumFlyThrough
+    - TransportHover # easy
+    - PlatformHover # easy
+    # - TransportFlyThrough # hard
+    # - PlatformFlyThrough # medium
 
   total_frames: 
-    value: 150_000_000
+    value: 155_000_000
 
   headless:
     value: true

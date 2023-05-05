@@ -1,4 +1,5 @@
 name: tdmpc
+verbose: false
 
 actor:
   hidden_units: [128]

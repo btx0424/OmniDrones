@@ -246,7 +246,7 @@ class TDMPCPolicy:
         self._step += data[("next", "done")].sum().item()
         metrics = defaultdict(list)
 
-        for step in tqdm(range(self.cfg.gradient_steps)):
+        for step in tqdm(range(self.cfg.gradient_steps)) if self.cfg.verbose else range(self.cfg.gradient_steps):
             batch = self.buffer.sample(self.cfg.batch_size, self.cfg.horizon)
 
             obs = batch[self.obs_name].squeeze(1)

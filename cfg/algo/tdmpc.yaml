@@ -27,7 +27,7 @@ cem_temperature: 0.5
 # model learning
 horizon: 5
 reward_coef: 0.5
-value_coef: 0.5
+value_coef: 0.1
 consistency_coef: 2
 target_update_interval: 2
 tau: 0.01
@@ -35,7 +35,7 @@ rho: 0.5
 
 buffer_size: 2048
 batch_size: 512
-train_every: 40
+train_every: 64
 gradient_steps: 1024
 actor_delay: 1
 

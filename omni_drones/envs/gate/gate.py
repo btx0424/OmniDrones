@@ -2,7 +2,7 @@ import functorch
 import torch
 import torch.distributions as D
 from tensordict.tensordict import TensorDict, TensorDictBase
-from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec
+from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec, BinaryDiscreteTensorSpec
 
 import omni.isaac.core.utils.torch as torch_utils
 import omni.isaac.core.utils.prims as prim_utils
@@ -27,13 +27,15 @@ class Gate(IsaacEnv):
         self.reward_distance_scale = self.cfg.task.reward_distance_scale
         self.reset_on_collision = self.cfg.task.reset_on_collision
         self.gate_moving_range = self.cfg.task.gate_moving_range
+        self.gate_scale = self.cfg.task.gate_scale
 
         self.drone.initialize()
         
         self.gate = ArticulationView(
             "/World/envs/env_*/Gate",
             reset_xform_properties=False,
-            shape=[self.num_envs, 1]
+            shape=[self.num_envs, 1],
+            scales=torch.ones(self.num_envs, 3) * self.gate_scale,
         )
         self.gate.initialize()
         self.gate_frame = RigidPrimView(
@@ -96,6 +98,7 @@ class Gate(IsaacEnv):
         stats_spec = CompositeSpec({
             "pos_error": UnboundedContinuousTensorSpec(1),
             "drone_uprightness": UnboundedContinuousTensorSpec(1),
+            "success": BinaryDiscreteTensorSpec(1, dtype=bool)
         }).expand(self.num_envs).to(self.device)
         info_spec = CompositeSpec({
             "drone_state": UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim)),
@@ -184,6 +187,7 @@ class Gate(IsaacEnv):
 
         self.stats["pos_error"][env_ids] = 0
         self.stats["drone_uprightness"][env_ids] = 0
+        self.stats["success"][env_ids] = 0
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("action", "drone.action")]
@@ -271,6 +275,7 @@ class Gate(IsaacEnv):
             | done_invalid
             | done_hasnan
         )
+        self.stats["success"].bitwise_or_(distance_to_target < 0.2)
 
         self._tensordict["return"] += reward.unsqueeze(-1)
         return TensorDict(

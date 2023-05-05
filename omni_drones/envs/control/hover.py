@@ -58,12 +58,12 @@ class Hover(IsaacEnv):
         self.uprightness = torch.zeros(self.num_envs, self.drone.n, 1, device=self.device)
         self.alpha = 0.7
 
-        info_spec = CompositeSpec({
+        stats_spec = CompositeSpec({
             "pos_error": UnboundedContinuousTensorSpec((self.drone.n, 1)),
             "heading_alignment": UnboundedContinuousTensorSpec((self.drone.n, 1)),
             "uprightness": UnboundedContinuousTensorSpec((self.drone.n, 1))
         }).expand(self.num_envs).to(self.device)
-        self.observation_spec["info"] = info_spec
+        self.observation_spec["stats"] = stats_spec
 
     def _design_scene(self):
         cfg = RobotCfg()
@@ -148,7 +148,7 @@ class Hover(IsaacEnv):
         
         return TensorDict({
             "drone.obs": obs,
-            "info":{
+            "stats":{
                 "pos_error": self.pos_error,
                 "heading_alignment": self.heading_alignment,
                 "uprightness": self.uprightness

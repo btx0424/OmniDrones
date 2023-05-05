@@ -18,14 +18,14 @@ parameters:
     values: 
     - Hover
     - InvertedPendulum
-    - FlyThrough
-    - InvertedPendulumFlyThrough
+    # - FlyThrough
+    # - InvertedPendulumFlyThrough
 
   task.env.num_envs:
     value: 512
 
   total_frames: 
-    value: 16_000_000
+    value: 25_500_000
 
   headless:
     value: true

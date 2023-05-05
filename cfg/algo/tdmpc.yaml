@@ -1,4 +1,5 @@
 name: tdmpc
+verbose: false
 
 actor:
   hidden_units: [128]
@@ -19,14 +20,14 @@ min_std: 0.05
 mixture_coef: 0.05
 gamma: 0.99
 cem_momentum: 0.1
-cem_iterations: 8
+cem_iterations: 6
 cem_num_elites: 64
 cem_temperature: 0.5
 
 # model learning
 horizon: 5
 reward_coef: 0.5
-value_coef: 0.5
+value_coef: 0.1
 consistency_coef: 2
 target_update_interval: 2
 tau: 0.01

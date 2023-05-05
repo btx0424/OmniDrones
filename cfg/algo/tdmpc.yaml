@@ -19,7 +19,7 @@ min_std: 0.05
 mixture_coef: 0.05
 gamma: 0.99
 cem_momentum: 0.1
-cem_iterations: 8
+cem_iterations: 6
 cem_num_elites: 64
 cem_temperature: 0.5
 
@@ -34,7 +34,7 @@ rho: 0.5
 
 buffer_size: 2048
 batch_size: 512
-train_every: 64
+train_every: 40
 gradient_steps: 1024
 actor_delay: 1
 

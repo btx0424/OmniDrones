@@ -1,4 +1,4 @@
-from .multirotor import MultirotorBase
+from .multirotor import MultirotorBase, MultirotorCfg
 
 from .crazyflie import Crazyflie
 from .firefly import Firefly

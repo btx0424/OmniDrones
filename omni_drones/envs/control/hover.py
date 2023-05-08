@@ -8,8 +8,7 @@ import torch
 import torch.distributions as D
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
-from omni_drones.robots.config import RobotCfg
-from omni_drones.robots.drone import MultirotorBase
+from omni_drones.robots.drone import MultirotorBase, MultirotorCfg
 from omni_drones.views import ArticulationView
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec
@@ -66,7 +65,7 @@ class Hover(IsaacEnv):
         self.observation_spec["stats"] = stats_spec
 
     def _design_scene(self):
-        cfg = RobotCfg()
+        cfg = MultirotorCfg()
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
         self.drone: MultirotorBase = drone_model(cfg=cfg)
 

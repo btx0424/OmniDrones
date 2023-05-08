@@ -133,8 +133,8 @@ class TransportFlyThrough(IsaacEnv):
         }, [])
 
     def _design_scene(self):
-        cfg = RobotCfg()
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
+        cfg = drone_model.cfg_cls()
         self.drone: MultirotorBase = drone_model(cfg=cfg)
         self.group = TransportationGroup(drone=self.drone)
 

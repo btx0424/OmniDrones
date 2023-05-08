@@ -83,24 +83,24 @@ class Formation(IsaacEnv):
         self.effort = self.drone.apply_action(actions)
 
     def _compute_state_and_obs(self):
-        states = self.drone.get_state()
-        pos = states[..., :3]
-        states[..., :3] = self.target_pos - pos
+        self.drone_state = self.drone.get_state()
+        self.drone_pos = self.drone_state[..., :3]
 
-        relative_pos = vmap(cpos)(pos, pos)
-        self.pdist = vmap(off_diag)(torch.norm(relative_pos, dim=-1, keepdim=True))
-        relative_pos = vmap(off_diag)(relative_pos)
+        target_drone_rpos = self.target_pos - self.drone_pos
+        drone_rpos = vmap(cpos)(self.drone_pos, self.drone_pos)
+        self.pdist = vmap(off_diag)(torch.norm(drone_rpos, dim=-1, keepdim=True))
+        drone_rpos = vmap(off_diag)(drone_rpos)
 
         state_others = torch.cat([
-            relative_pos,
+            drone_rpos,
             self.pdist,
-            vmap(others)(states[..., 3:])
+            vmap(others)(self.drone_state[..., 3:])
         ], dim=-1)
 
         obs = TensorDict(
             {
-                "self": states.unsqueeze(2),
-                "others": state_others,
+                "state_self": states.unsqueeze(2),
+                "state_others": state_others,
                 "target": states[..., :3].unsqueeze(2),
             },
             [self.num_envs, self.drone.n],

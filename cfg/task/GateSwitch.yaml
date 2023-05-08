@@ -1,4 +1,4 @@
-name: Gate
+name: GateSwitch
 
 defaults:
   - /env_base
@@ -11,9 +11,10 @@ drone_model: Hummingbird
 
 reward_effort_weight: 0.1
 reward_distance_scale: 1.0
-visual_obs: false
-gate_moving_range: 1.0
+reward_share_ratio: 0.5
+visual_obs: true
+gate_moving_range: 0.
 gate_scale: 1.1
 reset_on_collision: false
 
-action_transform: controller
+action_transform: null

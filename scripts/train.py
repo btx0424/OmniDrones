@@ -89,7 +89,7 @@ def main(cfg):
         transforms.append(flatten_composite(base_env.observation_spec, "drone.state"))
     
     # optionally discretize the action space or use a controller
-    action_transform = cfg.task.get("action_transform", None)
+    action_transform: str = cfg.task.get("action_transform", None)
     if action_transform is not None:
         if action_transform.startswith("multidiscrete"):
             nbins = int(action_transform.split(":")[1])
@@ -108,7 +108,7 @@ def main(cfg):
             ).to(base_env.device)
             transform = VelController(vmap(vmap(controller)), ("action", "drone.action"))
             transforms.append(transform)
-        else:
+        elif not action_transform.lower() == "none":
             raise NotImplementedError(f"Unknown action transform: {action_transform}")
     
     env = TransformedEnv(base_env, Compose(*transforms)).train()

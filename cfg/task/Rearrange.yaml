@@ -1,0 +1,21 @@
+name: Rearrange
+
+defaults:
+  - /env_base
+  - /sim_base
+
+env: 
+  num_envs: 256
+
+drone_model: Hummingbird
+force_sensor: false
+size: 3
+
+reward_distance_scale: 1.2
+safe_distance: 0.3
+reward_share_ratio: 0.3
+
+flatten_obs: true
+flatten_state: true
+
+action_transform: null

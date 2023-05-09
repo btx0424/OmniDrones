@@ -27,6 +27,7 @@ TEMPLATE_PRIM_PATH = "/World/envs/env_0"
 class RobotBase(abc.ABC):
 
     usd_path: str
+    cfg_cls = RobotCfg
 
     _robots = {}
     _envs_positions: torch.Tensor = None
@@ -40,7 +41,8 @@ class RobotBase(abc.ABC):
             raise RuntimeError
         RobotBase._robots[name] = self
         if cfg is None:
-            cfg = RobotCfg()
+            cfg = self.cfg_cls()
+        
         self.name = name
         self.is_articulation = is_articulation
         self.rigid_props: RigidBodyPropertiesCfg = cfg.rigid_props
@@ -51,6 +53,7 @@ class RobotBase(abc.ABC):
         if SimulationContext._instance is None:
             raise RuntimeError("The SimulationContext is not created.")
 
+        self.cfg = cfg
         self.device = SimulationContext.instance()._device
         self.dt = SimulationContext.instance().get_physics_dt()
         self.state_spec: TensorSpec
@@ -145,6 +148,7 @@ class RobotBase(abc.ABC):
                 reset_xform_properties=False,
                 shape=(-1, self.n)
             )
+            self.articulation = self
         else:
             self._view = RigidPrimView(
                 self.prim_paths_expr, 
@@ -152,6 +156,8 @@ class RobotBase(abc.ABC):
                 shape=(-1, self.n),
                 # track_contact_forces=True
             )
+            self.articulation = None
+            self.articulation_indices = None
 
         self._view.initialize()
         # set the default state
@@ -192,6 +198,15 @@ class RobotBase(abc.ABC):
     def set_joint_velocities(self, vel: torch.Tensor, env_indices: torch.Tensor = None):
         return self._view.set_joint_velocities(vel, env_indices=env_indices)
 
+    def get_force_sensor_forces(self, clone: bool=False):
+        if self.is_articulation:
+            forces = self._view.get_force_sensor_forces(clone=clone)
+        else:
+            forces = self.articulation._view.get_force_sensor_forces(clone=clone)
+            forces = forces[..., self.articulation_indices, :]
+            forces = forces.reshape(*self.shape, 1, 6)
+        return forces
+    
     def get_state(self):
         raise NotImplementedError
 

@@ -88,7 +88,10 @@ def rollout(module: TensorDictModule, tensordict: TensorDict):
 
 def make_decoder(cfg, observation_spec, latent_dim):
     if isinstance(observation_spec, (UnboundedContinuousTensorSpec, BoundedTensorSpec)):
-        decoder = MLP([latent_dim] + cfg.hidden_units + [observation_spec.shape[-1]], nn.LayerNorm)
+        decoder = nn.Sequential(
+            MLP([latent_dim] + cfg.hidden_units, nn.LayerNorm),
+            nn.Linear(cfg.hidden_units[-1], observation_spec.shape[-1])
+        )
     else:
         pass
     return decoder
@@ -346,7 +349,7 @@ class DreamerPolicy():
             # model_losses["reward"] = - torch.mean(reward_pred.log_prob(reward))
             model_losses["reward"] = F.mse_loss(reward_pred.base_dist.loc, reward)
             model_losses["discount"] = - torch.mean(discount_pred.log_prob(discount))
-            model_losses["obs"] = - torch.mean(obs_pred.log_prob(batch[self.obs_name])) / 26
+            model_losses["obs"] = - torch.mean(obs_pred.log_prob(batch[self.obs_name]))
 
             model_loss = torch.mean(sum(model_losses.values()))
             self.model_opt.zero_grad()

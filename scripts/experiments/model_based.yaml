@@ -31,7 +31,7 @@ parameters:
     value: true
   
   seed:
-    values: [0, 42, 81]
+    values: [57, 127]
 
   task.drone_model:
     values: [Firefly, Hummingbird]

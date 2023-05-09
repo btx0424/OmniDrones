@@ -8,5 +8,6 @@ from .spread import Spread
 from .forest import Forest
 from .fly_through import FlyThrough
 from .gate import Gate
+from .rearrange import Rearrange
 
 from .isaac_env import IsaacEnv

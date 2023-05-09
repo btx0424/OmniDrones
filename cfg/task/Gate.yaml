@@ -13,7 +13,7 @@ reward_effort_weight: 0.1
 reward_distance_scale: 1.0
 visual_obs: false
 gate_moving_range: 1.0
-gate_scale: 2.0
+gate_scale: 1.1
 reset_on_collision: false
 
 action_transform: controller

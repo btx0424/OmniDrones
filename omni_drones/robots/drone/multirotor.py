@@ -12,17 +12,28 @@ from omni_drones.views import RigidPrimView
 from omni_drones.actuators.rotor_group import RotorGroup
 from omni_drones.controllers import LeePositionController
 
-from omni_drones.robots import RobotBase
+from omni_drones.robots import RobotBase, RobotCfg
 from omni_drones.utils.torch import normalize, off_diag
 
+from dataclasses import dataclass
+
+@dataclass
+class MultirotorCfg(RobotCfg):
+    force_sensor: bool = False
 
 class MultirotorBase(RobotBase):
 
     param_path: str
     DEFAULT_CONTROLLER: Type = LeePositionController
+    cfg_cls = MultirotorCfg
 
-    def __init__(self, name: str = None, cfg=None) -> None:
-        super().__init__(name, cfg)
+    def __init__(
+        self, 
+        name: str = None, 
+        cfg: MultirotorCfg=None, 
+        is_articulation: bool = True
+    ) -> None:
+        super().__init__(name, cfg, is_articulation)
 
         with open(self.param_path, "r") as f:
             logging.info(f"Reading {self.name}'s params from {self.param_path}.")
@@ -31,9 +42,13 @@ class MultirotorBase(RobotBase):
         self.num_rotors = self.params["rotor_configuration"]["num_rotors"]
 
         self.action_spec = BoundedTensorSpec(-1, 1, self.num_rotors, device=self.device)
-        self.state_spec = UnboundedContinuousTensorSpec(
-            19 + self.num_rotors, device=self.device
-        )
+        if self.cfg.force_sensor:
+            self.use_force_sensor = True
+            state_dim = 19 + self.num_rotors + 6
+        else:
+            self.use_force_sensor = False
+            state_dim = 19 + self.num_rotors
+        self.state_spec = UnboundedContinuousTensorSpec(state_dim, device=self.device)
 
     def initialize(self, prim_paths_expr: str = None):
         if self.is_articulation:
@@ -122,6 +137,9 @@ class MultirotorBase(RobotBase):
         up = vmap(torch_utils.quat_axis)(self.rot, axis=2)
         state = torch.cat([self.pos, self.rot, vel, heading, up, thr], dim=-1)
         # assert not torch.isnan(state).any()
+        if self.use_force_sensor:
+            self.force_sensor_readings = self.get_force_sensor_forces() 
+            state = torch.cat([state, self.force_sensor_readings.flatten(-2)/ self.mass], dim=-1)
         return state
 
     def _reset_idx(self, env_ids: torch.Tensor):

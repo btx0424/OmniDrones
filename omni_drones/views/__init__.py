@@ -366,6 +366,15 @@ class ArticulationView(_ArticulationView):
         indices = self._resolve_env_indices(env_indices)
         return super().set_body_masses(values.reshape(-1, self.num_bodies), indices)
 
+    def get_force_sensor_forces(self, env_indices: Optional[torch.Tensor] = None, clone: bool = False) -> torch.Tensor:
+        with disable_warnings(self._physics_sim_view):
+            forces = torch.unflatten(self._physics_view.get_force_sensor_forces(), 0, self.shape)
+        if clone:
+            forces = forces.clone()
+        if env_indices is not None:
+            forces = forces[env_indices]
+        return forces
+
     def _resolve_env_indices(self, env_indices: torch.Tensor):
         if not hasattr(self, "_all_indices"):
             self._all_indices = torch.arange(self.count, device=self._device)
@@ -425,6 +434,7 @@ class RigidPrimView(_RigidPrimView):
     @require_sim_initialized
     def initialize(self, physics_sim_view: omni.physics.tensors.SimulationView = None):
         super().initialize(physics_sim_view)
+        self.shape = torch.arange(self.count).reshape(self.shape).shape
         return self
 
     def get_world_poses(

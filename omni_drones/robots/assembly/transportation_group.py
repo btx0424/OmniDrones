@@ -129,6 +129,9 @@ class TransportationGroup(RobotBase):
         super().initialize(prim_paths_expr)
         self.drone.n = self.n * 4
         self.drone.initialize(f"{self.prim_paths_expr}/{self.drone.name.lower()}_*")
+        self.drone.articulation = self
+        self.drone.articulation_indices = torch.arange(4, device=self.device)
+        
         self.payload_view = RigidPrimView(
             f"{self.prim_paths_expr}/payload",
             reset_xform_properties=False,

@@ -148,6 +148,7 @@ class RobotBase(abc.ABC):
                 reset_xform_properties=False,
                 shape=(-1, self.n)
             )
+            self.articulation = self
         else:
             self._view = RigidPrimView(
                 self.prim_paths_expr, 
@@ -155,6 +156,8 @@ class RobotBase(abc.ABC):
                 shape=(-1, self.n),
                 # track_contact_forces=True
             )
+            self.articulation = None
+            self.articulation_indices = None
 
         self._view.initialize()
         # set the default state
@@ -196,7 +199,13 @@ class RobotBase(abc.ABC):
         return self._view.set_joint_velocities(vel, env_indices=env_indices)
 
     def get_force_sensor_forces(self, clone: bool=False):
-        return self._view.get_force_sensor_forces(clone=clone)
+        if self.is_articulation:
+            forces = self._view.get_force_sensor_forces(clone=clone)
+        else:
+            forces = self.articulation._view.get_force_sensor_forces(clone=clone)
+            forces = forces[..., self.articulation_indices, :]
+            forces = forces.reshape(*self.shape, 1, 6)
+        return forces
     
     def get_state(self):
         raise NotImplementedError

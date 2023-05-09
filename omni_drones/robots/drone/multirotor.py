@@ -15,7 +15,9 @@ from omni_drones.controllers import LeePositionController
 from omni_drones.robots import RobotBase, RobotCfg
 from omni_drones.utils.torch import normalize, off_diag
 
+from dataclasses import dataclass
 
+@dataclass
 class MultirotorCfg(RobotCfg):
     force_sensor: bool = False
 
@@ -40,7 +42,7 @@ class MultirotorBase(RobotBase):
         self.num_rotors = self.params["rotor_configuration"]["num_rotors"]
 
         self.action_spec = BoundedTensorSpec(-1, 1, self.num_rotors, device=self.device)
-        if self.cfg.force_sensor and self.is_articulation:
+        if self.cfg.force_sensor:
             self.use_force_sensor = True
             state_dim = 19 + self.num_rotors + 6
         else:
@@ -92,8 +94,6 @@ class MultirotorBase(RobotBase):
         self.torques = torch.zeros(*self.shape, 3, device=self.device)
 
         self.pos, self.rot = self.get_world_poses(True)
-        if self.use_force_sensor:
-            self.force_sensor_readings = torch.zeros_like(self._view.get_force_sensor_forces())
 
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
         rotor_cmds = actions.expand(*self.shape, self.num_rotors)
@@ -138,7 +138,7 @@ class MultirotorBase(RobotBase):
         state = torch.cat([self.pos, self.rot, vel, heading, up, thr], dim=-1)
         # assert not torch.isnan(state).any()
         if self.use_force_sensor:
-            self.force_sensor_readings[:] = self.get_force_sensor_forces() 
+            self.force_sensor_readings = self.get_force_sensor_forces() 
             state = torch.cat([state, self.force_sensor_readings.flatten(-2)/ self.mass], dim=-1)
         return state
 

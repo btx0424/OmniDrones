@@ -96,8 +96,9 @@ class PlatformHover(IsaacEnv):
         self.stats = stats_spec.zero()
 
     def _design_scene(self):
-        drone_model = self.cfg.task.drone_model
-        self.drone: MultirotorBase = MultirotorBase.REGISTRY[drone_model]()
+        drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
+        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
+        self.drone: MultirotorBase = drone_model(cfg=cfg)
 
         platform_cfg = PlatformCfg(
             num_drones=self.cfg.task.num_drones,

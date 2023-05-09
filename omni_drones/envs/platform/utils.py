@@ -204,6 +204,8 @@ class OveractuatedPlatform(RobotBase):
     def initialize(self, prim_paths_expr: str = None):
         super().initialize(prim_paths_expr)
         self.drone.initialize(f"/World/envs/env_.*/{self.name}_*/{self.drone.name}_*")
+        self.drone.articulation = self
+        self.drone.articulation_indices = torch.arange(self.drone.n, device=self.device)
 
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
         self.drone.apply_action(actions)

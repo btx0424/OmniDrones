@@ -12,7 +12,6 @@ import omni_drones.utils.kit as kit_utils
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.views import RigidPrimView
 from omni_drones.utils.torch import cpos, off_diag, others
-from omni_drones.robots.config import RobotCfg
 from omni_drones.robots.drone import MultirotorBase
 from omni_drones.utils.scene import design_scene
 from omni_drones.utils.torch import euler_to_quaternion
@@ -101,8 +100,9 @@ class PlatformHover(IsaacEnv):
         self.stats = stats_spec.zero()
 
     def _design_scene(self):
-        drone_model = self.cfg.task.drone_model
-        self.drone: MultirotorBase = MultirotorBase.REGISTRY[drone_model]()
+        drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
+        cfg = drone_model.cfg_cls()
+        self.drone: MultirotorBase = drone_model(cfg=cfg)
         n = 4
 
         arm_length = self.cfg.task.arm_length

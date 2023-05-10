@@ -27,6 +27,7 @@ actor:
   weight_decay: 0.0
   gain: 0.01
 
+  vision_encoder: MobileNetV3Small
   attn_encoder: PartialAttentionEncoder
   use_orthogonal: true
 
@@ -63,6 +64,7 @@ critic:
   #     hidden_size: 128
   #   train_seq_len: 16
 
+  vision_encoder: MobileNetV3Small
   attn_encoder: PartialAttentionEncoder
   use_feature_normalization: true
   use_orthogonal: true

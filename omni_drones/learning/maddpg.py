@@ -21,6 +21,7 @@ from omni_drones.envs.isaac_env import AgentSpec
 from tensordict import TensorDict
 from .common import soft_update
 
+# FIXME: should it be MASAC or MADDPG?
 class MASACPolicy(object):
 
     def __init__(self,

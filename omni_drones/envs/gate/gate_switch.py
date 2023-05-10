@@ -22,6 +22,8 @@ from omni_drones.robots import ASSET_PATH
 
 class GateSwitch(IsaacEnv):
     def __init__(self, cfg, headless):
+        if cfg.task.visual_obs:
+            cfg.env.num_envs = min(cfg.env.num_envs, 31) # 31 is for A100 80G
         super().__init__(cfg, headless)
         self.reward_effort_weight = self.cfg.task.reward_effort_weight
         self.reward_distance_scale = self.cfg.task.reward_distance_scale
@@ -111,8 +113,8 @@ class GateSwitch(IsaacEnv):
         self.info = info_spec.zero()
 
     def _design_scene(self):
-        cfg = RobotCfg()
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
+        cfg = drone_model.cfg_cls()
         self.drone: MultirotorBase = drone_model(cfg=cfg)
 
         kit_utils.create_ground_plane(
@@ -224,8 +226,8 @@ class GateSwitch(IsaacEnv):
             obs_images = self.camera.get_images().reshape(self.drone.shape)
             obs = TensorDict({
                 "state": obs_state,
-                "distance_to_camera": obs_images
             }, [self.num_envs, self.drone.n])
+            obs.update(obs_images)
         else:
             drone_pos = self.drone_state[..., :3]
             drone_rpos = vmap(cpos)(drone_pos, drone_pos)

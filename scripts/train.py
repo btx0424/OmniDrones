@@ -13,6 +13,7 @@ from omegaconf import OmegaConf
 from omni_drones import CONFIG_PATH, init_simulation_app
 from omni_drones.utils.torchrl import SyncDataCollector, AgentSpec
 from omni_drones.utils.envs.transforms import (
+    DepthImageNorm,
     LogOnEpisode, 
     FromMultiDiscreteAction, 
     FromDiscreteAction,
@@ -87,6 +88,13 @@ def main(cfg):
         transforms.append(flatten_composite(base_env.observation_spec, "drone.obs"))
     if cfg.task.get("flatten_state", False):
         transforms.append(flatten_composite(base_env.observation_spec, "drone.state"))
+    if cfg.task.get("visual_obs", False):
+        min_depth = cfg.task.camera.get("min_depth", 0.1)
+        max_depth = cfg.task.camera.get("max_depth", 5)
+        transforms.append(
+            DepthImageNorm([("drone.obs", "distance_to_camera")], 
+                            min_range=min_depth, max_range=max_depth)
+        )
     
     # optionally discretize the action space or use a controller
     action_transform: str = cfg.task.get("action_transform", None)

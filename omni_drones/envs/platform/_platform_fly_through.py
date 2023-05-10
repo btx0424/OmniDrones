@@ -162,12 +162,11 @@ class PlatformFlyThrough(IsaacEnv):
 
         self.stats["pos_error"][env_ids] = 0
         self.stats["collision"][env_ids] = 0
-
+        self.stats["effort"][env_ids] = 0
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("action", "drone.action")]
         self.effort = self.drone.apply_action(actions)
-        self.stats["effort"][env_ids] = 0
 
     def _compute_state_and_obs(self):
         self.drone_states = self.drone.get_state()

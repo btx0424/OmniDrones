@@ -59,7 +59,7 @@ def sample_sub_traj(traj, seq_len):
 
 
 from torchrl.data import BoundedTensorSpec, UnboundedContinuousTensorSpec, CompositeSpec, TensorSpec
-from .modules.networks import MLP, ENCODERS_MAP, VISION_ENCODER_MAP, MixEncoder
+from .modules.networks import MLP, ENCODERS_MAP, VISION_ENCODER_MAP, MixedEncoder
 from functools import partial
 
 def make_encoder(cfg, input_spec: TensorSpec) -> nn.Module:
@@ -99,20 +99,21 @@ def make_encoder(cfg, input_spec: TensorSpec) -> nn.Module:
             print("No state encoder requried.")
 
         # create vision encoder
-        if len(state_spec_dict) == 0:
+        if len(vision_spec_dict) == 0:
             assert state_encoder is not None
             encoder = state_encoder
         elif len(vision_spec_dict) == 1:
             vision_encoder_cls = VISION_ENCODER_MAP[cfg.vision_encoder]
             vision_shape = list(vision_spec_dict.values())[0].shape
             vision_encoder = vision_encoder_cls(vision_shape)
-            encoder = MixEncoder(
+            encoder = MixedEncoder(
                 cfg,
                 vision_obs_names=vision_spec_dict.keys(),
                 vision_encoder=vision_encoder,
                 state_encoder=state_encoder
             )
         else:
+            import pdb; pdb.set_trace()
             raise NotImplementedError("Multiple visual inputs are not supported for now (cuz this author is lazy)")
     else:
         raise NotImplementedError(input_spec)

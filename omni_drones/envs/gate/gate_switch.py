@@ -72,12 +72,18 @@ class GateSwitch(IsaacEnv):
             })
         else:
             observation_spec = UnboundedContinuousTensorSpec(drone_state_dim*self.drone.n + 6)
+
+        state_spec = CompositeSpec({
+            'state': UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim*self.drone.n + 6))
+        })
+
         self.agent_spec["drone"] = AgentSpec(
             "drone",
             2,
             observation_spec.to(self.device),
             self.drone.action_spec.to(self.device),
             UnboundedContinuousTensorSpec(1).to(self.device),
+            state_spec.to(self.device),
         )
 
         self.init_pos_dist = D.Uniform(
@@ -132,10 +138,10 @@ class GateSwitch(IsaacEnv):
                 resolution=(320, 240),
                 data_types=["distance_to_camera"],
                 usd_params=PinholeCameraCfg.UsdCameraCfg(
-                    focal_length=24.0,
+                    focal_length=16.0,
                     focus_distance=400.0,
                     horizontal_aperture=20.955,
-                    clipping_range=(0.2, 30),
+                    clipping_range=(0.2, 5),
                 ),
             )
             self.camera = Camera(camera_cfg)
@@ -217,6 +223,18 @@ class GateSwitch(IsaacEnv):
         # relative position
         self.target_drone_rpos = self.target_pos - self.drone_state[..., :3]
         self.gate_drone_rpos = self.gate_pos - self.drone_state[..., :3]
+
+        drone_pos = self.drone_state[..., :3]
+        drone_rpos = vmap(cpos)(drone_pos, drone_pos)
+        drone_rpos = vmap(off_diag)(drone_rpos)
+        state = torch.cat([
+            self.drone_state[..., 3:],
+            drone_rpos.flatten(-2),
+            vmap(others)(self.drone_state[..., 3:]).flatten(-2),
+            self.target_drone_rpos,
+            self.gate_drone_rpos,
+            self.gate_vel[..., :3].expand(self.num_envs, 2, 3),
+        ], dim=-1)
         
         if self.visual_obs:
             obs_state = torch.cat([
@@ -229,17 +247,7 @@ class GateSwitch(IsaacEnv):
             }, [self.num_envs, self.drone.n])
             obs.update(obs_images)
         else:
-            drone_pos = self.drone_state[..., :3]
-            drone_rpos = vmap(cpos)(drone_pos, drone_pos)
-            drone_rpos = vmap(off_diag)(drone_rpos)
-            obs = torch.cat([
-                self.drone_state[..., 3:],
-                drone_rpos.flatten(-2),
-                vmap(others)(self.drone_state[..., 3:]).flatten(-2),
-                self.target_drone_rpos,
-                self.gate_drone_rpos,
-                self.gate_vel[..., :3].expand(self.num_envs, 2, 3),
-            ], dim=-1)
+            obs = state
 
         pos_error = torch.norm(self.target_drone_rpos, dim=-1)
         self.stats["pos_error"].mul_(self.alpha).add_((1-self.alpha) * pos_error)
@@ -247,6 +255,7 @@ class GateSwitch(IsaacEnv):
         
         return TensorDict({
             "drone.obs": obs,
+            "drone.state": TensorDict({'state': state}, [self.num_envs]),
             "stats": self.stats,
             "info": self.info
         }, self.batch_size)

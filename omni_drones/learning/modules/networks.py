@@ -293,7 +293,7 @@ def get_output_shape(net, input_size):
     _out = net(_x)
     return _out.shape
 
-class MixEncoder(nn.Module):
+class MixedEncoder(nn.Module):
     def __init__(
         self,
         cfg,

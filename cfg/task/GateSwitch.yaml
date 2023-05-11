@@ -12,7 +12,7 @@ force_sensor: false
 
 reward_effort_weight: 0.1
 reward_distance_scale: 1.0
-reward_share_ratio: 0.5
+reward_share_ratio: 0.0
 visual_obs: true
 gate_moving_range: 0.
 gate_scale: 1.1

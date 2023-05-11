@@ -285,6 +285,7 @@ class GateSwitch(IsaacEnv):
             + (pose_reward + 0.3) * (up_reward + spin_reward) 
             + effort_reward
         )
+        reward = reward.lerp(reward.mean(1, keepdim=True), self.reward_share_ratio)
         
         done_invalid = (crossing_plane & ~through_gate)
         done_misbehave: torch.Tensor = ((pos[..., 2] < 0.2) | (distance_to_target > 6.))

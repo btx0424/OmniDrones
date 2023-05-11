@@ -13,7 +13,6 @@ from pxr import UsdPhysics
 import omni_drones.utils.kit as kit_utils
 from omni_drones.utils.torch import euler_to_quaternion, cpos, off_diag, others
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
-from omni_drones.robots.config import RobotCfg
 from omni_drones.robots.drone import MultirotorBase
 from omni_drones.sensors.camera import Camera, PinholeCameraCfg
 from omni_drones.views import ArticulationView, RigidPrimView
@@ -111,8 +110,8 @@ class GateSwitch(IsaacEnv):
         self.info = info_spec.zero()
 
     def _design_scene(self):
-        cfg = RobotCfg()
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
+        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
         self.drone: MultirotorBase = drone_model(cfg=cfg)
 
         kit_utils.create_ground_plane(

@@ -249,7 +249,7 @@ class PlatformHover(IsaacEnv):
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort).mean(-1, keepdim=True)
         reward_action_smoothness = self.reward_action_smoothness_weight * torch.exp(-self.drone.throttle_difference).mean(-1, keepdim=True)
 
-        reward_potential = self.last_distance - distance
+        reward_potential = self.reward_potential_weight * (self.last_distance - distance)
         self.last_distance[:] = distance
         assert reward_pose.shape == reward_up.shape == reward_action_smoothness.shape
 

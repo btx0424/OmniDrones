@@ -38,6 +38,8 @@ class PlatformHover(IsaacEnv):
     def __init__(self, cfg, headless):
         super().__init__(cfg, headless)
         self.reward_effort_weight = self.cfg.task.reward_effort_weight
+        self.reward_action_smoothness_weight = self.cfg.task.reward_action_smoothness_weight
+        self.reward_potential_weight = self.cfg.task.reward_potential_weight
         self.reward_distance_scale = self.cfg.task.reward_distance_scale
 
         self.platform.initialize()
@@ -54,7 +56,7 @@ class PlatformHover(IsaacEnv):
         drone_state_dim = self.drone.state_spec.shape.numel()
         observation_spec = CompositeSpec({
             "state_self": UnboundedContinuousTensorSpec((1, drone_state_dim + self.drone.n)),
-            "state_others": UnboundedContinuousTensorSpec((self.drone.n-1, drone_state_dim)),
+            "state_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13)),
             "state_frame": UnboundedContinuousTensorSpec((1, 25)),
         }).to(self.device)
         state_spec = CompositeSpec({
@@ -85,12 +87,14 @@ class PlatformHover(IsaacEnv):
         self.target_pos = torch.tensor([0., 0., 2.25], device=self.device)
         self.target_heading =  torch.zeros(self.num_envs, 3, device=self.device)
         self.target_up = torch.zeros(self.num_envs, 3, device=self.device)
+        self.last_distance = torch.zeros(self.num_envs, 1, device=self.device)
 
         self.alpha = 0.7
         stats_spec = CompositeSpec({
             "pos_error": UnboundedContinuousTensorSpec(1),
             "heading_alignment": UnboundedContinuousTensorSpec(1),
             "effort": UnboundedContinuousTensorSpec(1),
+            "action_smoothness": UnboundedContinuousTensorSpec((1))
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
         self.stats = stats_spec.zero()
@@ -127,10 +131,15 @@ class PlatformHover(IsaacEnv):
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
 
-        platform_pos = self.init_pos_dist.sample(env_ids.shape) + self.envs_positions[env_ids]
+        platform_pos = self.init_pos_dist.sample(env_ids.shape) 
         platform_rpy = self.init_rpy_dist.sample(env_ids.shape)
         platform_rot = euler_to_quaternion(platform_rpy)
-        self.platform.set_world_poses(platform_pos, platform_rot, env_indices=env_ids)
+        platform_heading = torch_utils.quat_axis(platform_rot, 0)
+        platform_up = torch_utils.quat_axis(platform_rot,  2)
+        self.platform.set_world_poses(
+            platform_pos + self.envs_positions[env_ids], 
+            platform_rot, env_indices=env_ids
+        )
         self.platform.set_velocities(self.init_vels[env_ids], env_ids)
 
         self.platform.set_joint_positions(self.init_joint_pos[env_ids], env_ids)
@@ -149,10 +158,13 @@ class PlatformHover(IsaacEnv):
             env_indices=env_ids
         )
 
-        self.stats["pos_error"][env_ids] = 0
-        self.stats["heading_alignment"][env_ids] = 0
-        self.stats["effort"][env_ids] = 0
-
+        self.stats[env_ids] = 0.
+        distance = torch.cat([
+            self.target_pos - platform_pos,
+            target_heading - platform_heading,
+            target_up - platform_up
+        ], dim=-1).norm(dim=-1, keepdim=True)
+        self.last_distance[env_ids] = distance
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("action", "drone.action")]
@@ -195,7 +207,7 @@ class PlatformHover(IsaacEnv):
             [-platform_drone_rpos, self.drone_states[..., 3:], identity], dim=-1
         ).unsqueeze(2)
         obs["state_others"] = torch.cat(
-            [self.drone_rpos, vmap(others)(self.drone_states[..., 3:])], dim=-1
+            [self.drone_rpos, vmap(others)(self.drone_states[..., 3:13])], dim=-1
         )
         obs["state_frame"] = platform_state.unsqueeze(1).expand(-1, self.drone.n, 1, -1)
 
@@ -205,8 +217,10 @@ class PlatformHover(IsaacEnv):
         
         pos_error = torch.norm(self.target_platform_rpos, dim=-1)
         heading_alignment = torch.sum(self.platform_heading * self.target_heading.unsqueeze(1), dim=-1)
-        self.stats["pos_error"].mul_(self.alpha).add_((1-self.alpha) * pos_error)
-        self.stats["heading_alignment"].mul_(self.alpha).add_((1-self.alpha) * heading_alignment)
+        
+        self.stats["pos_error"].lerp_(pos_error, (1-self.alpha))
+        self.stats["heading_alignment"].lerp_(heading_alignment, (1-self.alpha))
+        self.stats["action_smoothness"].add_(-self.drone.throttle_difference.mean(-1, True))
 
         return TensorDict(
             {
@@ -233,11 +247,18 @@ class PlatformHover(IsaacEnv):
         reward_spin = 1. / (1 + torch.square(spinnage))
         
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort).mean(-1, keepdim=True)
+        reward_action_smoothness = self.reward_action_smoothness_weight * torch.exp(-self.drone.throttle_difference).mean(-1, keepdim=True)
+
+        reward_potential = self.last_distance - distance
+        self.last_distance[:] = distance
+        assert reward_pose.shape == reward_up.shape == reward_action_smoothness.shape
 
         reward[:] = (
-            reward_pose * 2.
+            reward_pose
             + reward_pose * (reward_up + reward_spin) 
+            + reward_potential
             + reward_effort
+            + reward_action_smoothness
         ).unsqueeze(1)
 
         done_misbehave = (self.drone_states[..., 2] < 0.2).any(-1, keepdim=True) | (distance > 5.0)

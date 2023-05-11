@@ -3,6 +3,7 @@ from typing import Any, Dict, Sequence, Union
 
 import torch
 from tensordict.tensordict import TensorDictBase, TensorDict
+from torchrl.data.tensor_specs import TensorSpec
 from torchrl.envs.transforms import (
     Transform,
     Compose,
@@ -238,5 +239,33 @@ class VelController(Transform):
         torch.nan_to_num_(cmds, 0.)
         tensordict.set(("action", "drone.action"), cmds)
         tensordict.set("controller_state", controller_state)
+        return tensordict
+
+
+class History(Transform):
+    def __init__(
+        self,
+        in_keys: Sequence[str],
+        out_keys: Sequence[str],
+    ):
+        super().__init__(in_keys=in_keys, out_keys=out_keys)
+    
+    def transform_output_spec(self, output_spec: TensorSpec) -> TensorSpec:
+        for in_key, out_key in zip(self.in_keys, self.out_keys):
+            if in_key in output_spec.keys(True, True):
+                spec = output_spec[in_key]
+                if isinstance(out_key, str):
+                    out_key = (out_key,)
+                output_spec[("next", *out_key)] = spec
+        return output_spec
+    
+    def reset(self, tensordict: TensorDictBase) -> TensorDictBase:
+        return super().reset(tensordict)
+    
+    def _step(self, tensordict: TensorDictBase) -> TensorDictBase:
+        for in_key, out_key in zip(self.in_keys, self.out_keys):
+            if isinstance(out_key, str):
+                out_key = (out_key,)
+            tensordict.set(("next", *out_key), tensordict[in_key])
         return tensordict
 

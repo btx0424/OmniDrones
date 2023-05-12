@@ -94,9 +94,11 @@ class MultirotorBase(RobotBase):
         self.torques = torch.zeros(*self.shape, 3, device=self.device)
 
         self.pos, self.rot = self.get_world_poses(True)
+        self.throttle_difference = torch.zeros(self.throttle.shape[:-1], device=self.device)
 
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
         rotor_cmds = actions.expand(*self.shape, self.num_rotors)
+        last_throttle = self.throttle.clone()
         thrusts, moments = vmap(vmap(self.rotors, randomness="different"), randomness="same")(
             rotor_cmds, self.rotor_params_and_states
         )
@@ -124,7 +126,7 @@ class MultirotorBase(RobotBase):
             torques, 
             is_global=True
         )
-
+        self.throttle_difference[:] = torch.norm(self.throttle - last_throttle, dim=-1)
         return self.throttle.sum(-1)
 
     def get_state(self, env=True):
@@ -135,11 +137,12 @@ class MultirotorBase(RobotBase):
         thr = self.throttle * 2 - 1
         heading = vmap(torch_utils.quat_axis)(self.rot, axis=0)
         up = vmap(torch_utils.quat_axis)(self.rot, axis=2)
-        state = torch.cat([self.pos, self.rot, vel, heading, up, thr], dim=-1)
+        state = [self.pos, self.rot, vel, heading, up, thr]
         # assert not torch.isnan(state).any()
         if self.use_force_sensor:
             self.force_sensor_readings = self.get_force_sensor_forces() 
-            state = torch.cat([state, self.force_sensor_readings.flatten(-2)/ self.mass], dim=-1)
+            state.append(self.force_sensor_readings.flatten(-2)/ self.mass)
+        state = torch.cat(state, dim=-1)
         return state
 
     def _reset_idx(self, env_ids: torch.Tensor):
@@ -148,6 +151,7 @@ class MultirotorBase(RobotBase):
         self.forces[env_ids] = 0.0
         self.torques[env_ids] = 0.0
         self.throttle[env_ids] = self.rotors.f_inv(1 / self.get_thrust_to_weight_ratio()[env_ids])
+        self.throttle_difference[env_ids] = 0.0
         return env_ids
     
     def get_thrust_to_weight_ratio(self):

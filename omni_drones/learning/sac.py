@@ -195,6 +195,14 @@ class SACPolicy(object):
         infos = {k: torch.mean(v).item() for k, v in infos.items()}
         return infos
 
+    def state_dict(self):
+        state_dict = {
+            "actor": self.actor.state_dict(),
+            "critic": self.critic.state_dict(),
+            "ctitic_target": self.critic_target.state_dict()
+        }
+        return state_dict
+    
 from .modules.networks import MLP
 from .modules.distributions import TanhIndependentNormalModule
 from .common import make_encoder

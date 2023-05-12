@@ -12,6 +12,8 @@ num_drones: 4
 force_sensor: false
 
 reward_effort_weight: 0.25
+reward_action_smoothness_weight: 0.
+reward_potential_weight: 5.
 reward_distance_scale: 1.2
 arm_length: 0.85
 joint_damping: 0.002

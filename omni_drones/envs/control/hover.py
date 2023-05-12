@@ -17,8 +17,9 @@ from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec
 class Hover(IsaacEnv):
     def __init__(self, cfg, headless):
         super().__init__(cfg, headless)
-        self.reward_effort_weight = self.cfg.task.get("reward_effort_weight")
-        self.reward_distance_scale = self.cfg.task.get("reward_distance_scale")
+        self.reward_effort_weight = self.cfg.task.reward_effort_weight
+        self.reward_action_smoothness_weight = self.cfg.task.reward_action_smoothness_weight
+        self.reward_distance_scale = self.cfg.task.reward_distance_scale
 
         self.drone.initialize()
         self.target_vis = ArticulationView(
@@ -30,6 +31,7 @@ class Hover(IsaacEnv):
         self.init_vels = torch.zeros_like(self.drone.get_velocities())
 
         drone_state_dim = self.drone.state_spec.shape[-1]
+        
         self.agent_spec["drone"] = AgentSpec(
             "drone",
             1,
@@ -52,21 +54,21 @@ class Hover(IsaacEnv):
         )
         self.target_pos = torch.tensor([[0.0, 0.0, 2.]], device=self.device)
         self.target_heading = torch.zeros(self.num_envs, 1, 3, device=self.device)
-        self.pos_error = torch.zeros(self.num_envs, self.drone.n, 1, device=self.device)
-        self.heading_alignment = torch.zeros(self.num_envs, self.drone.n, 1, device=self.device)
-        self.uprightness = torch.zeros(self.num_envs, self.drone.n, 1, device=self.device)
         self.alpha = 0.7
 
         stats_spec = CompositeSpec({
             "pos_error": UnboundedContinuousTensorSpec((self.drone.n, 1)),
             "heading_alignment": UnboundedContinuousTensorSpec((self.drone.n, 1)),
-            "uprightness": UnboundedContinuousTensorSpec((self.drone.n, 1))
+            "uprightness": UnboundedContinuousTensorSpec((self.drone.n, 1)),
+            "action_smoothness": UnboundedContinuousTensorSpec((self.drone.n, 1))
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
+        self.stats = stats_spec.zero()
+
 
     def _design_scene(self):
-        cfg = MultirotorCfg()
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
+        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
         self.drone: MultirotorBase = drone_model(cfg=cfg)
 
         target_vis_prim = prim_utils.create_prim(
@@ -108,8 +110,6 @@ class Hover(IsaacEnv):
         pos = self.init_pos_dist.sample((*env_ids.shape, 1))
         rpy = self.init_rpy_dist.sample((*env_ids.shape, 1))
         rot = euler_to_quaternion(rpy)
-        heading = torch_utils.quat_axis(rot.squeeze(1), 0).unsqueeze(1)
-        up = torch_utils.quat_axis(rot.squeeze(1), 2).unsqueeze(1)
         self.drone.set_world_poses(
             pos + self.envs_positions[env_ids].unsqueeze(1), rot, env_ids
         )
@@ -120,9 +120,7 @@ class Hover(IsaacEnv):
         self.target_heading[env_ids] = torch_utils.quat_axis(target_rot.squeeze(1), 0).unsqueeze(1)
         self.target_vis.set_world_poses(orientations=target_rot, env_indices=env_ids)
 
-        self.pos_error[env_ids] = torch.norm(self.target_pos - pos, dim=-1, keepdim=True)
-        self.heading_alignment[env_ids] = torch.sum(self.target_heading[env_ids] * heading, dim=-1, keepdim=True)
-        self.uprightness[env_ids] = up[..., 2].unsqueeze(-1)
+        self.stats[env_ids] = 0.
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("action", "drone.action")]
@@ -130,9 +128,11 @@ class Hover(IsaacEnv):
 
     def _compute_state_and_obs(self):
         self.root_state = self.drone.get_state()
+
         # relative position and heading
         self.rpos = self.target_pos - self.root_state[..., :3]
         self.rheading = self.target_heading - self.root_state[..., 13:16]
+        
         obs = torch.cat([
             self.rpos,
             self.root_state[..., 3:],
@@ -141,17 +141,14 @@ class Hover(IsaacEnv):
 
         pos_error = torch.norm(self.rpos, dim=-1, keepdim=True)
         heading_alignment = torch.sum(self.root_state[..., 13:16] * self.target_heading, dim=-1, keepdim=True)
-        self.pos_error.mul_(self.alpha).add_((1-self.alpha) * pos_error)
-        self.heading_alignment.mul_(self.alpha).add_((1-self.alpha) * heading_alignment)
-        self.uprightness.mul_(self.alpha).add_((1-self.alpha) * self.root_state[..., 18].unsqueeze(-1))
+        self.stats["pos_error"].lerp_(pos_error, (1-self.alpha))
+        self.stats["heading_alignment"].lerp_(heading_alignment, (1-self.alpha))
+        self.stats["uprightness"].lerp_(self.root_state[..., 18].unsqueeze(-1), (1-self.alpha))
+        self.stats["action_smoothness"].add_(-self.drone.throttle_difference.unsqueeze(-1))
         
         return TensorDict({
             "drone.obs": obs,
-            "stats":{
-                "pos_error": self.pos_error,
-                "heading_alignment": self.heading_alignment,
-                "uprightness": self.uprightness
-            }
+            "stats": self.stats
         }, self.batch_size)
 
     def _compute_reward_and_done(self):
@@ -160,20 +157,21 @@ class Hover(IsaacEnv):
         # pose reward
         distance = torch.norm(torch.cat([self.rpos, self.rheading], dim=-1), dim=-1)
 
-        pose_reward = 1.0 / (1.0 + torch.square(self.reward_distance_scale * distance))
+        reward_pose = 1.0 / (1.0 + torch.square(self.reward_distance_scale * distance))
         # pose_reward = torch.exp(-distance * self.reward_distance_scale)
         # uprightness
-        up_reward = torch.square((up[..., 2] + 1) / 2)
-
-        # effort
-        effort_reward = self.reward_effort_weight * torch.exp(-self.effort)
+        reward_up = torch.square((up[..., 2] + 1) / 2)
 
         # spin reward
-        spin = torch.square(vels[..., -1])
-        spin_reward = 1.0 / (1.0 + torch.square(spin))
+        spinnage = torch.square(vels[..., -1])
+        reward_spin = 1.0 / (1.0 + torch.square(spinnage))
 
-        assert pose_reward.shape == up_reward.shape == spin_reward.shape
-        reward = pose_reward + pose_reward * (up_reward + spin_reward) + effort_reward
+        # effort
+        reward_effort = self.reward_effort_weight * torch.exp(-self.effort)
+        reward_action_smoothness = self.reward_action_smoothness_weight * torch.exp(-self.drone.throttle_difference)
+        
+        assert reward_pose.shape == reward_up.shape == reward_spin.shape
+        reward = reward_pose + reward_pose * (reward_up + reward_spin) + reward_effort + reward_action_smoothness
         
         done_misbehave = (pos[..., 2] < 0.2) | (distance > 4)
         done_hasnan = torch.isnan(self.root_state).any(-1)

@@ -8,8 +8,11 @@ env:
   num_envs: 4096
 
 drone_model: Firefly
+force_sensor: false
 
 reward_effort_weight: 0.1
+reward_action_smoothness_weight: 0.0
 reward_distance_scale: 1.2
 
 action_transform: null
+last_action: false

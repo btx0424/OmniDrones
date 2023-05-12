@@ -66,6 +66,12 @@ class InvertedPendulum(IsaacEnv):
         )
 
         self.payload_target_pos = torch.tensor([0., 0., 2.5], device=self.device)
+        stats_spec = CompositeSpec({
+            "pos_error": UnboundedContinuousTensorSpec(1),
+            "action_smoothness": UnboundedContinuousTensorSpec(1),
+        }).expand(self.num_envs).to(self.device)
+        self.observation_spec["stats"] = stats_spec
+        self.stats = stats_spec.zero()
         
 
     def _design_scene(self):
@@ -110,6 +116,8 @@ class InvertedPendulum(IsaacEnv):
         self.payload.set_masses(payload_mass, env_ids)
         bar_mass = self.bar_mass_dist.sample(env_ids.shape)
         self.bar.set_masses(bar_mass, env_ids)
+
+        self.stats[env_ids] = 0.
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("action", "drone.action")]

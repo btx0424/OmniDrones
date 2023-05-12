@@ -44,7 +44,7 @@ def init_wandb(cfg):
     wandb_cfg = cfg.wandb
     time_str = datetime.datetime.now().strftime("%m-%d_%H-%M")
     run_name = f"{wandb_cfg.run_name}/{time_str}"
-    run_dir = os.path.join("results", run_name)
+    run_dir = os.path.join("outputs", run_name)
     if not os.path.exists(run_dir):
         os.makedirs(run_dir)
     kwargs = dict(

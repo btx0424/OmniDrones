@@ -1,5 +1,6 @@
 import datetime
 import logging
+import os
 
 import wandb
 from omegaconf import OmegaConf
@@ -43,11 +44,15 @@ def init_wandb(cfg):
     wandb_cfg = cfg.wandb
     time_str = datetime.datetime.now().strftime("%m-%d_%H-%M")
     run_name = f"{wandb_cfg.run_name}/{time_str}"
+    run_dir = os.path.join("outputs", run_name)
+    if not os.path.exists(run_dir):
+        os.makedirs(run_dir)
     kwargs = dict(
         project=wandb_cfg.project,
         group=wandb_cfg.group,
         entity=wandb_cfg.entity,
         name=run_name,
+        dir=run_dir,
         mode=wandb_cfg.mode,
         tags=wandb_cfg.tags,
     )

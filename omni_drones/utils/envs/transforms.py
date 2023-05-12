@@ -186,6 +186,7 @@ class DepthImageNorm(Transform):
 
     def _apply_transform(self, obs: torch.Tensor) -> None:
         obs = torch.nan_to_num(obs, posinf=self.max_range, neginf=self.min_range)
+        obs = obs.clip(self.min_range, self.max_range)
         if self.inverse:
             obs = (obs - self.min_range) / (self.max_range - self.min_range)
         else:

@@ -22,6 +22,8 @@ from omni_drones.robots import ASSET_PATH
 
 class Gate(IsaacEnv):
     def __init__(self, cfg, headless):
+        if cfg.task.visual_obs:
+            cfg.env.num_envs = min(cfg.env.num_envs, 31) # 31 is for A100 80G
         super().__init__(cfg, headless)
         self.reward_effort_weight = self.cfg.task.reward_effort_weight
         self.reward_distance_scale = self.cfg.task.reward_distance_scale
@@ -68,12 +70,18 @@ class Gate(IsaacEnv):
             })
         else:
             observation_spec = UnboundedContinuousTensorSpec(drone_state_dim + 6)
+        
+        state_spec = CompositeSpec({
+            'state': UnboundedContinuousTensorSpec((1, drone_state_dim + 6))
+        })
+
         self.agent_spec["drone"] = AgentSpec(
             "drone",
             1,
             observation_spec.to(self.device),
             self.drone.action_spec.to(self.device),
             UnboundedContinuousTensorSpec(1).to(self.device),
+            state_spec.to(self.device),
         )
 
         self.init_pos_dist = D.Uniform(
@@ -128,10 +136,10 @@ class Gate(IsaacEnv):
                 resolution=(320, 240),
                 data_types=["distance_to_camera"],
                 usd_params=PinholeCameraCfg.UsdCameraCfg(
-                    focal_length=24.0,
+                    focal_length=16.0,
                     focus_distance=400.0,
                     horizontal_aperture=20.955,
-                    clipping_range=(0.2, 30),
+                    clipping_range=(0.2, 5),
                 ),
             )
             self.camera = Camera(camera_cfg)
@@ -205,6 +213,13 @@ class Gate(IsaacEnv):
         # relative position
         self.target_drone_rpos = self.target_pos - self.drone_state[..., :3]
         self.gate_drone_rpos = self.gate_pos - self.drone_state[..., :3]
+
+        state = torch.cat([
+            self.drone_state[..., 3:],
+            self.target_drone_rpos,
+            self.gate_drone_rpos,
+            self.gate_vel[..., :3],
+        ], dim=-1)
         
         if self.visual_obs:
             obs_state = torch.cat([
@@ -214,15 +229,10 @@ class Gate(IsaacEnv):
             obs_images = self.camera.get_images().reshape(self.drone.shape)
             obs = TensorDict({
                 "state": obs_state,
-                "distance_to_camera": obs_images
-            }, [self.num_envs])
+            }, [self.num_envs, 1])
+            obs.update(obs_images)
         else:
-            obs = torch.cat([
-                self.drone_state[..., 3:],
-                self.target_drone_rpos,
-                self.gate_drone_rpos,
-                self.gate_vel[..., :3],
-            ], dim=-1)
+            obs = state
 
         pos_error = torch.norm(self.target_drone_rpos, dim=-1)
         self.stats["pos_error"].mul_(self.alpha).add_((1-self.alpha) * pos_error)
@@ -230,6 +240,7 @@ class Gate(IsaacEnv):
         
         return TensorDict({
             "drone.obs": obs,
+            "drone.state": TensorDict({'state': state}, [self.num_envs]),
             "stats": self.stats,
             "info": self.info
         }, self.batch_size)

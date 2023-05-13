@@ -17,7 +17,7 @@ reward_effort_weight: 0.1
 reward_spin_weight: 0.8
 reward_swing_weight: 0.8
 reward_action_smoothness_weight: 0.0
-reward_potential_weight: 10.
+reward_potential_weight: 0.
 reward_distance_scale: 1.2
 safe_distance: 0.5
 

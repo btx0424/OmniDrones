@@ -90,16 +90,17 @@ class TransportHover(IsaacEnv):
         self.payload_target_heading = torch.zeros(self.num_envs, 3, device=self.device)
         self.last_distance = torch.zeros(self.num_envs, 1, device=self.device)
 
-        self.alpha = 0.7
+        self.alpha = 0.8
         
         info_spec = CompositeSpec({
             "payload_mass": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
         stats_spec = CompositeSpec({
-            "payload_pos_error": UnboundedContinuousTensorSpec((1,)),
-            "heading_alignment": UnboundedContinuousTensorSpec((1,)),
-            "uprightness": UnboundedContinuousTensorSpec((1,)),
-            "action_smoothness": UnboundedContinuousTensorSpec((1,))
+            "payload_pos_error": UnboundedContinuousTensorSpec(1),
+            "heading_alignment": UnboundedContinuousTensorSpec(1),
+            "uprightness": UnboundedContinuousTensorSpec(1),
+            "action_smoothness": UnboundedContinuousTensorSpec(1),
+            "smoothness": UnboundedContinuousTensorSpec(1)
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["info"] = info_spec
         self.observation_spec["stats"] = stats_spec
@@ -191,7 +192,8 @@ class TransportHover(IsaacEnv):
             payload_target_rpos,
             self.payload_target_heading - self.payload_heading
         ], dim=-1)
-
+        
+        self.group.get_state()
         payload_state = torch.cat(
             [
                 self.target_payload_rpose,
@@ -223,7 +225,8 @@ class TransportHover(IsaacEnv):
         self.stats["payload_pos_error"].lerp_(pos_error, (1-self.alpha))
         self.stats["heading_alignment"].lerp_(heading_alignment, (1-self.alpha))
         self.stats["uprightness"].lerp_(self.payload_up[:, 2].unsqueeze(-1), (1-self.alpha))
-        self.stats["action_smoothness"].add_(-self.drone.throttle_difference.mean(-1, True))
+        self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference.mean(-1, True), (1-self.alpha))
+        self.stats["smoothness"].lerp_(self.group.get_smoothness(), (1-self.alpha))
 
         return TensorDict({
             "drone.obs": obs, 

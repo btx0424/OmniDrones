@@ -13,7 +13,7 @@ parameters:
   algo:
     values:
     - mappo
-    - happo
+    # - happo
   
   algo.actor.hidden_units:
     value: [256, 128, 128]
@@ -30,7 +30,7 @@ parameters:
     # - PlatformFlyThrough # medium
 
   task.num_drones:
-    values: [2, 6]
+    values: [2, 4, 6]
 
   total_frames: 
     value: 155_000_000
@@ -39,7 +39,7 @@ parameters:
     value: true
   
   seed:
-    values: [0, 42, 81, 57, 127]
+    values: [0, 42, 81]
 
   task.drone_model:
     values: [Firefly, Hummingbird]

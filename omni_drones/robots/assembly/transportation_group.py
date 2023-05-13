@@ -2,8 +2,10 @@ from typing import Sequence, Union
 
 import omni.isaac.core.objects as objects
 import omni.isaac.core.utils.prims as prim_utils
+import omni.isaac.core.utils.torch as torch_utils
 import omni.physx.scripts.utils as script_utils
 import torch
+from functorch import vmap
 
 from omni.isaac.core.prims import RigidPrimView
 from omni.kit.commands import execute
@@ -140,8 +142,43 @@ class TransportationGroup(RobotBase):
         self.payload_view.initialize()
         self.joint_limits = self._view.get_dof_limits().clone()
 
+        self.pos = torch.zeros(*self.shape, 3, device=self.device)
+        self.rot = torch.zeros(*self.shape, 4, device=self.device)
+        self.heading = torch.zeros(*self.shape, 3, device=self.device)
+        self.up = torch.zeros(*self.shape, 3, device=self.device)
+        self.vel = torch.zeros(*self.shape, 6, device=self.device)
+        self.acc = torch.zeros(*self.shape, 6, device=self.device)
+        self.jerk = torch.zeros(*self.shape, 6, device=self.device)
+
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
         self.drone.apply_action(actions)
 
+    def get_state(self, env=True):
+        self.pos[:], self.rot[:] = self.get_world_poses(True)
+        if env:
+            self.pos[:] = self.pos[:] - RobotBase._envs_positions
+        vel = self.get_velocities(True)
+        acc = self.acc.lerp((vel - self.vel) / self.dt, self.alpha)
+        jerk = self.jerk.lerp((acc - self.acc) / self.dt, self.alpha)
+        self.jerk[:] = jerk
+        self.acc[:] = acc
+        self.vel[:] = vel
+        self.heading[:] = vmap(torch_utils.quat_axis)(self.rot, axis=0)
+        self.up[:] = vmap(torch_utils.quat_axis)(self.rot, axis=2)
+        state = [self.pos, self.rot, self.vel, self.heading, self.up]
+        state = torch.cat(state, dim=-1)
+        return state
+
+    def get_smoothness(self):
+        return - (
+            torch.norm(self.acc[..., :3], dim=-1)
+            + torch.norm(self.jerk[..., :3], dim=-1)
+        )
+    
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
+        self.vel[env_ids] = 0.
+        self.acc[env_ids] = 0.
+        self.jerk[env_ids] = 0.
+        return env_ids
+

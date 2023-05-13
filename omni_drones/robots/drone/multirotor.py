@@ -95,6 +95,12 @@ class MultirotorBase(RobotBase):
 
         self.pos, self.rot = self.get_world_poses(True)
         self.throttle_difference = torch.zeros(self.throttle.shape[:-1], device=self.device)
+        self.heading = torch.zeros(*self.shape, 3, device=self.device)
+        self.up = torch.zeros(*self.shape, 3, device=self.device)
+        self.vel = torch.zeros(*self.shape, 6, device=self.device)
+        self.acc = torch.zeros(*self.shape, 6, device=self.device)
+        self.jerk = torch.zeros(*self.shape, 6, device=self.device)
+        self.alpha = 0.9
 
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
         rotor_cmds = actions.expand(*self.shape, self.num_rotors)
@@ -129,20 +135,25 @@ class MultirotorBase(RobotBase):
         self.throttle_difference[:] = torch.norm(self.throttle - last_throttle, dim=-1)
         return self.throttle.sum(-1)
 
-    def get_state(self, env=True):
+    def get_state(self, env=True, check_nan: bool=False):
         self.pos[:], self.rot[:] = self.get_world_poses(True)
         if env:
             self.pos[:] = self.pos[:] - RobotBase._envs_positions
         vel = self.get_velocities(True)
-        thr = self.throttle * 2 - 1
-        heading = vmap(torch_utils.quat_axis)(self.rot, axis=0)
-        up = vmap(torch_utils.quat_axis)(self.rot, axis=2)
-        state = [self.pos, self.rot, vel, heading, up, thr]
-        # assert not torch.isnan(state).any()
+        acc = self.acc.lerp((vel - self.vel) / self.dt, self.alpha)
+        jerk = self.jerk.lerp((acc - self.acc) / self.dt, self.alpha)
+        self.jerk[:] = jerk
+        self.acc[:] = acc
+        self.vel[:] = vel
+        self.heading[:] = vmap(torch_utils.quat_axis)(self.rot, axis=0)
+        self.up[:] = vmap(torch_utils.quat_axis)(self.rot, axis=2)
+        state = [self.pos, self.rot, self.vel, self.heading, self.up, self.throttle * 2 - 1]
         if self.use_force_sensor:
             self.force_sensor_readings = self.get_force_sensor_forces() 
             state.append(self.force_sensor_readings.flatten(-2)/ self.mass)
         state = torch.cat(state, dim=-1)
+        if check_nan:
+            assert not torch.isnan(state).any()
         return state
 
     def _reset_idx(self, env_ids: torch.Tensor):
@@ -152,10 +163,19 @@ class MultirotorBase(RobotBase):
         self.torques[env_ids] = 0.0
         self.throttle[env_ids] = self.rotors.f_inv(1 / self.get_thrust_to_weight_ratio()[env_ids])
         self.throttle_difference[env_ids] = 0.0
+        self.vel[env_ids] = 0.
+        self.acc[env_ids] = 0.
+        self.jerk[env_ids] = 0.
         return env_ids
     
     def get_thrust_to_weight_ratio(self):
         return self.max_forces.sum(-1, keepdim=True) / (self.mass * 9.81)
+
+    def get_smoothness(self):
+        return - (
+            torch.norm(self.acc[..., :3], dim=-1) 
+            + torch.norm(self.jerk[..., :3], dim=-1)
+        )
     
     @staticmethod
     def downwash(

@@ -89,12 +89,13 @@ class PlatformHover(IsaacEnv):
         self.target_up = torch.zeros(self.num_envs, 3, device=self.device)
         self.last_distance = torch.zeros(self.num_envs, 1, device=self.device)
 
-        self.alpha = 0.7
+        self.alpha = 0.8
         stats_spec = CompositeSpec({
             "pos_error": UnboundedContinuousTensorSpec(1),
             "heading_alignment": UnboundedContinuousTensorSpec(1),
             "effort": UnboundedContinuousTensorSpec(1),
-            "action_smoothness": UnboundedContinuousTensorSpec((1))
+            "action_smoothness": UnboundedContinuousTensorSpec(1),
+            "smoothness": UnboundedContinuousTensorSpec(1)
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
         self.stats = stats_spec.zero()
@@ -176,27 +177,21 @@ class PlatformHover(IsaacEnv):
         self.drone_rpos = vmap(cpos)(drone_pos, drone_pos)
         self.drone_rpos = vmap(off_diag)(self.drone_rpos)
 
-        self.platform_pos, platform_rot = self.get_env_poses(self.platform.get_world_poses(clone=True))
-        self.platform_heading = vmap(torch_utils.quat_axis)(platform_rot, axis=0)
-        self.platform_up = vmap(torch_utils.quat_axis)(platform_rot, axis=2)
-        self.platform_vels = self.platform.get_velocities(clone=True)
+        self.platform_state = self.platform.get_state()
 
-        self.target_platform_rpos = self.target_pos - self.platform_pos
-        self.target_platform_rheading = self.target_heading.unsqueeze(1) - self.platform_heading
-        self.target_platform_rup = self.target_up.unsqueeze(1) - self.platform_up
+        self.target_platform_rpos = self.target_pos - self.platform.pos
+        self.target_platform_rheading = self.target_heading.unsqueeze(1) - self.platform.heading
+        self.target_platform_rup = self.target_up.unsqueeze(1) - self.platform.up
         self.target_platform_rpose = torch.cat([
             self.target_platform_rpos,
             self.target_platform_rheading,
             self.target_platform_rup
         ], dim=-1)
 
-        platform_drone_rpos = self.platform_pos - self.drone_states[..., :3]
+        platform_drone_rpos = self.platform.pos - self.drone_states[..., :3]
         platform_state = torch.cat([
             self.target_platform_rpose, # 9
-            platform_rot, # 4
-            self.platform_heading, # 3
-            self.platform_up, # 3
-            self.platform_vels, # 6
+            self.platform_state[..., 3:]
         ], dim=-1) # [num_envs, 1, 25]
 
 
@@ -216,11 +211,12 @@ class PlatformHover(IsaacEnv):
         state["state_frame"] = platform_state                # [num_envs, 1, platform_state_dim]
         
         pos_error = torch.norm(self.target_platform_rpos, dim=-1)
-        heading_alignment = torch.sum(self.platform_heading * self.target_heading.unsqueeze(1), dim=-1)
+        heading_alignment = torch.sum(self.platform.heading * self.target_heading.unsqueeze(1), dim=-1)
         
         self.stats["pos_error"].lerp_(pos_error, (1-self.alpha))
         self.stats["heading_alignment"].lerp_(heading_alignment, (1-self.alpha))
-        self.stats["action_smoothness"].add_(-self.drone.throttle_difference.mean(-1, True))
+        self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference.mean(-1, True), (1-self.alpha))
+        self.stats["smoothness"].lerp_(self.platform.get_smoothness(), (1-self.alpha))
 
         return TensorDict(
             {
@@ -240,7 +236,7 @@ class PlatformHover(IsaacEnv):
         # reward_pose = 1 / (1 + torch.square(distance * self.reward_distance_scale))
         reward_pose = torch.exp(- self.reward_distance_scale * distance)
         
-        up = torch.sum(self.platform_up * self.target_up.unsqueeze(1), dim=-1)
+        up = torch.sum(self.platform.up * self.target_up.unsqueeze(1), dim=-1)
         reward_up = torch.square((up + 1) / 2)
 
         spinnage = platform_vels[:, -3:].abs().sum(-1)

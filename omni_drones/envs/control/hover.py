@@ -54,13 +54,14 @@ class Hover(IsaacEnv):
         )
         self.target_pos = torch.tensor([[0.0, 0.0, 2.]], device=self.device)
         self.target_heading = torch.zeros(self.num_envs, 1, 3, device=self.device)
-        self.alpha = 0.7
+        self.alpha = 0.8
 
         stats_spec = CompositeSpec({
-            "pos_error": UnboundedContinuousTensorSpec((self.drone.n, 1)),
-            "heading_alignment": UnboundedContinuousTensorSpec((self.drone.n, 1)),
-            "uprightness": UnboundedContinuousTensorSpec((self.drone.n, 1)),
-            "action_smoothness": UnboundedContinuousTensorSpec((self.drone.n, 1))
+            "pos_error": UnboundedContinuousTensorSpec(1),
+            "heading_alignment": UnboundedContinuousTensorSpec(1),
+            "uprightness": UnboundedContinuousTensorSpec(1),
+            "action_smoothness": UnboundedContinuousTensorSpec(1),
+            "smoothness": UnboundedContinuousTensorSpec(1)
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
         self.stats = stats_spec.zero()
@@ -139,12 +140,13 @@ class Hover(IsaacEnv):
             self.rheading,
         ], dim=-1)
 
-        pos_error = torch.norm(self.rpos, dim=-1, keepdim=True)
-        heading_alignment = torch.sum(self.root_state[..., 13:16] * self.target_heading, dim=-1, keepdim=True)
+        pos_error = torch.norm(self.rpos, dim=-1)
+        heading_alignment = torch.sum(self.root_state[..., 13:16] * self.target_heading, dim=-1)
         self.stats["pos_error"].lerp_(pos_error, (1-self.alpha))
         self.stats["heading_alignment"].lerp_(heading_alignment, (1-self.alpha))
-        self.stats["uprightness"].lerp_(self.root_state[..., 18].unsqueeze(-1), (1-self.alpha))
-        self.stats["action_smoothness"].add_(-self.drone.throttle_difference.unsqueeze(-1))
+        self.stats["uprightness"].lerp_(self.root_state[..., 18], (1-self.alpha))
+        self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
+        self.stats["smoothness"].lerp_(self.drone.get_smoothness(), (1-self.alpha))
         
         return TensorDict({
             "drone.obs": obs,
@@ -171,7 +173,12 @@ class Hover(IsaacEnv):
         reward_action_smoothness = self.reward_action_smoothness_weight * torch.exp(-self.drone.throttle_difference)
         
         assert reward_pose.shape == reward_up.shape == reward_spin.shape
-        reward = reward_pose + reward_pose * (reward_up + reward_spin) + reward_effort + reward_action_smoothness
+        reward = (
+            reward_pose 
+            + reward_pose * (reward_up + reward_spin) 
+            + reward_effort 
+            + reward_action_smoothness
+        )
         
         done_misbehave = (pos[..., 2] < 0.2) | (distance > 4)
         done_hasnan = torch.isnan(self.root_state).any(-1)

@@ -52,7 +52,7 @@ class TransportHover(IsaacEnv):
 
         observation_spec = CompositeSpec({
             "self": UnboundedContinuousTensorSpec((1, drone_state_dim)).to(self.device),
-            "others": UnboundedContinuousTensorSpec((self.drone.n-1, drone_state_dim+1)).to(self.device),
+            "others": UnboundedContinuousTensorSpec((self.drone.n-1, 13+1)).to(self.device),
             "payload": UnboundedContinuousTensorSpec((1, 22)).to(self.device)
         })
 
@@ -99,8 +99,9 @@ class TransportHover(IsaacEnv):
             "payload_pos_error": UnboundedContinuousTensorSpec(1),
             "heading_alignment": UnboundedContinuousTensorSpec(1),
             "uprightness": UnboundedContinuousTensorSpec(1),
-            "action_smoothness": UnboundedContinuousTensorSpec(1),
-            "smoothness": UnboundedContinuousTensorSpec(1)
+            "payload_smoothness": UnboundedContinuousTensorSpec(1),
+            "drone_smoothness": UnboundedContinuousTensorSpec(self.drone.n),
+            "action_smoothness": UnboundedContinuousTensorSpec(self.drone.n),
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["info"] = info_spec
         self.observation_spec["stats"] = stats_spec
@@ -211,7 +212,7 @@ class TransportHover(IsaacEnv):
             [-payload_drone_rpos, self.drone_states[..., 3:]], dim=-1
         ).unsqueeze(2) # [..., 1, state_dim]
         obs["others"] = torch.cat(
-            [self.drone_rpos, self.drone_pdist, vmap(others)(self.drone_states[..., 3:])], dim=-1
+            [self.drone_rpos, self.drone_pdist, vmap(others)(self.drone_states[..., 3:13])], dim=-1
         ) # [..., n-1, state_dim + 1]
         obs["payload"] = payload_state.expand(-1, self.drone.n, -1).unsqueeze(2) # [..., 1, 22]
 
@@ -226,8 +227,9 @@ class TransportHover(IsaacEnv):
         self.stats["payload_pos_error"].lerp_(pos_error, (1-self.alpha))
         self.stats["heading_alignment"].lerp_(heading_alignment, (1-self.alpha))
         self.stats["uprightness"].lerp_(self.payload_up[:, 2].unsqueeze(-1), (1-self.alpha))
-        self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference.mean(-1, True), (1-self.alpha))
-        self.stats["smoothness"].lerp_(self.group.get_smoothness(), (1-self.alpha))
+        self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
+        self.stats["payload_smoothness"].lerp_(self.group.get_smoothness(), (1-self.alpha))
+        self.stats["drone_smoothness"].lerp_(self.drone.get_smoothness(), (1-self.alpha))
 
         return TensorDict({
             "drone.obs": obs, 

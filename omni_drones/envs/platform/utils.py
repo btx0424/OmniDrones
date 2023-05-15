@@ -237,12 +237,18 @@ class OveractuatedPlatform(RobotBase):
         state = torch.cat(state, dim=-1)
         return state
 
-    def get_smoothness(self):
+    def get_linear_smoothness(self):
         return - (
             torch.norm(self.acc[..., :3], dim=-1)
             + torch.norm(self.jerk[..., :3], dim=-1)
         )
     
+    def get_angular_smoothness(self):
+        return - (
+            torch.sum(self.acc[..., 3:].abs(), dim=-1)
+            + torch.sum(self.jerk[..., 3:].abs(), dim=-1)
+        )
+
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
         self.vel[env_ids] = 0.

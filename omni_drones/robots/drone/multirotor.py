@@ -171,10 +171,16 @@ class MultirotorBase(RobotBase):
     def get_thrust_to_weight_ratio(self):
         return self.max_forces.sum(-1, keepdim=True) / (self.mass * 9.81)
 
-    def get_smoothness(self):
+    def get_linear_smoothness(self):
         return - (
             torch.norm(self.acc[..., :3], dim=-1) 
             + torch.norm(self.jerk[..., :3], dim=-1)
+        )
+    
+    def get_angular_smoothness(self):
+        return - (
+            torch.sum(self.acc[..., 3:].abs(), dim=-1)
+            + torch.sum(self.jerk[..., 3:].abs(), dim=-1)
         )
     
     @staticmethod

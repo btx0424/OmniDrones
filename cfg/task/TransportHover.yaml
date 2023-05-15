@@ -8,6 +8,7 @@ env:
   num_envs: 2048
 
 drone_model: Hummingbird
+num_drones: 6
 force_sensor: false
 
 payload_mass_min: 1.9

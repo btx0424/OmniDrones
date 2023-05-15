@@ -17,9 +17,10 @@ from omni_drones.utils.torch import euler_to_quaternion
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.views import RigidPrimView
 from omni_drones.utils.torch import cpos, off_diag, others
-from omni_drones.robots.assembly.transportation_group import TransportationGroup
 from omni_drones.robots.config import RobotCfg
 from omni_drones.robots.drone import MultirotorBase
+
+from .utils import TransportationGroup
 
 def create_obstacles(
     prim_path: str,

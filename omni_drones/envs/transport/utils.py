@@ -14,9 +14,17 @@ from pxr import Gf, PhysxSchema, UsdGeom, UsdPhysics
 import omni_drones.utils.kit as kit_utils
 import omni_drones.utils.scene as scene_utils
 
-from omni_drones.robots import ASSET_PATH, RobotBase
+from omni_drones.robots import ASSET_PATH, RobotBase, RobotCfg
 from omni_drones.robots.drone import MultirotorBase
+from dataclasses import dataclass
 
+@dataclass
+class TransportationCfg(RobotCfg):
+    num_drones: int = 4
+
+    def __post_init__(self):
+        if not self.num_drones in (4, 6):
+            raise ValueError
 
 class TransportationGroup(RobotBase):
 
@@ -24,7 +32,7 @@ class TransportationGroup(RobotBase):
         self,
         name: str = "Group",
         drone: Union[str, MultirotorBase] = "Firefly",
-        cfg=None,
+        cfg: TransportationCfg=None,
         is_articulation=True,
     ) -> None:
         super().__init__(name, cfg, is_articulation)
@@ -33,6 +41,9 @@ class TransportationGroup(RobotBase):
         drone.is_articulation = False
         self.drone = drone
         self.translations = []
+
+        self.num_drones = cfg.num_drones
+        self.alpha = 0.9
 
     def spawn(
         self, 
@@ -59,12 +70,20 @@ class TransportationGroup(RobotBase):
                 translation=translation,
             )
 
-            payload = prim_utils.create_prim(
-                prim_path=f"{prim_path}/payload",
-                prim_type="Cube",
-                translation=(0.0, 0.0, -1.1),
-                scale=(0.75, 0.5, 0.2),
-            )
+            if self.num_drones == 4:
+                payload = prim_utils.create_prim(
+                    prim_path=f"{prim_path}/payload",
+                    prim_type="Cube",
+                    translation=(0.0, 0.0, -1.1),
+                    scale=(0.75, 0.5, 0.2),
+                )
+            elif self.num_drones == 6:
+                payload = prim_utils.create_prim(
+                    prim_path=f"{prim_path}/payload",
+                    prim_type="Cube",
+                    translation=(0.0, 0.0, -1.1),
+                    scale=(1.0, 0.5, 0.2),
+                )
 
             script_utils.setRigidBody(payload, "convexHull", False)
             UsdPhysics.MassAPI.Apply(payload)
@@ -77,16 +96,24 @@ class TransportationGroup(RobotBase):
                 linear_damping=0.1
             )
 
-            drone_translations = torch.tensor(
-                [
+            if self.num_drones == 4:
+                drone_translations = torch.tensor([
                     [0.75, 0.5, 0],
                     [0.75, -0.5, 0],
                     [-0.75, -0.5, 0],
                     [-0.75, 0.5, 0],
-                ]
-            )
+                ])
+            elif self.num_drones == 6:
+                drone_translations = torch.tensor([
+                    [1.0, 0.5, 0],
+                    [1.0, -0.5, 0],
+                    [0.0, 0.5, 0],
+                    [0.0, -0.5, 0],
+                    [-1.0, -0.5, 0],
+                    [-1.0, 0.5, 0],
+                ])
 
-            for i in range(4):
+            for i in range(self.num_drones):
                 drone_prim = self.drone.spawn(
                     translations=drone_translations[i],
                     prim_paths=[f"{prim_path}/{self.drone.name.lower()}_{i}"],
@@ -129,10 +156,9 @@ class TransportationGroup(RobotBase):
 
     def initialize(self, prim_paths_expr: str = None, track_contact_forces: bool = False):
         super().initialize(prim_paths_expr)
-        self.drone.n = self.n * 4
         self.drone.initialize(f"{self.prim_paths_expr}/{self.drone.name.lower()}_*")
         self.drone.articulation = self
-        self.drone.articulation_indices = torch.arange(4, device=self.device)
+        self.drone.articulation_indices = torch.arange(self.drone.n, device=self.device)
         
         self.payload_view = RigidPrimView(
             f"{self.prim_paths_expr}/payload",

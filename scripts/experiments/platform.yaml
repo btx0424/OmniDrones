@@ -43,10 +43,6 @@ parameters:
 
   task.drone_model:
     values: [Firefly, Hummingbird]
-
-  task.action_transform:
-    value:
-      - None
   
   algo.train_every:
     value: 128

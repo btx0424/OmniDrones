@@ -14,9 +14,9 @@ import omni_drones.utils.scene as scene_utils
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.views import RigidPrimView
 from omni_drones.utils.torch import cpos, off_diag, others
-from omni_drones.robots.assembly.transportation_group import TransportationGroup
-from omni_drones.robots.config import RobotCfg
 from omni_drones.robots.drone import MultirotorBase
+
+from .utils import TransportationGroup, TransportationCfg
 
 
 class TransportHover(IsaacEnv):
@@ -63,7 +63,7 @@ class TransportHover(IsaacEnv):
 
         self.agent_spec["drone"] = AgentSpec(
             "drone",
-            4,
+            self.drone.n,
             observation_spec,
             self.drone.action_spec.to(self.device),
             UnboundedContinuousTensorSpec(1).to(self.device),
@@ -111,7 +111,8 @@ class TransportHover(IsaacEnv):
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
         cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
         self.drone: MultirotorBase = drone_model(cfg=cfg)
-        self.group = TransportationGroup(drone=self.drone)
+        group_cfg = TransportationCfg(num_drones=self.cfg.task.num_drones)
+        self.group = TransportationGroup(drone=self.drone, cfg=group_cfg)
 
         scene_utils.design_scene()
 

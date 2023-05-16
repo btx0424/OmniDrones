@@ -30,6 +30,7 @@ class GateSwitch(IsaacEnv):
         self.gate_moving_range = self.cfg.task.gate_moving_range
         self.gate_scale = self.cfg.task.gate_scale
         self.reward_share_ratio = self.cfg.task.reward_share_ratio
+        self.time_encoding = self.cfg.task.time_encoding
 
         self.drone.initialize()
         
@@ -63,18 +64,18 @@ class GateSwitch(IsaacEnv):
         self.crossed_plane = torch.zeros(self.num_envs, 2, device=self.device, dtype=bool)
 
         drone_state_dim = self.drone.state_spec.shape[-1]
+        if self.time_encoding:
+            self.time_encoding_dim = 4
+            drone_state_dim += self.time_encoding_dim
+
         if self.visual_obs:
             self.camera.initialize(f"/World/envs/env_*/{self.drone.name}_*/base_link/Camera")
             observation_spec = CompositeSpec({
-                "state": UnboundedContinuousTensorSpec(drone_state_dim),
+                "state_self": UnboundedContinuousTensorSpec(drone_state_dim),
                 "distance_to_camera": UnboundedContinuousTensorSpec((1, *self.camera.shape))
             })
         else:
-            observation_spec = UnboundedContinuousTensorSpec(drone_state_dim*self.drone.n + 6)
-
-        state_spec = CompositeSpec({
-            'state': UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim*self.drone.n + 6))
-        })
+            observation_spec = UnboundedContinuousTensorSpec(drone_state_dim + 13 + 6)
 
         self.agent_spec["drone"] = AgentSpec(
             "drone",
@@ -82,7 +83,7 @@ class GateSwitch(IsaacEnv):
             observation_spec.to(self.device),
             self.drone.action_spec.to(self.device),
             UnboundedContinuousTensorSpec(1).to(self.device),
-            state_spec.to(self.device),
+            # state_spec.to(self.device),
         )
 
         self.init_pos_dist = D.Uniform(
@@ -110,7 +111,7 @@ class GateSwitch(IsaacEnv):
             "success": BinaryDiscreteTensorSpec(1, dtype=bool)
         }).expand(self.num_envs).to(self.device)
         info_spec = CompositeSpec({
-            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim)),
+            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13)),
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
         self.observation_spec["info"] = info_spec
@@ -214,7 +215,7 @@ class GateSwitch(IsaacEnv):
 
     def _compute_state_and_obs(self):
         self.drone_state = self.drone.get_state()
-        self.info["drone_state"][:] = self.drone_state
+        self.info["drone_state"][:] = self.drone_state[..., :13]
         self.drone_up = self.drone_state[..., 16:19]
         self.gate_pos, _ = self.get_env_poses(self.gate.get_world_poses())
         self.gate_vel = self.gate.get_velocities()
@@ -226,35 +227,38 @@ class GateSwitch(IsaacEnv):
         drone_pos = self.drone_state[..., :3]
         drone_rpos = vmap(cpos)(drone_pos, drone_pos)
         drone_rpos = vmap(off_diag)(drone_rpos)
-        state = torch.cat([
+
+        obs_self = [
             self.drone_state[..., 3:],
-            drone_rpos.flatten(-2),
-            vmap(others)(self.drone_state[..., 3:]).flatten(-2),
             self.target_drone_rpos,
-            self.gate_drone_rpos,
-            self.gate_vel[..., :3].expand(self.num_envs, 2, 3),
-        ], dim=-1)
+        ]
+        if self.time_encoding:
+            t = (self.progress_buf / self.max_episode_length).unsqueeze(-1)
+            obs_self.append(t.unsqueeze(1).expand(-1, 2, self.time_encoding_dim))
         
         if self.visual_obs:
-            obs_state = torch.cat([
-                self.drone_state[..., 3:],
-                self.target_drone_rpos,
-            ], dim=-1)
+            obs_vec = torch.cat(obs_self, dim=-1)
             obs_images = self.camera.get_images().reshape(self.drone.shape)
             obs = TensorDict({
-                "state": obs_state,
+                "state_self": obs_vec,
             }, [self.num_envs, self.drone.n])
             obs.update(obs_images)
         else:
-            obs = state
+            obs_others = [
+                drone_rpos.flatten(-2),
+                vmap(others)(self.drone_state[..., 3:13]).flatten(-2),
+                self.gate_drone_rpos,
+                self.gate_vel[..., :3].expand(self.num_envs, 2, 3),
+            ]
+            obs = torch.cat(obs_self + obs_others, dim=-1)
 
         pos_error = torch.norm(self.target_drone_rpos, dim=-1)
-        self.stats["pos_error"].mul_(self.alpha).add_((1-self.alpha) * pos_error)
-        self.stats["drone_uprightness"].mul_(self.alpha).add_((1-self.alpha) * self.drone_up[..., 2])
+        self.stats["pos_error"].lerp_(pos_error, (1-self.alpha))
+        self.stats["drone_uprightness"].lerp_(self.drone_up[..., 2], (1-self.alpha))
         
         return TensorDict({
             "drone.obs": obs,
-            "drone.state": TensorDict({'state': state}, [self.num_envs]),
+            # "drone.state": TensorDict({'state': state}, [self.num_envs]),
             "stats": self.stats,
             "info": self.info
         }, self.batch_size)

@@ -8,8 +8,9 @@ env:
   num_envs: 2048
 
 drone_model: Hummingbird
-num_drones: 6
+num_drones: 4
 force_sensor: false
+time_encoding: true
 
 payload_mass_min: 1.9
 payload_mass_max: 2.1
@@ -18,6 +19,7 @@ reward_effort_weight: 0.1
 reward_spin_weight: 0.8
 reward_swing_weight: 0.8
 reward_action_smoothness_weight: 0.0
+reward_motion_smoothness_weight: 0.0
 reward_potential_weight: 0.
 reward_distance_scale: 1.2
 safe_distance: 0.5

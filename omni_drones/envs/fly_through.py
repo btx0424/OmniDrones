@@ -89,6 +89,7 @@ class FlyThrough(IsaacEnv):
         super().__init__(cfg, headless)
         self.reward_effort_weight = self.cfg.task.reward_effort_weight
         self.reward_distance_scale = self.cfg.task.reward_distance_scale
+        self.time_encoding = self.cfg.task.time_encoding
         self.reset_on_collision = self.cfg.task.reset_on_collision
 
         self.drone.initialize()
@@ -119,6 +120,10 @@ class FlyThrough(IsaacEnv):
         self.obstacle_pos = self.get_env_poses(self.obstacles.get_world_poses())[0]
 
         drone_state_dim = self.drone.state_spec.shape[-1]
+        if self.time_encoding:
+            self.time_encoding_dim = 4
+            drone_state_dim += self.time_encoding_dim
+        
         self.agent_spec["drone"] = AgentSpec(
             "drone",
             1,
@@ -147,21 +152,13 @@ class FlyThrough(IsaacEnv):
         self.payload_target_pos = torch.zeros(self.num_envs, 3, device=self.device)
         self.alpha = 0.7
 
-        info_spec = CompositeSpec({
+        stats_spec = CompositeSpec({
             "payload_pos_error": UnboundedContinuousTensorSpec(1),
             "drone_uprightness": UnboundedContinuousTensorSpec(1),
             "collision": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
-        self.observation_spec["info"] = info_spec
-        # self.info = info_spec.zero()
-        self.payload_pos_error = torch.zeros(self.num_envs, 1, device=self.device)
-        self.drone_uprightness = torch.zeros(self.num_envs, 1, device=self.device)
-        self.collision = torch.zeros(self.num_envs, 1, device=self.device)
-        self.info = TensorDict({
-            "payload_pos_error": self.payload_pos_error,
-            "drone_uprightness": self.drone_uprightness,
-            "collision": self.collision
-        }, self.num_envs)
+        self.observation_spec["stats"] = stats_spec
+        self.stats = stats_spec.zero()
 
     def _design_scene(self):
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
@@ -220,9 +217,7 @@ class FlyThrough(IsaacEnv):
         payload_mass = self.payload_mass_dist.sample(env_ids.shape)
         self.payload.set_masses(payload_mass, env_ids)
 
-        self.info["payload_pos_error"][env_ids] = 0
-        self.info["drone_uprightness"][env_ids] = 0
-        self.info["collision"][env_ids] = 0
+        self.stats[env_ids] = 0.
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("action", "drone.action")]
@@ -239,21 +234,25 @@ class FlyThrough(IsaacEnv):
         self.target_payload_rpos = (self.payload_target_pos - self.payload_pos).unsqueeze(1)
         obstacle_drone_rpos = self.obstacle_pos[..., [0, 2]] - self.drone_state[..., [0, 2]]
         
-        obs = torch.cat([
+        obs = [
             self.drone_payload_rpos,
             self.drone_state[..., 3:],
             self.target_payload_rpos, # 3
             self.payload_vels.unsqueeze(1), # 6
             obstacle_drone_rpos.flatten(start_dim=-2).unsqueeze(1),
-        ], dim=-1)
+        ]
+        if self.time_encoding:
+            t = (self.progress_buf / self.max_episode_length).unsqueeze(-1)
+            obs.append(t.expand(-1, self.time_encoding_dim).unsqueeze(1))
+        obs = torch.cat(obs, dim=-1)
 
         payload_pos_error = torch.norm(self.target_payload_rpos, dim=-1)
-        self.info["payload_pos_error"].mul_(self.alpha).add_((1-self.alpha) * payload_pos_error)
-        self.info["drone_uprightness"].mul_(self.alpha).add_((1-self.alpha) * self.drone_up[..., 2])
-        
+        self.stats["payload_pos_error"].lerp_(payload_pos_error, (1-self.alpha))
+        self.stats["drone_uprightness"].lerp_(self.drone_up[..., 2], (1-self.alpha))
+
         return TensorDict({
             "drone.obs": obs,
-            "info": self.info
+            "stats": self.stats
         }, self.batch_size)
 
     def _compute_reward_and_done(self):
@@ -288,7 +287,7 @@ class FlyThrough(IsaacEnv):
         )
         collision_reward = collision.float()
 
-        self.info["collision"] += collision_reward
+        self.stats["collision"].add_(collision_reward)
         assert pose_reward.shape == up_reward.shape == spin_reward.shape == swing_reward.shape
         reward = (
             pose_reward 

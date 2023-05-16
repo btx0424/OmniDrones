@@ -9,6 +9,7 @@ env:
 
 drone_model: Hummingbird
 force_sensor: false
+time_encoding: true
 
 reward_effort_weight: 0.1
 reward_distance_scale: 1.0
@@ -18,7 +19,7 @@ gate_moving_range: 0.
 gate_scale: 1.1
 reset_on_collision: false
 
-flatten_state: true
+# flatten_state: true
 
 camera:
   min_depth: 0.1

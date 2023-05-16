@@ -1,5 +1,19 @@
 import torch
 from typing import Sequence, Union
+from contextlib import contextmanager
+
+@contextmanager
+def torch_seed(seed: int=0):
+    rng_state = torch.get_rng_state()
+    rng_state_cuda = torch.cuda.get_rng_state_all()
+    try:
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        yield
+    finally:
+        torch.set_rng_state(rng_state)
+        torch.cuda.set_rng_state_all(rng_state_cuda)
+
 
 def off_diag(a: torch.Tensor) -> torch.Tensor:
     assert a.shape[0] == a.shape[1]

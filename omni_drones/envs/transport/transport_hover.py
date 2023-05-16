@@ -26,8 +26,10 @@ class TransportHover(IsaacEnv):
         self.reward_spin_weight = self.cfg.task.reward_spin_weight
         self.reward_swing_weight = self.cfg.task.reward_swing_weight
         self.reward_action_smoothness_weight = self.cfg.task.reward_action_smoothness_weight
+        self.reward_motion_smoothness_weight = self.cfg.task.reward_motion_smoothness_weight
         self.reward_potential_weight = self.cfg.task.reward_potential_weight
         self.reward_distance_scale = self.cfg.task.reward_distance_scale
+        self.time_encoding = self.cfg.task.time_encoding
 
         self.safe_distance = self.cfg.task.safe_distance
 
@@ -49,16 +51,20 @@ class TransportHover(IsaacEnv):
         self.init_drone_vels = torch.zeros_like(self.drone.get_velocities())
 
         drone_state_dim = self.drone.state_spec.shape[-1]
-
+        payload_state_dim = 22
+        if self.time_encoding:
+            self.time_encoding_dim = 4
+            payload_state_dim += self.time_encoding_dim
+        
         observation_spec = CompositeSpec({
-            "self": UnboundedContinuousTensorSpec((1, drone_state_dim)).to(self.device),
-            "others": UnboundedContinuousTensorSpec((self.drone.n-1, 13+1)).to(self.device),
-            "payload": UnboundedContinuousTensorSpec((1, 22)).to(self.device)
+            "state_self": UnboundedContinuousTensorSpec((1, drone_state_dim)).to(self.device),
+            "state_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13+1)).to(self.device),
+            "state_payload": UnboundedContinuousTensorSpec((1, payload_state_dim)).to(self.device)
         })
 
         state_spec = CompositeSpec(
             drones=UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim)).to(self.device),
-            payload=UnboundedContinuousTensorSpec((1, 22)).to(self.device)
+            payload=UnboundedContinuousTensorSpec((1, payload_state_dim)).to(self.device)
         )
 
         self.agent_spec["drone"] = AgentSpec(
@@ -99,8 +105,8 @@ class TransportHover(IsaacEnv):
             "payload_pos_error": UnboundedContinuousTensorSpec(1),
             "heading_alignment": UnboundedContinuousTensorSpec(1),
             "uprightness": UnboundedContinuousTensorSpec(1),
-            "payload_smoothness": UnboundedContinuousTensorSpec(1),
-            "drone_smoothness": UnboundedContinuousTensorSpec(self.drone.n),
+            "motion_smoothness_payload": UnboundedContinuousTensorSpec(1),
+            "motion_smoothness_drone": UnboundedContinuousTensorSpec(self.drone.n),
             "action_smoothness": UnboundedContinuousTensorSpec(self.drone.n),
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["info"] = info_spec
@@ -196,29 +202,30 @@ class TransportHover(IsaacEnv):
         ], dim=-1)
         
         self.group.get_state()
-        payload_state = torch.cat(
-            [
-                self.target_payload_rpose,
-                self.payload_rot,  # 4
-                payload_vels,  # 6
-                self.payload_heading,  # 3
-                self.payload_up, # 3
-            ],
-            dim=-1,
-        ).unsqueeze(1)
+        payload_state = [
+            self.target_payload_rpose,
+            self.payload_rot,  # 4
+            payload_vels,  # 6
+            self.payload_heading,  # 3
+            self.payload_up, # 3
+        ]
+        if self.time_encoding:
+            t = (self.progress_buf / self.max_episode_length).unsqueeze(-1)
+            payload_state.append(t.expand(-1, self.time_encoding_dim))
+        payload_state = torch.cat(payload_state, dim=-1).unsqueeze(1)
 
         obs = TensorDict({}, [self.num_envs, self.drone.n])
-        obs["self"] = torch.cat(
+        obs["state_self"] = torch.cat(
             [-payload_drone_rpos, self.drone_states[..., 3:]], dim=-1
         ).unsqueeze(2) # [..., 1, state_dim]
-        obs["others"] = torch.cat(
+        obs["state_others"] = torch.cat(
             [self.drone_rpos, self.drone_pdist, vmap(others)(self.drone_states[..., 3:13])], dim=-1
         ) # [..., n-1, state_dim + 1]
-        obs["payload"] = payload_state.expand(-1, self.drone.n, -1).unsqueeze(2) # [..., 1, 22]
+        obs["state_payload"] = payload_state.expand(-1, self.drone.n, -1).unsqueeze(2) # [..., 1, 22]
 
         state = TensorDict({}, self.num_envs)
         state["payload"] = payload_state # [..., 1, 22]
-        state["drones"] = obs["self"].squeeze(2) # [..., n, state_dim]
+        state["drones"] = obs["state_self"].squeeze(2) # [..., n, state_dim]
 
         pos_error = torch.norm(payload_target_rpos, dim=-1, keepdim=True)
         heading_alignment = torch.sum(
@@ -228,8 +235,16 @@ class TransportHover(IsaacEnv):
         self.stats["heading_alignment"].lerp_(heading_alignment, (1-self.alpha))
         self.stats["uprightness"].lerp_(self.payload_up[:, 2].unsqueeze(-1), (1-self.alpha))
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
-        self.stats["payload_smoothness"].lerp_(self.group.get_smoothness(), (1-self.alpha))
-        self.stats["drone_smoothness"].lerp_(self.drone.get_smoothness(), (1-self.alpha))
+        self.motion_smoothness_payload = (
+            self.group.get_linear_smoothness()
+            + self.group.get_angular_smoothness()
+        )
+        self.stats["motion_smoothness_payload"].lerp_(self.motion_smoothness_payload, (1-self.alpha))
+        self.motion_smoothness_drone = (
+            self.drone.get_linear_smoothness()
+            + self.drone.get_angular_smoothness()
+        )
+        self.stats["motion_smoothness_drone"].lerp_(self.motion_smoothness_drone, (1-self.alpha))
 
         return TensorDict({
             "drone.obs": obs, 
@@ -265,8 +280,9 @@ class TransportHover(IsaacEnv):
         reward_separation = torch.square(separation / self.safe_distance).clamp(0, 1)
         reward_joint_limit = 0.5 * torch.mean(1 - torch.square(joint_positions), dim=-1)
 
-        reward_action_smoothness = (self.reward_action_smoothness_weight * torch.exp(-self.drone.throttle_difference)).mean(1, keepdim=True)
-        
+        reward_action_smoothness = self.reward_action_smoothness_weight * torch.exp(-self.drone.throttle_difference)
+        reward_motion_smoothness = self.reward_motion_smoothness_weight * torch.exp(self.motion_smoothness_drone / 1000)
+
         reward_potential = self.reward_potential_weight * (self.last_distance - distance)
         self.last_distance[:] = distance
         
@@ -276,8 +292,9 @@ class TransportHover(IsaacEnv):
                 + reward_pose * (reward_up + reward_spin + reward_swing) 
                 + reward_potential
                 + reward_joint_limit
+                + reward_action_smoothness.mean(1, True)
+                + reward_motion_smoothness.mean(1, True)
                 + reward_effort
-                + reward_action_smoothness
             )
         ).unsqueeze(-1)
 

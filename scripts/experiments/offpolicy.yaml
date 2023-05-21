@@ -23,16 +23,16 @@ parameters:
     - InvertedPendulumFlyThrough
 
   task.env.num_envs:
-    value: 512
+    value: 1024
 
   total_frames: 
-    value: 15_000_000
+    value: 25_500_000
 
   headless:
     value: true
   
   seed:
-    values: [0, 42, 81]
+    values: [0, 42, 81, 57, 127]
 
   task.drone_model:
     values: [Firefly, Hummingbird]

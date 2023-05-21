@@ -20,7 +20,6 @@ def main(cfg):
     import omni_drones.utils.scene as scene_utils
     from omni.isaac.core.simulation_context import SimulationContext
     from omni_drones.controllers import LeePositionController
-    from omni_drones.robots import RobotCfg
     from omni_drones.robots.drone import Crazyflie, Firefly, Hummingbird, MultirotorBase
     from omni_drones.sensors.camera import Camera, PinholeCameraCfg
 
@@ -34,7 +33,8 @@ def main(cfg):
     )
     n = 4
 
-    drone = Firefly(cfg=RobotCfg())
+    drone_cfg = Firefly.cfg_cls()
+    drone = Firefly(cfg=drone_cfg)
 
     translations = torch.zeros(n, 3)
     translations[:, 1] = torch.arange(n)
@@ -74,7 +74,7 @@ def main(cfg):
     # control_target[:, 0] = torch.arange(n, device=sim.device).flip(-1) * 0.5
     control_target[:, 1] = torch.arange(n, device=sim.device)
     control_target[:, 2] = 1.0 + torch.arange(n, device=sim.device) * 0.2
-    control_target[:, -1] = (torch.pi / 3) * torch.arange(n, device=sim.device)
+    control_target[:, -1] = (torch.pi / 6) * torch.arange(n, device=sim.device)
     action = drone.action_spec.zero((n,))
 
     frames = []

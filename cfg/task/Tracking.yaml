@@ -5,8 +5,13 @@ defaults:
   - /sim_base
 
 drone_model: Firefly
+force_sensor: false
+time_encoding: true
 
-traj_func: circle
+reset_thres: 0.5
 future_traj_len: 3
+
+reward_action_smoothness_weight: 0.
+reward_motion_smoothness_weight: 0.1
 
 action_transform: null

@@ -2,7 +2,7 @@ import functorch
 
 import omni.isaac.core.utils.torch as torch_utils
 import omni_drones.utils.kit as kit_utils
-from omni_drones.utils.torch import euler_to_quaternion, torch_seed
+from omni_drones.utils.torch import euler_to_quaternion, normalize
 import omni.isaac.core.utils.prims as prim_utils
 import torch
 import torch.distributions as D
@@ -12,6 +12,39 @@ from omni_drones.robots.drone import MultirotorBase, MultirotorCfg
 from omni_drones.views import ArticulationView
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec
+
+import torch.nn as nn
+class WindField(nn.Module):
+    def __init__(
+        self, 
+        shape,
+        magnitude_scale=1.0, 
+        c1_scale=0.2
+    ):
+        super().__init__()
+        self.c1_scale = c1_scale
+        self.magnitude_scale = magnitude_scale
+        if isinstance(shape, int):
+            shape = (shape,)
+        self.shape = torch.Size(shape)
+        self.wind_direction: torch.Tensor
+        self.wind_magnitude: torch.Tensor
+        self.c1: torch.Tensor
+
+        self.register_buffer("wind_direction", normalize(torch.randn(*self.shape, 3)))
+        self.register_buffer("wind_magnitude", torch.rand(*self.shape, 1) * self.magnitude_scale)
+        self.register_buffer("c1", torch.rand(*self.shape, 1) * self.c1_scale)
+    
+    def forward(self, a=None):
+        v = self.wind_direction * self.wind_magnitude
+        v += (torch.randn_like(v) * self.c1).clamp(-self.c1, self.c1)
+        return v
+    
+    def reset_idx(self, idx: torch.Tensor):
+        device = self.wind_direction.device
+        self.wind_direction[idx] = normalize(torch.randn(*idx.shape, 3, device=device))
+        self.wind_magnitude[idx] = torch.rand(*idx.shape, 1, device=device) * self.magnitude_scale
+        self.c1[idx] = torch.rand(*idx.shape, 1, device=device) * self.c1_scale
 
 
 class Hover(IsaacEnv):
@@ -24,6 +57,10 @@ class Hover(IsaacEnv):
         self.time_encoding = self.cfg.task.time_encoding
 
         self.drone.initialize()
+        if "randomization" in self.cfg.task:
+            if "drone" in self.cfg.task.randomization:
+                self.drone.setup_randomization(self.cfg.task.randomization["drone"])
+        
         self.target_vis = ArticulationView(
             "/World/envs/env_*/target",
             reset_xform_properties=False
@@ -57,6 +94,10 @@ class Hover(IsaacEnv):
             torch.tensor([0., 0., 0.], device=self.device) * torch.pi,
             torch.tensor([0., 0., 2.], device=self.device) * torch.pi
         )
+        wind_intensity_scale = self.cfg.task.wind_intensity_scale
+        if wind_intensity_scale is not None:
+            magnitude = self.drone.mass * wind_intensity_scale
+            self.wind_field = WindField(self.num_envs, magnitude)
         self.target_pos = torch.tensor([[0.0, 0.0, 2.]], device=self.device)
         self.target_heading = torch.zeros(self.num_envs, 1, 3, device=self.device)
         self.alpha = 0.8
@@ -111,7 +152,7 @@ class Hover(IsaacEnv):
         return ["/World/defaultGroundPlane"]
 
     def _reset_idx(self, env_ids: torch.Tensor):
-        self.drone._reset_idx(env_ids)
+        self.drone._reset_idx(env_ids, self.training)
         
         pos = self.init_pos_dist.sample((*env_ids.shape, 1))
         rpy = self.init_rpy_dist.sample((*env_ids.shape, 1))
@@ -127,10 +168,15 @@ class Hover(IsaacEnv):
         self.target_vis.set_world_poses(orientations=target_rot, env_indices=env_ids)
 
         self.stats[env_ids] = 0.
+        if hasattr(self, "wind_field"):
+            self.wind_field.reset_idx(env_ids)
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("action", "drone.action")]
         self.effort = self.drone.apply_action(actions)
+        if hasattr(self, "wind_field"):
+            wind_forces = self.wind_field()
+            self.drone.base_link.apply_forces(wind_forces, is_global=True)
 
     def _compute_state_and_obs(self):
         self.root_state = self.drone.get_state()

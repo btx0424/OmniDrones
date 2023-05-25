@@ -5,11 +5,10 @@ import omni_drones.utils.kit as kit_utils
 from omni_drones.utils.torch import euler_to_quaternion
 import omni.isaac.core.utils.prims as prim_utils
 import torch
+import torch.distributions as D
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
-from omni_drones.robots.config import RobotCfg
 from omni_drones.robots.drone import MultirotorBase
-from omni_drones.views import ArticulationView
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import UnboundedContinuousTensorSpec
 from omni.isaac.debug_draw import _debug_draw
@@ -17,31 +16,68 @@ from omni.isaac.debug_draw import _debug_draw
 class Tracking(IsaacEnv):
     def __init__(self, cfg, headless):
         super().__init__(cfg, headless)
-        self.drone.initialize()
-        self.init_poses = self.drone.get_world_poses(clone=True)
-        self.init_vels = torch.zeros_like(self.drone.get_velocities())
-        self.future_traj_len = self.cfg.task.future_traj_len
+        self.reset_thres = self.cfg.task.reset_thres
+        self.reward_action_smoothness_weight = self.cfg.task.reward_action_smoothness_weight
+        self.reward_motion_smoothness_weight = self.cfg.task.reward_motion_smoothness_weight
+        self.time_encoding = self.cfg.task.time_encoding
+        self.future_traj_len = int(self.cfg.task.future_traj_len)
         assert self.future_traj_len > 0
-        self.traj_func = {"circle": circle, "lemniscate": lemniscate}[self.cfg.task.traj_func]
+
+        self.drone.initialize()
+        if "randomization" in self.cfg.task:
+            if "drone" in self.cfg.task.randomization:
+                self.drone.setup_randomization(self.cfg.task.randomization["drone"])
         
         drone_state_dim = self.drone.state_spec.shape[-1]
+        obs_dim = drone_state_dim + 3 * (self.future_traj_len-1)
+        if self.time_encoding:
+            self.time_encoding_dim = 4
+            obs_dim += self.time_encoding_dim
+        
         self.agent_spec["drone"] = AgentSpec(
             "drone",
             1,
-            UnboundedContinuousTensorSpec(drone_state_dim + 3*(self.future_traj_len-1)).to(self.device),
+            UnboundedContinuousTensorSpec(obs_dim).to(self.device),
             self.drone.action_spec.to(self.device),
             UnboundedContinuousTensorSpec(1).to(self.device),
         )
-        self.init_pos_scale = torch.tensor([4.0, 4.0, 2.0], device=self.device)
-        self.traj_scale = torch.ones(self.num_envs, 1, 1, device=self.device)
+        
+        self.init_rpy_dist = D.Uniform(
+            torch.tensor([-.2, -.2, 0.], device=self.device) * torch.pi,
+            torch.tensor([0.2, 0.2, 2.], device=self.device) * torch.pi
+        )
+        self.traj_rpy_dist = D.Uniform(
+            torch.tensor([0., 0., 0.], device=self.device) * torch.pi,
+            torch.tensor([0., 0., 2.], device=self.device) * torch.pi
+        )
+        self.traj_c_dist = D.Uniform(
+            torch.tensor(0, device=self.device),
+            torch.tensor(0.6, device=self.device)
+        )
+        self.traj_scale_dist = D.Uniform(
+            torch.tensor([1., 1., 1.], device=self.device),
+            torch.tensor([2., 2., 1.5], device=self.device)
+        )
+        self.w_dist = D.Uniform(
+            torch.tensor(0.8, device=self.device),
+            torch.tensor(1.2, device=self.device)
+        )
+        self.origin = torch.tensor([0., 0., 2.], device=self.device)
+        self.phase = torch.pi / 2
+
+        self.traj_c = torch.zeros(self.num_envs, device=self.device)
+        self.traj_scale = torch.zeros(self.num_envs, 3, device=self.device)
+        self.traj_rot = torch.zeros(self.num_envs, 4, device=self.device)
+
         self.target_pos = torch.zeros(self.num_envs, self.future_traj_len, 3, device=self.device)
-        self.phase = 0
+        # self.target_vel = torch.zeros(self.num_envs, self.future_traj_len, 3, device=self.device)
+        self.w = torch.ones(self.num_envs, device=self.device)
 
         self.draw = _debug_draw.acquire_debug_draw_interface()
 
     def _design_scene(self):
-        cfg = RobotCfg()
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
+        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
         self.drone: MultirotorBase = drone_model(cfg=cfg)
 
         kit_utils.create_ground_plane(
@@ -54,12 +90,18 @@ class Tracking(IsaacEnv):
         return ["/World/defaultGroundPlane"]
 
     def _reset_idx(self, env_ids: torch.Tensor):
-        pos, rot = self.init_poses
         self.drone._reset_idx(env_ids)
-        self.drone.set_world_poses(pos[env_ids], rot[env_ids], env_ids)
-        self.drone.set_velocities(self.init_vels[env_ids], env_ids)
+        self.traj_c[env_ids] = self.traj_c_dist.sample(env_ids.shape)
+        self.traj_rot[env_ids] = euler_to_quaternion(self.traj_rpy_dist.sample(env_ids.shape))
+        self.traj_scale[env_ids] = self.traj_scale_dist.sample(env_ids.shape)
 
-        self.traj_scale[env_ids] = torch.rand(len(env_ids), 1, 1, device=self.device) + 2
+        t0 = torch.zeros(len(env_ids), device=self.device)
+        pos = lemniscate(t0 + self.phase, self.traj_c[env_ids])
+        rot = self.init_rpy_dist.sample(env_ids.shape)
+        vel = torch.zeros(self.num_envs, 1, 6, device=self.device)
+        self.drone.set_world_poses(pos, rot, env_ids)
+        self.drone.set_velocities(vel, env_ids)
+
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("action", "drone.action")]
@@ -68,15 +110,22 @@ class Tracking(IsaacEnv):
     def _compute_state_and_obs(self):
         self.root_state = self.drone.get_state()
 
-        t = self.phase + (self.progress_buf.unsqueeze(1) + torch.arange(self.future_traj_len, device=self.device)) * self.dt
-        self.target_pos[:] = vmap(self.traj_func)(t)
-        self.target_pos[..., :2] *= self.traj_scale
-        self.target_pos[..., 2] = 1.5
-
-        obs = torch.cat([
-            (self.target_pos - self.root_state[..., :3]).flatten(1).unsqueeze(1),
+        ts = self.progress_buf.unsqueeze(1) + torch.arange(self.future_traj_len, device=self.device)
+        ts = self.phase + self.w * t
+        
+        target_pos = vmap(lemniscate)(ts, self.traj_c)
+        target_pos = vmap(torch_utils.quat_rotate)(target_pos) * self.traj_scale
+        self.target_pos[:] = self.origin + target_pos
+        
+        self.rpos = self.target_pos - self.root_state[..., :3]
+        obs = [
+            self.rpos.flatten(1).unsqueeze(1),
             self.root_state[..., 3:],
-        ], dim=-1)
+        ]
+        if self.time_encoding:
+            t = (self.progress_buf / self.max_episode_length).unsqueeze(-1)
+            obs.append(t.expand(-1, self.time_encoding_dim).unsqueeze(1))
+        obs = torch.cat(obs, dim=-1)
 
         if self._should_render(0):
             # visualize the trajectory
@@ -137,20 +186,14 @@ class Tracking(IsaacEnv):
             self.batch_size,
         )
 
-def lemniscate(t):
+def lemniscate(t, c):
     sin_t = torch.sin(t)
     cos_t = torch.cos(t)
-    return torch.stack([
-        cos_t / (sin_t**2 + 1),
-        sin_t * cos_t / (sin_t**2 + 1), 
-        torch.zeros_like(t)
-    ], dim=-1)
+    sin2p1 = torch.square(sin_t) + 1
 
+    x = torch.stack([
+        cos_t, sin_t * cos_t, c * sin_t
+    ], dim=-1) / sin2p1.unsqueeze(-1)
 
-def circle(t):
-    return torch.stack([
-        (torch.cos(t) - torch.ones_like(t)),
-        torch.sin(t),
-        torch.zeros_like(t)
-    ], dim=-1)
+    return x
 

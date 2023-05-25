@@ -11,6 +11,22 @@ drone_model: Firefly
 force_sensor: false
 time_encoding: true
 
+randomization:
+  drone:
+    train:
+      mass_scale: [0.9, 1.1]
+      KF_scale: [0.9, 1.1]
+      KM_scale: [0.9, 1.1]
+      drag_coef_scale: [0.8, 1.6]
+    eval:
+      mass_scale: [0.75, 1.25]
+      KF_scale: [0.75, 1.25]
+      KM_scale: [0.75, 1.25]
+      drag_coef_scale: [0.5, 2.]
+
+# disturbance
+wind_intensity_scale: null
+
 reward_effort_weight: 0.1
 reward_action_smoothness_weight: 0.0
 reward_motion_smoothness_weight: 0.3

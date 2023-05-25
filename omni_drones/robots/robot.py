@@ -58,6 +58,7 @@ class RobotBase(abc.ABC):
         self.dt = SimulationContext.instance().get_physics_dt()
         self.state_spec: TensorSpec
         self.action_spec: TensorSpec
+        self.initialized = False
 
     @classmethod
     def __init_subclass__(cls, **kwargs):
@@ -165,13 +166,14 @@ class RobotBase(abc.ABC):
         self.shape = torch.arange(self._view.count).reshape(-1, self.n).shape
         
         self.prim_paths = self._view.prim_paths
+        self.initialized = True
 
     @abc.abstractmethod
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
 
     @abc.abstractmethod
-    def _reset_idx(self, env_ids: torch.Tensor):
+    def _reset_idx(self, env_ids: torch.Tensor, train: bool=True):
         raise NotImplementedError
 
     def get_world_poses(self, clone: bool=False):

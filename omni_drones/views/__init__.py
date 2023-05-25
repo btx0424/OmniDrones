@@ -491,6 +491,39 @@ class RigidPrimView(_RigidPrimView):
         indices = self._resolve_env_indices(env_indices)
         return super().get_contact_force_matrix(indices, clone, dt).unflatten(0, self.shape)
 
+    def get_masses(
+        self, 
+        env_indices: Optional[torch.Tensor] = None, 
+        clone: bool = True
+    ) -> torch.Tensor:
+        indices = self._resolve_env_indices(env_indices)
+        return super().get_masses(indices, clone).unflatten(0, self.shape)
+    
+    def set_masses(
+        self, 
+        masses: torch.Tensor, 
+        env_indices: Optional[torch.Tensor] = None
+    ) -> None:
+        indices = self._resolve_env_indices(env_indices)
+        return super().set_masses(masses.reshape(-1), indices)
+
+    def get_coms(
+        self, 
+        env_indices: Optional[torch.Tensor] = None, 
+        clone: bool = True
+    ) -> torch.Tensor:
+        indices = self._resolve_env_indices(env_indices)
+        return super().get_coms(indices, clone).unflatten(0, self.shape)
+    
+    def set_coms(
+        self, 
+        positions: torch.Tensor = None, 
+        orientations: torch.Tensor = None, 
+        env_indices: torch.Tensor = None
+    ) -> None:
+        indices = self._resolve_env_indices(env_indices)
+        return super().set_coms(positions.reshape(-1, 3), orientations.reshape(-1, 4), indices)
+    
     def _resolve_env_indices(self, env_indices: torch.Tensor):
         if not hasattr(self, "_all_indices"):
             self._all_indices = torch.arange(self.count, device=self._device)

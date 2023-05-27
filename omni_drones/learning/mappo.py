@@ -132,8 +132,8 @@ class MAPPOPolicy(object):
         else:
             self.critic_loss_fn = nn.MSELoss()
 
-        
-        if self.cfg.critic_input == "state":
+        assert self.cfg.critic_input in ("state", "obs")
+        if self.cfg.critic_input == "state" and self.agent_spec.state_spec is not None:
             self.critic_in_keys = [f"{self.agent_spec.name}.state"]
             self.critic_out_keys = ["state_value"]
             if cfg.get("rnn", None):
@@ -150,8 +150,7 @@ class MAPPOPolicy(object):
                 out_keys=self.critic_out_keys,
             ).to(self.device)
             self.value_func = self.critic
-
-        elif self.cfg.critic_input == "obs":
+        else:
             self.critic_in_keys = [f"{self.agent_spec.name}.obs"]
             self.critic_out_keys = ["state_value"]
             if cfg.get("rnn", None):
@@ -166,9 +165,6 @@ class MAPPOPolicy(object):
                 out_keys=self.critic_out_keys,
             ).to(self.device)
             self.value_func = vmap(self.critic, in_dims=1, out_dims=1)
-
-        else:
-            raise ValueError(self.cfg.critic_input)
 
         self.critic_opt = torch.optim.Adam(
             self.critic.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay

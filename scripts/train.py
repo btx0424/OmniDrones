@@ -166,6 +166,7 @@ def main(cfg):
 
     frames_per_batch = env.num_envs * int(cfg.algo.train_every)
     total_frames = cfg.get("total_frames", -1) // frames_per_batch * frames_per_batch
+    max_iters = cfg.get("max_iters", -1)
     eval_interval = cfg.get("eval_interval", -1)
     save_interval = cfg.get("save_interval", -1)
 
@@ -210,7 +211,7 @@ def main(cfg):
 
     pbar = tqdm(collector)
     for i, data in enumerate(pbar):
-        info = {"env_frames": collector._frames}
+        info = {"env_frames": collector._frames, "rollout_fps": collector._fps}
         info.update(policy.train_op(data))
 
         if eval_interval > 0 and i % eval_interval == 0:
@@ -223,13 +224,16 @@ def main(cfg):
                 logging.info(f"Save checkpoint to {str(ckpt_path)}")
                 torch.save(policy.state_dict(), ckpt_path)
 
-        run.log(info)
+        run.log(info, step=i)
         print(OmegaConf.to_yaml({k: v for k, v in info.items() if isinstance(v, float)}))
 
         pbar.set_postfix({
             "rollout_fps": collector._fps,
             "frames": collector._frames,
         })
+
+        if max_iters > 0 and i >= max_iters - 1:
+            break 
     
     logging.info(f"Final Eval at {collector._frames} steps.")
     info = {"env_frames": collector._frames}

@@ -224,7 +224,7 @@ def main(cfg):
                 logging.info(f"Save checkpoint to {str(ckpt_path)}")
                 torch.save(policy.state_dict(), ckpt_path)
 
-        run.log(info, step=i)
+        run.log(info)
         print(OmegaConf.to_yaml({k: v for k, v in info.items() if isinstance(v, float)}))
 
         pbar.set_postfix({

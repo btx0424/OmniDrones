@@ -1,8 +1,10 @@
 name: Hover
 
 defaults:
-  - /env_base
-  - /sim_base
+  # see https://hydra.cc/docs/advanced/overriding_packages/
+  - /base/env_base@_here_
+  - /base/sim_base@_here_
+  - /base/randomization_base@_here_
 
 env:
   num_envs: 4096
@@ -33,4 +35,3 @@ reward_motion_smoothness_weight: 0.3
 reward_distance_scale: 1.2
 
 action_transform: null
-last_action: false

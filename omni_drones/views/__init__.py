@@ -511,19 +511,37 @@ class RigidPrimView(_RigidPrimView):
         self, 
         env_indices: Optional[torch.Tensor] = None, 
         clone: bool = True
-    ) -> torch.Tensor:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         indices = self._resolve_env_indices(env_indices)
-        return super().get_coms(indices, clone).unflatten(0, self.shape)
+        positions, orientations = super().get_coms(indices, clone)
+        return positions.unflatten(0, self.shape), orientations.unflatten(0, self.shape)
     
     def set_coms(
         self, 
         positions: torch.Tensor = None, 
-        orientations: torch.Tensor = None, 
+        # orientations: torch.Tensor = None, 
         env_indices: torch.Tensor = None
     ) -> None:
+        # TODO@btx0424 fix orientations
         indices = self._resolve_env_indices(env_indices)
-        return super().set_coms(positions.reshape(-1, 3), orientations.reshape(-1, 4), indices)
+        return super().set_coms(positions.reshape(-1, 3), None, indices)
     
+    def get_inertias(
+        self, 
+        env_indices: Optional[torch.Tensor]=None, 
+        clone: bool=True
+    ) -> torch.Tensor:
+        indices = self._resolve_env_indices(env_indices)
+        return super().get_inertias(indices, clone).unflatten(0, self.shape)
+    
+    def set_inertias(
+        self, 
+        values: torch.Tensor, 
+        env_indices: Optional[torch.Tensor]=None
+    ):
+        indices = self._resolve_env_indices(env_indices)
+        return super().set_inertias(values.reshape(-1, 9), indices)
+
     def _resolve_env_indices(self, env_indices: torch.Tensor):
         if not hasattr(self, "_all_indices"):
             self._all_indices = torch.arange(self.count, device=self._device)

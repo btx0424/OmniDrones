@@ -19,7 +19,8 @@ from omni_drones.utils.envs.transforms import (
     FromDiscreteAction,
     flatten_composite,
     VelController,
-    History
+    History,
+    Adaptation
 )
 from omni_drones.utils.wandb import init_wandb
 from omni_drones.learning import (
@@ -109,6 +110,38 @@ def main(cfg):
                             min_range=min_depth, max_range=max_depth)
         )
     
+    adaptation = True
+    if adaptation:
+        transforms.append(StepCounter())
+        transforms.append(History(
+            ["drone.obs", ("action", "drone.action")], 
+            ["drone.obs_history", "drone.act_history"], 
+            steps=50
+        ))
+        transforms.append(CatTensors(
+            ["drone.obs_history", "drone.act_history"], 
+            out_key="drone.adapt_obs"
+        ))
+        extrinsic_keys = [
+            key for key in
+            base_env.observation_spec.keys(True, True)
+            if key[0] == "info"
+        ]
+        transforms.append(CatTensors(
+            extrinsic_keys,
+            "drone.extrinsic",
+            del_keys=False,
+        ))
+        adaptation_module = Adaptation(
+            obs_key="drone.obs",
+            extrinsic_key="drone.extrinsic",
+            adapt_obs_key="drone.adapt_obs",
+            encoder_units=[256, 128],
+            adapt_cfg=None,
+            embed_dim=16
+        )
+        transforms.append(adaptation_module)
+    
     # optionally discretize the action space or use a controller
     action_transform: str = cfg.task.get("action_transform", None)
     if action_transform is not None:
@@ -163,6 +196,8 @@ def main(cfg):
     policy = algos[cfg.algo.name.lower()](
         cfg.algo, agent_spec=agent_spec, device="cuda"
     )
+    if adaptation:
+        policy.critic_opt.add_param_group({"params": adaptation_module.encoder.parameters()})
 
     frames_per_batch = env.num_envs * int(cfg.algo.train_every)
     total_frames = cfg.get("total_frames", -1) // frames_per_batch * frames_per_batch

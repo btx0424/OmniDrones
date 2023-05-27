@@ -8,6 +8,7 @@ import yaml
 from functorch import vmap
 from tensordict.nn import make_functional
 from torchrl.data import BoundedTensorSpec, CompositeSpec, UnboundedContinuousTensorSpec
+from tensordict import TensorDict
 
 from omni_drones.views import RigidPrimView
 from omni_drones.actuators.rotor_group import RotorGroup
@@ -81,8 +82,8 @@ class MultirotorBase(RobotBase):
             self.device
         )
         rotor_params = make_functional(self.rotors)
-        self._KF = rotor_params["KF"].clone()
-        self._KM = rotor_params["KM"].clone()
+        self.KF_0 = rotor_params["KF"].clone()
+        self.KM_0 = rotor_params["KM"].clone()
         self.rotor_params = rotor_params.expand(self.shape).clone()
 
         self.KF = self.rotor_params["KF"]
@@ -91,7 +92,26 @@ class MultirotorBase(RobotBase):
         self.directions = self.rotor_params["directions"]
 
         self.masses = self.base_link.get_masses().clone()
+        self.mass_0 = self.masses[0].clone()
+        self.inertia_0 = self.base_link.get_inertias().reshape(-1, 3, 3)[0].diagonal().clone()
         self.drag_coef = torch.zeros(*self.shape, device=self.device) * self.params["drag_coef"]
+        self.info_spec = CompositeSpec({
+            "mass": UnboundedContinuousTensorSpec(1),
+            "inertia": UnboundedContinuousTensorSpec(3),
+            "com": UnboundedContinuousTensorSpec(3),
+            "KF": UnboundedContinuousTensorSpec(self.num_rotors),
+            "KM": UnboundedContinuousTensorSpec(self.num_rotors),
+            "drag_coef": UnboundedContinuousTensorSpec(1)
+        }).expand(self.shape).to(self.device)
+        self.info = TensorDict({
+            "mass": (self.masses / self.mass_0).unsqueeze(-1),
+            "inertia": self.base_link.get_inertias().reshape(*self.shape, 3, 3).diagonal(0, -2, -1) / self.inertia_0,
+            "com": self.base_link.get_coms()[0] / self.params["l"],
+            "KF": self.KF / self.KF_0,
+            "KM": self.KM / self.KM_0,
+            "drag_coef": self.drag_coef.unsqueeze(-1)
+        }, self.shape)
+
         self.thrusts = torch.zeros(*self.shape, self.num_rotors, 3, device=self.device)
         self.torques = torch.zeros(*self.shape, 3, device=self.device)
         self.forces = torch.zeros(*self.shape, 3, device=self.device)
@@ -119,17 +139,31 @@ class MultirotorBase(RobotBase):
                     torch.tensor(low, device=self.device),
                     torch.tensor(high, device=self.device)
                 )
+            inertia_scale = cfg[phase].get("inertia_scale", None)
+            if inertia_scale is not None:
+                low = torch.as_tensor(inertia_scale[0], device=self.device)
+                high = torch.as_tensor(inertia_scale[1], device=self.device)
+                self.randomization[phase]["inertia"] = D.Uniform(
+                    self.inertia_0 * low,
+                    self.inertia_0 * high
+                )
+            com_scale= cfg[phase].get("com_scale", None)
+            if com_scale is not None:
+                self.randomization[phase]["com"] = D.Uniform(
+                    -torch.as_tensor(com_scale, device=self.device) * self.params["l"],
+                    torch.as_tensor(com_scale, device=self.device) * self.params["l"]
+                )
             KM_scale = cfg[phase].get("KM_scale", None)
             if KM_scale is not None:
                 self.randomization[phase]["KM"] = D.Uniform(
-                    self._KM * KM_scale[0],
-                    self._KM * KM_scale[1] 
+                    self.KM_0 * KM_scale[0],
+                    self.KM_0 * KM_scale[1] 
                 )
             KF_scale = cfg[phase].get("KF_scale", None)
             if KF_scale is not None:
                 self.randomization[phase]["KF"] = D.Uniform(
-                    self._KF * KF_scale[0],
-                    self._KF * KF_scale[1] 
+                    self.KF_0 * KF_scale[0],
+                    self.KF_0 * KF_scale[1] 
                 )
             drag_coef_scale = cfg[phase].get("drag_coef_scale", None)
             if drag_coef_scale is not None:
@@ -210,16 +244,32 @@ class MultirotorBase(RobotBase):
         return env_ids
     
     def _randomize(self, env_ids: torch.Tensor, distributions: Dict[str, D.Distribution]):
+        shape = (*env_ids.shape, self.n)
         if "mass" in distributions:
-            masses = distributions["mass"].sample((*env_ids.shape, self.n))
+            masses = distributions["mass"].sample(shape)
             self.base_link.set_masses(masses, env_indices=env_ids)
             self.masses[env_ids] = masses
+            self.info["mass"][env_ids] = (masses / self.mass_0).unsqueeze(-1)
+        if "inertia" in distributions:
+            inertias = distributions["inertia"].sample(shape)
+            self.base_link.set_inertias(
+                torch.diag_embed(inertias).flatten(-2), env_indices=env_ids
+            )
+            self.info["inertia"][env_ids] = inertias / self.inertia_0
+        # if "com" in distributions:
+        #     coms = distributions["com"].sample(shape)
+        #     self.base_link.set_coms(coms, env_indices=env_ids)
+        #     self.info["com"][env_ids] = coms / self.params["l"]
         if "KM" in distributions:
-            self.KM[env_ids] = distributions["KM"].sample((*env_ids.shape, self.n))
+            KM = distributions["KM"].sample(shape)
+            self.KM[env_ids] = KM
+            self.info["KM"][env_ids] = KM / self.KM_0
         if "KF" in distributions:
-            self.KF[env_ids] = distributions["KF"].sample((*env_ids.shape, self.n))
+            KF = distributions["KF"].sample(shape)
+            self.KF[env_ids] = KF
+            self.info["KF"][env_ids] = KF / self.KF_0
         if "drag_coef" in distributions:
-            self.drag_coef[env_ids] = distributions["drag_coef"].sample((*env_ids.shape, self.n))
+            self.drag_coef[env_ids] = distributions["drag_coef"].sample(shape)
         
     def get_thrust_to_weight_ratio(self):
         return self.KF.sum(-1) / (self.masses * 9.81)

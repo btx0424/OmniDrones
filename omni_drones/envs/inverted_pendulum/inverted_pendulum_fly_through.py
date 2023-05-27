@@ -17,7 +17,6 @@ from pxr import UsdPhysics
 import omni_drones.utils.kit as kit_utils
 from omni_drones.utils.torch import euler_to_quaternion, normalize
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
-from omni_drones.robots.config import RobotCfg
 from omni_drones.robots.drone import MultirotorBase
 from omni_drones.views import RigidPrimView
 
@@ -36,12 +35,11 @@ def create_obstacles(
     )
     UsdPhysics.RigidBodyAPI.Apply(prim)
     UsdPhysics.CollisionAPI.Apply(prim)
+    prim.GetAttribute("physics:kinematicEnabled").Set(True)
     kit_utils.set_collision_properties(
         prim_path, contact_offset=0.02, rest_offset=0
     )
 
-    stage = prim_utils.get_current_stage()
-    # script_utils.createJoint(stage, "Fixed", prim.GetParent(), prim)
     return prim
 
 
@@ -217,7 +215,6 @@ class InvertedPendulumFlyThrough(IsaacEnv):
         self.pos_error = torch.norm(self.target_payload_rpos, dim=-1)
         self.stats["pos_error"].lerp_(self.pos_error, (1-self.alpha))
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
-        self.stats["success"].bitwise_or_(self.pos_error < 0.2)
 
         return TensorDict({
             "drone.obs": obs,
@@ -240,11 +237,6 @@ class InvertedPendulumFlyThrough(IsaacEnv):
         swing = torch.norm(self.payload_vels[..., :3], dim=-1, keepdim=True)
         swing_reward = 1. * torch.exp(-swing)
 
-        # collision = (
-        #     self.bar
-        #     .get_net_contact_forces()
-        #     .any(-1, keepdim=True)
-        # )
         collision = (
             self.obstacles
             .get_net_contact_forces()
@@ -255,11 +247,11 @@ class InvertedPendulumFlyThrough(IsaacEnv):
 
         self.stats["collision"].add_(collision_reward)
         assert bar_up_reward.shape == spin_reward.shape == swing_reward.shape
-        reward = ( (
+        reward = (
             pos_reward
             + pos_reward * (bar_up_reward + spin_reward + swing_reward) 
             + effort_reward
-        ) * (1 - collision_reward) ).unsqueeze(-1)
+        ) * (1 - collision_reward)
         
         done_misbehave = (
             (pos[..., 2] < 0.2) 
@@ -274,13 +266,15 @@ class InvertedPendulumFlyThrough(IsaacEnv):
             | done_misbehave
             | done_hasnan
         ) 
+        self.stats["success"].bitwise_or_(self.pos_error < 0.2)
+
         if self.reset_on_collision:
             done |= collision
 
-        self._tensordict["return"] += reward
+        self._tensordict["return"] += reward.unsqueeze(-1)
         return TensorDict(
             {
-                "reward": {"drone.reward": reward},
+                "reward": {"drone.reward": reward.unsqueeze(-1)},
                 "return": self._tensordict["return"],
                 "done": done,
             },

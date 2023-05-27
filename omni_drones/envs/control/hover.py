@@ -57,7 +57,8 @@ class Hover(IsaacEnv):
         self.time_encoding = self.cfg.task.time_encoding
 
         self.drone.initialize()
-        if "randomization" in self.cfg.task:
+        randomization = self.cfg.task.get("randomization", None)
+        if randomization is not None:
             if "drone" in self.cfg.task.randomization:
                 self.drone.setup_randomization(self.cfg.task.randomization["drone"])
         

@@ -1,17 +1,40 @@
 name: Tracking
 
 defaults:
-  - /env_base
-  - /sim_base
+  # see https://hydra.cc/docs/advanced/overriding_packages/
+  - /base/env_base@_here_
+  - /base/sim_base@_here_
+  - /base/randomization_base@_here_
 
-drone_model: Firefly
+env:
+  max_episode_length: 600
+
+drone_model: Hummingbird
 force_sensor: false
 time_encoding: true
 
+randomization:
+  drone:
+    train:
+      mass_scale: [0.8, 1.2]
+      inertia_scale: [[0.8, 0.8, 0.8], [1.6, 1.6, 1.6]]
+      # com_scale: [0.1, 0.1, 0.06]
+      KF_scale: [0.8, 1.6]
+      KM_scale: [0.8, 1.6]
+      drag_coef_scale: [0.2, 1.6]
+    eval:
+      mass_scale: [0.6, 1.25]
+      inertia_scale: [[0.6, 0.6, 0.6], [2.0, 2.0, 2.0]]
+      # com_scale: [0.1, 0.1, 0.06]
+      KF_scale: [0.75, 1.25]
+      KM_scale: [0.75, 1.25]
+      drag_coef_scale: [0.2, 2.]
+
 reset_thres: 0.5
-future_traj_len: 3
+future_traj_len: 4
 
 reward_action_smoothness_weight: 0.
 reward_motion_smoothness_weight: 0.1
+reward_distance_scale: 1.6
 
 action_transform: null

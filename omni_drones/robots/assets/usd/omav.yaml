@@ -1,5 +1,6 @@
 name: omav
 mass: 4.04
+l: 0.6
 drag_coef: 0.3
 rotor_configuration:
   arm_lengths:

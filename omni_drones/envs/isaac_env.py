@@ -202,7 +202,8 @@ class IsaacEnv(EnvBase):
         self._reset_idx(env_ids)
         # self.sim.step(render=False)
         self.sim._physics_sim_view.flush()
-        self._tensordict.masked_fill_(env_mask, 0)
+        self.progress_buf[env_ids] = 0.
+        self._tensordict["return"][env_ids] = 0.
         return self._tensordict.update(self._compute_state_and_obs())
 
     @abc.abstractmethod

@@ -37,6 +37,9 @@ class MAPPOPolicy(object):
         self.agent_spec = agent_spec
         self.device = device
 
+        print(self.agent_spec.observation_spec)
+        print(self.agent_spec.action_spec)
+
         self.clip_param = cfg.clip_param
         self.ppo_epoch = int(cfg.ppo_epochs)
         self.num_minibatches = int(cfg.num_minibatches)

@@ -13,7 +13,7 @@ from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec
 from omni.isaac.debug_draw import _debug_draw
 
-from ..utils import lemniscate
+from .utils import lemniscate
 
 class Track(IsaacEnv):
     def __init__(self, cfg, headless):

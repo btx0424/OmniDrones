@@ -1,7 +1,7 @@
 from .hover import Hover
 from .track import Track
 from .platform import PlatformHover, PlatformFlyThrough
-from .inverted_pendulum import InvertedPendulum, InvertedPendulumFlyThrough
+from .inv_pendulum import InvPendulumHover, InvPendulumFlyThrough
 from .transport import TransportHover, TransportFlyThrough
 from .formation import Formation
 from .spread import Spread

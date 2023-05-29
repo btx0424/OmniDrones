@@ -16,7 +16,7 @@ from omni_drones.views import RigidPrimView
 from .utils import create_pendulum
 
 
-class InvertedPendulum(IsaacEnv):
+class InvPendulumHover(IsaacEnv):
     def __init__(self, cfg, headless):
         super().__init__(cfg, headless)
         self.reward_effort_weight = self.cfg.task.reward_effort_weight

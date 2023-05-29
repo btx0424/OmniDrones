@@ -26,7 +26,7 @@ parameters:
   task: 
     values: 
     - Hover
-    - Tracking
+    - InvertedPendulum
     - PlatformHover
     - TransportHover
 

@@ -89,9 +89,10 @@ def main(cfg):
     ]
     logger = LogOnEpisode(
         cfg.env.num_envs,
-        in_keys=["return", "progress", *stats_keys],
-        log_keys=["return", "ep_length", *stats_keys],
+        in_keys=["return", "return", "progress", *stats_keys],
+        log_keys=["return", "return_std", "ep_length", *stats_keys],
         logger_func=log,
+        process_func={"return_std": lambda x: torch.std(x).item()}
     )
     transforms = [InitTracker(), logger]
 

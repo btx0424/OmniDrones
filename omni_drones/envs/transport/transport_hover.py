@@ -280,8 +280,8 @@ class TransportHover(IsaacEnv):
         reward_separation = torch.square(separation / self.safe_distance).clamp(0, 1)
         reward_joint_limit = 0.5 * torch.mean(1 - torch.square(joint_positions), dim=-1)
 
-        reward_action_smoothness = self.reward_action_smoothness_weight * torch.exp(-self.drone.throttle_difference)
-        reward_motion_smoothness = self.reward_motion_smoothness_weight * torch.exp(self.motion_smoothness_drone / 1000)
+        reward_action_smoothness = self.reward_action_smoothness_weight * -self.drone.throttle_difference
+        reward_motion_smoothness = (self.reward_motion_smoothness_weight * self.motion_smoothness_drone / 1000)
 
         reward_potential = self.reward_potential_weight * (self.last_distance - distance)
         self.last_distance[:] = distance

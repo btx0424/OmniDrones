@@ -13,10 +13,13 @@ from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec
 from omni.isaac.debug_draw import _debug_draw
 
-class Tracking(IsaacEnv):
+from .utils import lemniscate
+
+class Track(IsaacEnv):
     def __init__(self, cfg, headless):
         super().__init__(cfg, headless)
         self.reset_thres = self.cfg.task.reset_thres
+        self.reward_effort_weight = self.cfg.task.reward_effort_weight
         self.reward_action_smoothness_weight = self.cfg.task.reward_action_smoothness_weight
         self.reward_motion_smoothness_weight = self.cfg.task.reward_motion_smoothness_weight
         self.reward_distance_scale = self.cfg.task.reward_distance_scale
@@ -60,7 +63,7 @@ class Tracking(IsaacEnv):
             torch.tensor([1.8, 1.8, 1.], device=self.device),
             torch.tensor([3.2, 3.2, 1.5], device=self.device)
         )
-        self.w_dist = D.Uniform(
+        self.traj_w_dist = D.Uniform(
             torch.tensor(0.8, device=self.device),
             torch.tensor(1.1, device=self.device)
         )
@@ -70,10 +73,9 @@ class Tracking(IsaacEnv):
         self.traj_c = torch.zeros(self.num_envs, device=self.device)
         self.traj_scale = torch.zeros(self.num_envs, 3, device=self.device)
         self.traj_rot = torch.zeros(self.num_envs, 4, device=self.device)
+        self.traj_w = torch.ones(self.num_envs, device=self.device)
 
         self.target_pos = torch.zeros(self.num_envs, self.future_traj_len, 3, device=self.device)
-        # self.target_vel = torch.zeros(self.num_envs, self.future_traj_len, 3, device=self.device)
-        self.w = torch.ones(self.num_envs, device=self.device)
 
         self.alpha = 0.8
         stats_spec = CompositeSpec({
@@ -109,6 +111,8 @@ class Tracking(IsaacEnv):
         self.traj_c[env_ids] = self.traj_c_dist.sample(env_ids.shape)
         self.traj_rot[env_ids] = euler_to_quaternion(self.traj_rpy_dist.sample(env_ids.shape))
         self.traj_scale[env_ids] = self.traj_scale_dist.sample(env_ids.shape)
+        traj_w = self.traj_w_dist.sample(env_ids.shape)
+        self.traj_w[env_ids] = torch.randn_like(traj_w).sign() * traj_w
 
         t0 = torch.zeros(len(env_ids), device=self.device)
         pos = lemniscate(t0 + self.phase, self.traj_c[env_ids]) + self.origin
@@ -178,24 +182,27 @@ class Tracking(IsaacEnv):
         distance = torch.norm(self.rpos[:, [0]], dim=-1)
         self.stats["tracking_error"].add_(-distance)
         
-        pose_reward = torch.exp(-self.reward_distance_scale * distance)
+        reward_pose = torch.exp(-self.reward_distance_scale * distance)
         
         # uprightness
         tiltage = torch.abs(1 - self.drone.up[..., 2])
-        up_reward = 0.5 / (1.0 + torch.square(tiltage))
+        reward_up = 0.5 / (1.0 + torch.square(tiltage))
 
         # effort
-        effort_reward = 0.1 * torch.exp(-self.effort)
+        reward_effort = self.reward_effort_weight * torch.exp(-self.effort)
+        reward_action_smoothness = self.reward_action_smoothness_weight * torch.exp(-self.drone.throttle_difference)
+        reward_motion_smoothness = self.reward_motion_smoothness_weight * (self.smoothness / 1000)
 
         # spin reward
         spin = torch.square(self.drone.vel[..., -1])
-        spin_reward = 0.5 / (1.0 + torch.square(spin))
+        reward_spin = 0.5 / (1.0 + torch.square(spin))
 
-        assert pose_reward.shape == up_reward.shape == spin_reward.shape
         reward = (
-            pose_reward 
-            + pose_reward * (up_reward + spin_reward) 
-            + effort_reward
+            reward_pose 
+            + reward_pose * (reward_up + reward_spin) 
+            + reward_effort
+            + reward_action_smoothness
+            + reward_motion_smoothness
         )
         self._tensordict["return"] += reward.unsqueeze(-1)
 
@@ -223,7 +230,7 @@ class Tracking(IsaacEnv):
         if env_ids is None:
             env_ids = ...
         t = self.progress_buf[env_ids].unsqueeze(1) + step_size * torch.arange(steps, device=self.device)
-        t = self.phase + self.w[env_ids].unsqueeze(1) * t * self.dt
+        t = self.phase + self.traj_w[env_ids].unsqueeze(1) * t * self.dt
         traj_rot = self.traj_rot[env_ids].unsqueeze(1).expand(-1, t.shape[1], 4)
         
         target_pos = vmap(lemniscate)(t, self.traj_c[env_ids])
@@ -231,15 +238,4 @@ class Tracking(IsaacEnv):
 
         return self.origin + target_pos
 
-
-def lemniscate(t, c):
-    sin_t = torch.sin(t)
-    cos_t = torch.cos(t)
-    sin2p1 = torch.square(sin_t) + 1
-
-    x = torch.stack([
-        cos_t, sin_t * cos_t, c * sin_t
-    ], dim=-1) / sin2p1.unsqueeze(-1)
-
-    return x
 

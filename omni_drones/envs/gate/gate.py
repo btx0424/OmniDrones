@@ -269,16 +269,16 @@ class Gate(IsaacEnv):
         # uprightness
         up_reward = torch.square((self.drone_up[..., 2] + 1) / 2)
 
-        effort_reward = self.reward_effort_weight * torch.exp(-self.effort)
+        reward_effort = self.reward_effort_weight * torch.exp(-self.effort)
 
         spin = torch.square(vels[..., -1])
-        spin_reward = 1. / (1.0 + torch.square(spin))
+        reward_spin = 1. / (1.0 + torch.square(spin))
 
-        assert pose_reward.shape == up_reward.shape == spin_reward.shape
+        assert pose_reward.shape == up_reward.shape == reward_spin.shape
         reward = (
             pose_reward * 1.4
             + gate_reward
-            + (pose_reward + 0.3) * (up_reward + spin_reward) 
+            + (pose_reward + 0.3) * (up_reward + reward_spin) 
             + effort_reward
         )
         

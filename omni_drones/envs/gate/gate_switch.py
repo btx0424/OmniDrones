@@ -286,19 +286,19 @@ class GateSwitch(IsaacEnv):
         # pose_reward = 1.0 / (1.0 + torch.square(self.reward_distance_scale * distance_to_target))
         pose_reward = torch.exp(-self.reward_distance_scale * distance_to_target)
         # uprightness
-        up_reward = torch.square((self.drone_up[..., 2] + 1) / 2)
+        reward_up = torch.square((self.drone_up[..., 2] + 1) / 2)
 
-        effort_reward = self.reward_effort_weight * torch.exp(-self.effort)
+        reward_effort = self.reward_effort_weight * torch.exp(-self.effort)
 
         spin = torch.square(vels[..., -1])
-        spin_reward = 1. / (1.0 + torch.square(spin))
+        reward_spin = 1. / (1.0 + torch.square(spin))
 
-        assert pose_reward.shape == up_reward.shape == spin_reward.shape
+        assert pose_reward.shape == reward_up.shape == reward_spin.shape
         reward = (
             pose_reward * 1.4
             + gate_reward
-            + (pose_reward + 0.3) * (up_reward + spin_reward) 
-            + effort_reward
+            + (pose_reward + 0.3) * (up_reward + reward_spin) 
+            + reward_effort
         )
         reward = reward.lerp(reward.mean(1, keepdim=True), self.reward_share_ratio)
         

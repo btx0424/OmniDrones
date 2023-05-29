@@ -30,4 +30,3 @@ flatten_obs: true
 flatten_state: true
 
 action_transform: null
-last_action: false

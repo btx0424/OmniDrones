@@ -1,5 +1,5 @@
 program: train.py
-name: SingleOffpolicy
+name: SinglePPO
 project: gpu-onpolicy
 entity: marl-drones
 method: grid
@@ -12,23 +12,19 @@ parameters:
 
   algo:
     values:
-    - sac
-    - td3
-
+    - mappo
+    
   task: 
     values: 
-    # - Hover
+    - Hover
     - Track
     # - InvertedPendulum
-    # - InvertedPendulumFlyThrough
-    # - PayloadFlyThrough
+    - InvertedPendulumFlyThrough
+    - PayloadFlyThrough
     # - PayloadTrack
 
-  task.env.num_envs:
-    value: 1024
-
   total_frames: 
-    value: 25_500_000
+    value: 105_000_000
 
   headless:
     value: true
@@ -38,6 +34,9 @@ parameters:
 
   task.drone_model:
     values: [Firefly, Hummingbird]
+
+  algo.train_every:
+    value: 128
 
 command:
   - ${env}

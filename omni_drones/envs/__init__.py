@@ -1,5 +1,5 @@
-from .control.hover import Hover
-from .control.tracking import Tracking
+from .hover import Hover
+from .track import Track
 from .platform import PlatformHover, PlatformFlyThrough
 from .inverted_pendulum import InvertedPendulum, InvertedPendulumFlyThrough
 from .transport import TransportHover, TransportFlyThrough

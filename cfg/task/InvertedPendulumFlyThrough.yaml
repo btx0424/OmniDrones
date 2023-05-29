@@ -6,8 +6,6 @@ defaults:
   - /base/sim_base@_here_
   # - /base/randomization_base@_here_
 
-env:
-  num_envs: 2048
 
 drone_model: Hummingbird
 time_encoding: true

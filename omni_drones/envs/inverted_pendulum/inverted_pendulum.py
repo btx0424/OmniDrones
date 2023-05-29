@@ -186,11 +186,6 @@ class InvertedPendulum(IsaacEnv):
             + reward_bar_up * (reward_spin + reward_swing) 
             + reward_effort
         ).unsqueeze(-1)
-        # reward = (
-        #     pos_reward
-        #     + pos_reward * (bar_up_reward + spin_reward + swing_reward) 
-        #     + effort_reward
-        # ).unsqueeze(-1)
         
         done_misbehave = (self.drone.pos[..., 2] < 0.2) | (reward_bar_up < 0.2)
         done_hasnan = torch.isnan(self.drone_state).any(-1)

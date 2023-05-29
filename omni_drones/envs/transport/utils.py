@@ -71,19 +71,15 @@ class TransportationGroup(RobotBase):
             )
 
             if self.num_drones == 4:
-                payload = prim_utils.create_prim(
-                    prim_path=f"{prim_path}/payload",
-                    prim_type="Cube",
-                    translation=(0.0, 0.0, -1.1),
-                    scale=(0.75, 0.5, 0.2),
-                )
+                self.payload_scale = (0.75, 0.5, 0.2)
             elif self.num_drones == 6:
-                payload = prim_utils.create_prim(
-                    prim_path=f"{prim_path}/payload",
-                    prim_type="Cube",
-                    translation=(0.0, 0.0, -1.1),
-                    scale=(1.0, 0.5, 0.2),
-                )
+                self.payload_scale = (1.0, 0.5, 0.2)
+            payload = prim_utils.create_prim(
+                prim_path=f"{prim_path}/payload",
+                prim_type="Cube",
+                translation=(0.0, 0.0, -1.1),
+                scale=self.payload_scale,
+            )
 
             script_utils.setRigidBody(payload, "convexHull", False)
             UsdPhysics.MassAPI.Apply(payload)

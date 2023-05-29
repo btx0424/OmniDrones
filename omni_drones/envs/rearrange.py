@@ -149,7 +149,7 @@ class Rearrange(IsaacEnv):
         
         pos_reward = torch.exp(-distance)
         up_reward = torch.square((self.drone_up[..., 2].unsqueeze(-1) + 1) / 2)
-        spin_reward = 1.0 / (1.0 + torch.square(spinnage))
+        reward_spin = 1.0 / (1.0 + torch.square(spinnage))
         safety_reward = torch.square(separation / self.safe_distance).clamp(0, 1)
 
         reward = safety_reward * (

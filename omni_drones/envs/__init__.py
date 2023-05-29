@@ -6,7 +6,7 @@ from .transport import TransportHover, TransportFlyThrough
 from .formation import Formation
 from .spread import Spread
 from .forest import Forest
-from .fly_through import FlyThrough
+from .payload import PayloadTrack, PayloadFlyThrough
 from .gate import Gate
 from .rearrange import Rearrange
 

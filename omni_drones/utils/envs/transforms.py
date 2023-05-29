@@ -63,7 +63,7 @@ class LogOnEpisode(Transform):
                 dict_to_log = {}
                 for in_key, log_key in zip(self.in_keys, self.log_keys):
                     if in_key in stats.keys(True, True):
-                        process_func = self.process_func[in_key]
+                        process_func = self.process_func[log_key]
                         if isinstance(log_key, tuple):
                             log_key = ".".join(log_key)
                         dict_to_log[log_key] = process_func(stats[in_key])

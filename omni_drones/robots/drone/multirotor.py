@@ -128,6 +128,9 @@ class MultirotorBase(RobotBase):
     def setup_randomization(self, cfg):
         if not self.initialized:
             raise RuntimeError
+        
+        from omegaconf import OmegaConf
+        logging.info(f"Setup randomization:\n {OmegaConf.to_yaml(cfg)}")
 
         for phase in ("train", "eval"):
             if phase not in cfg: continue

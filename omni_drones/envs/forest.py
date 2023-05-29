@@ -181,13 +181,13 @@ class Forest(IsaacEnv):
         tiltage = torch.abs(1 - ups[..., 2])
         up_reward = 1.0 / (1.0 + torch.square(tiltage))
         # effort
-        effort_reward = 0.05 * torch.exp(-0.5 * self.effort)
+        reward_effort = 0.05 * torch.exp(-0.5 * self.effort)
         # spin reward
         spin = torch.square(vels[..., -1])
-        spin_reward = 1.0 / (1.0 + torch.square(spin))
+        reward_spin = 1.0 / (1.0 + torch.square(spin))
 
-        assert pos_reward.shape == up_reward.shape == spin_reward.shape
-        reward = pos_reward + pos_reward * (up_reward + spin_reward)  # + effort_reward
+        assert pos_reward.shape == up_reward.shape == reward_spin.shape
+        reward = pos_reward + pos_reward * (up_reward + reward_spin)  # + reward_effort
 
         done = (
             (self.progress_buf >= self.max_episode_length).unsqueeze(-1)

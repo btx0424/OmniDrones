@@ -9,13 +9,16 @@ import torch.distributions as D
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.robots.drone import MultirotorBase
+from omni_drones.views import RigidPrimView
+
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec
 from omni.isaac.debug_draw import _debug_draw
 
 from ..utils import lemniscate
+from .utils import attach_payload
 
-class Tracking(IsaacEnv):
+class PayloadTrack(IsaacEnv):
     def __init__(self, cfg, headless):
         super().__init__(cfg, headless)
         self.reset_thres = self.cfg.task.reset_thres
@@ -25,6 +28,7 @@ class Tracking(IsaacEnv):
         self.reward_distance_scale = self.cfg.task.reward_distance_scale
         self.time_encoding = self.cfg.task.time_encoding
         self.future_traj_len = int(self.cfg.task.future_traj_len)
+        self.bar_length = self.cfg.task.bar_length
         assert self.future_traj_len > 0
 
         self.drone.initialize()
@@ -33,12 +37,21 @@ class Tracking(IsaacEnv):
             if "drone" in self.cfg.task.randomization:
                 self.drone.setup_randomization(self.cfg.task.randomization["drone"])
 
+        self.init_joint_pos = self.drone.get_joint_positions(True)
+        self.init_joint_vels = torch.zeros_like(self.drone.get_joint_velocities())
+
         drone_state_dim = self.drone.state_spec.shape[-1]
-        obs_dim = drone_state_dim + 3 * (self.future_traj_len-1)
+        obs_dim = drone_state_dim + 3 * (self.future_traj_len-1) + 9
         if self.time_encoding:
             self.time_encoding_dim = 4
             obs_dim += self.time_encoding_dim
         
+        self.payload = RigidPrimView(
+            f"/World/envs/env_*/{self.drone.name}_*/payload",
+            reset_xform_properties=False,
+        )
+        self.payload.initialize()
+
         self.agent_spec["drone"] = AgentSpec(
             "drone",
             1,
@@ -48,8 +61,8 @@ class Tracking(IsaacEnv):
         )
         
         self.init_rpy_dist = D.Uniform(
-            torch.tensor([-.2, -.2, 0.], device=self.device) * torch.pi,
-            torch.tensor([0.2, 0.2, 2.], device=self.device) * torch.pi
+            torch.tensor([-.1, -.1, 0.], device=self.device) * torch.pi,
+            torch.tensor([0.1, 0.1, 2.], device=self.device) * torch.pi
         )
         self.traj_rpy_dist = D.Uniform(
             torch.tensor([0., 0., 0.], device=self.device) * torch.pi,
@@ -64,8 +77,12 @@ class Tracking(IsaacEnv):
             torch.tensor([3.2, 3.2, 1.5], device=self.device)
         )
         self.traj_w_dist = D.Uniform(
-            torch.tensor(0.8, device=self.device),
-            torch.tensor(1.1, device=self.device)
+            torch.tensor(0.7, device=self.device),
+            torch.tensor(1.0, device=self.device)
+        )
+        self.payload_mass_dist = D.Uniform(
+            torch.as_tensor(self.cfg.task.payload_mass_min, device=self.device),
+            torch.as_tensor(self.cfg.task.payload_mass_max, device=self.device)
         )
         self.origin = torch.tensor([0., 0., 2.], device=self.device)
         self.phase = torch.pi / 2
@@ -78,6 +95,10 @@ class Tracking(IsaacEnv):
         self.target_pos = torch.zeros(self.num_envs, self.future_traj_len, 3, device=self.device)
 
         self.alpha = 0.8
+
+        info_spec  = CompositeSpec({
+            "payload_mass": UnboundedContinuousTensorSpec(1)
+        }).expand(self.num_envs).to(self.device)
         stats_spec = CompositeSpec({
             "tracking_error": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(1),
@@ -104,6 +125,7 @@ class Tracking(IsaacEnv):
             restitution=0.0,
         )
         self.drone.spawn(translations=[(0.0, 0.0, 1.5)])
+        attach_payload(f"/World/envs/env_0/{self.drone.name}_0", self.cfg.task.bar_length)
         return ["/World/defaultGroundPlane"]
 
     def _reset_idx(self, env_ids: torch.Tensor):
@@ -116,12 +138,19 @@ class Tracking(IsaacEnv):
 
         t0 = torch.zeros(len(env_ids), device=self.device)
         pos = lemniscate(t0 + self.phase, self.traj_c[env_ids]) + self.origin
+        pos[..., 2] += self.bar_length
         rot = euler_to_quaternion(self.init_rpy_dist.sample(env_ids.shape))
         vel = torch.zeros(len(env_ids), 1, 6, device=self.device)
+        
         self.drone.set_world_poses(
             pos + self.envs_positions[env_ids], rot, env_ids
         )
         self.drone.set_velocities(vel, env_ids)
+        self.drone.set_joint_positions(self.init_joint_pos[env_ids], env_ids)
+        self.drone.set_joint_velocities(self.init_joint_vels[env_ids], env_ids)
+
+        payload_mass = self.payload_mass_dist.sample(env_ids.shape)
+        self.payload.set_masses(payload_mass, env_ids)
 
         self.stats[env_ids] = 0.
 
@@ -145,13 +174,19 @@ class Tracking(IsaacEnv):
 
     def _compute_state_and_obs(self):
         self.root_state = self.drone.get_state()
+        self.payload_pos = self.get_env_poses(self.payload.get_world_poses())[0]
+        self.payload_vels = self.payload.get_velocities()
 
         self.target_pos[:] = self._compute_traj(self.future_traj_len, step_size=5)
         
-        self.rpos = self.target_pos - self.root_state[..., :3]
+        self.drone_payload_rpos = self.drone.pos - self.payload_pos.unsqueeze(1)
+        self.target_payload_rpos = (self.target_pos - self.payload_pos.unsqueeze(1))
+
         obs = [
-            self.rpos.flatten(1).unsqueeze(1),
+            self.drone_payload_rpos.flatten(1).unsqueeze(1),
+            self.target_payload_rpos.flatten(1).unsqueeze(1),
             self.root_state[..., 3:],
+            self.payload_vels.unsqueeze(1), # 6
         ]
         if self.time_encoding:
             t = (self.progress_buf / self.max_episode_length).unsqueeze(-1)
@@ -165,21 +200,15 @@ class Tracking(IsaacEnv):
         )
         self.stats["motion_smoothness"].lerp_(self.smoothness, (1-self.alpha))
 
-        if hasattr(self, "info"):
-            return TensorDict({
-                "drone.obs": obs,
-                "stats": self.stats,
-                "info": self.info
-            }, self.batch_size)
-        else:
-            return TensorDict({
-                "drone.obs": obs,
-                "stats": self.stats
-            }, self.batch_size)
+        return TensorDict({
+            "drone.obs": obs,
+            "stats": self.stats,
+            "info": self.info
+        }, self.batch_size)
 
     def _compute_reward_and_done(self):
         # pos reward
-        distance = torch.norm(self.rpos[:, [0]], dim=-1)
+        distance = torch.norm(self.target_payload_rpos[:, [0]], dim=-1)
         self.stats["tracking_error"].add_(-distance)
         
         reward_pose = torch.exp(-self.reward_distance_scale * distance)

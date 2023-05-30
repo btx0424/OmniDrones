@@ -247,6 +247,8 @@ def main(cfg):
         torch.save(policy.state_dict(), ckpt_path)
 
     wandb.save()
+    wandb.finish()
+    
     simulation_app.close()
 
 

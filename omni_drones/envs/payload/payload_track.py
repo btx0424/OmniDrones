@@ -101,6 +101,7 @@ class PayloadTrack(IsaacEnv):
         }).expand(self.num_envs).to(self.device)
         stats_spec = CompositeSpec({
             "tracking_error": UnboundedContinuousTensorSpec(1),
+            "tracking_error_ema": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(1),
             "motion_smoothness": UnboundedContinuousTensorSpec(1)
         }).expand(self.num_envs).to(self.device)
@@ -210,6 +211,7 @@ class PayloadTrack(IsaacEnv):
         # pos reward
         distance = torch.norm(self.target_payload_rpos[:, [0]], dim=-1)
         self.stats["tracking_error"].add_(-distance)
+        self.stats["tracking_error_ema"].lerp_(distance, (1-self.alpha))
         
         reward_pose = torch.exp(-self.reward_distance_scale * distance)
         

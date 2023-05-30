@@ -18,10 +18,10 @@ parameters:
     values: 
     - Hover
     - Track
-    # - InvertedPendulum
-    - InvertedPendulumFlyThrough
+    - InvPendulumHover
+    - InvPendulumFlyThrough
+    - PayloadTrack
     - PayloadFlyThrough
-    # - PayloadTrack
 
   total_frames: 
     value: 105_000_000

@@ -17,18 +17,18 @@ parameters:
 
   task: 
     values: 
-    # - Hover
+    - Hover
     - Track
-    # - InvertedPendulum
-    # - InvertedPendulumFlyThrough
-    # - PayloadFlyThrough
-    # - PayloadTrack
+    - InvPendulumHover
+    - InvPendulumFlyThrough
+    - PayloadFlyThrough
+    - PayloadTrack
 
-  task.env.num_envs:
-    value: 1024
+  # task.env.num_envs:
+  #   value: 1024
 
   total_frames: 
-    value: 25_500_000
+    value: 50_500_000
 
   headless:
     value: true

@@ -158,13 +158,14 @@ class MATD3Policy(object):
                         transition["next"], self.actor_target_params
                     )[self.act_name]
 
-                    action_noise = (
-                        next_action
-                        .clone()
-                        .normal_(0, self.target_noise)
-                        .clamp_(-self.noise_clip, self.noise_clip)
-                    )
-                    next_action = torch.clamp(next_action + action_noise, -1, 1)
+                    if self.target_noise > 0: # target smoothing
+                        action_noise = (
+                            next_action
+                            .clone()
+                            .normal_(0, self.target_noise)
+                            .clamp_(-self.noise_clip, self.noise_clip)
+                        )
+                        next_action = torch.clamp(next_action + action_noise, -1, 1)
 
                     next_qs = self.critic_target(next_state, next_action)
                     next_q = torch.min(next_qs, dim=-1, keepdim=True).values

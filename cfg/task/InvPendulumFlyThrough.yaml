@@ -20,7 +20,7 @@ bar_mass_min: 0.01
 bar_mass_max: 0.04
 
 bar_length: 1.
-obstacle_spacing: [1.0, 1.4]
+obstacle_spacing: [1.0, 1.0]
 reset_on_collision: false
 
 action_transform: null

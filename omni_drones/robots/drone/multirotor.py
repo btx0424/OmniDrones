@@ -183,8 +183,14 @@ class MultirotorBase(RobotBase):
         thrusts, moments = vmap(vmap(self.rotors, randomness="different"), randomness="same")(
             rotor_cmds, self.rotor_params
         )
+
+        rotor_pos, rotor_rot = self.rotors_view.get_world_poses()
+        torque_axis = torch_utils.quat_axis(
+            rotor_rot.flatten(end_dim=-2), axis=2
+        ).unflatten(0, (*self.shape, self.num_rotors))
+
         self.thrusts[..., 2] = thrusts
-        self.torques[..., 2] = moments.sum(-1)
+        self.torques[:] = (moments.unsqueeze(-1) * torque_axis).sum(-2)
         # self.articulations.set_joint_velocities(
         #     (self.throttle * self.directions * self.MAX_ROT_VEL).reshape(-1, self.num_rotors)
         # )
@@ -202,7 +208,7 @@ class MultirotorBase(RobotBase):
         self.rotors_view.apply_forces(self.thrusts.reshape(-1, 3), is_global=False)
         self.base_link.apply_forces_and_torques_at_pos(
             vmap(torch_utils.quat_rotate)(self.rot, self.forces).reshape(-1, 3), 
-            vmap(torch_utils.quat_rotate)(self.rot, self.torques).reshape(-1, 3), 
+            self.torques.reshape(-1, 3), 
             is_global=True
         )
         self.throttle_difference[:] = torch.norm(self.throttle - last_throttle, dim=-1)

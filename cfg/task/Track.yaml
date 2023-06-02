@@ -12,6 +12,8 @@ env:
 drone_model: Hummingbird
 force_sensor: false
 time_encoding: true
+intrinsics: false
+wind: false
 
 # randomization:
 #   drone:
@@ -22,6 +24,7 @@ time_encoding: true
 #       KF_scale: [0.8, 1.6]
 #       KM_scale: [0.8, 1.6]
 #       drag_coef_scale: [0.2, 1.6]
+#       rotor_pos_offset_scale: 0.1
 #     eval:
 #       mass_scale: [0.6, 1.25]
 #       inertia_scale: [[0.6, 0.6, 0.6], [2.0, 2.0, 2.0]]
@@ -29,6 +32,7 @@ time_encoding: true
 #       KF_scale: [0.75, 1.25]
 #       KM_scale: [0.75, 1.25]
 #       drag_coef_scale: [0.2, 2.]
+#       rotor_pos_offset_scale: 0.1
 
 reset_thres: 0.5
 future_traj_len: 4

@@ -35,7 +35,8 @@ def main(cfg):
     )
     n = 4
 
-    drone = Firefly(cfg=RobotCfg())
+    drone_cfg = Firefly.cfg_cls()
+    drone = Firefly(cfg=drone_cfg)
 
     translations = torch.tensor([
         [0, -1, 1.5],

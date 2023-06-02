@@ -11,19 +11,30 @@ metric:
 parameters:
 
   algo:
-    values:
-    - matd3
+    value: matd3
+  
+  algo.target_noise:
+    value: 0.
+
+  algo.share_actor:
+    value: false
+
+  algo.actor.hidden_units:
+    value: [256, 128, 128]
+
+  algo.critic.hidden_units:
+    value: [256, 128, 128]
 
   task: 
     values: 
     - TransportHover
     - PlatformHover
 
-  task.env.num_envs:
-    value: 512
+  # task.env.num_envs:
+  #   value: 1024
 
   total_frames: 
-    value: 25_000_000
+    value: 75_500_000
 
   headless:
     value: true

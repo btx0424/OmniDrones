@@ -148,8 +148,9 @@ class Track(IsaacEnv):
             sizes = [1 for _ in range(len(point_list_0))]
             self.draw.draw_lines(point_list_0, point_list_1, colors, sizes)
         
-        self.wind_i[env_ids] = torch.rand(*env_ids.shape, 1, device=self.device) * 2
-        self.wind_w[env_ids] = torch.randn(*env_ids.shape, 3, 8, device=self.device)
+        if self.wind:
+            self.wind_i[env_ids] = torch.rand(*env_ids.shape, 1, device=self.device) * 2
+            self.wind_w[env_ids] = torch.randn(*env_ids.shape, 3, 8, device=self.device)
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("action", "drone.action")]

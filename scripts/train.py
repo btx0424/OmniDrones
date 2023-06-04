@@ -25,6 +25,7 @@ from omni_drones.utils.wandb import init_wandb
 from omni_drones.learning import (
     MAPPOPolicy, 
     HAPPOPolicy,
+    DQNPolicy,
     SACPolicy,
     TD3Policy,
     MATD3Policy,
@@ -69,6 +70,7 @@ def main(cfg):
     algos = {
         "mappo": MAPPOPolicy, 
         "happo": HAPPOPolicy,
+        "dqn": DQNPolicy,
         "sac": SACPolicy,
         "td3": TD3Policy,
         "matd3": MATD3Policy,

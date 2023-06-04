@@ -26,6 +26,8 @@ class Track(IsaacEnv):
         self.time_encoding = self.cfg.task.time_encoding
         self.future_traj_len = int(self.cfg.task.future_traj_len)
         assert self.future_traj_len > 0
+        self.intrinsics = self.cfg.task.intrinsics
+        self.wind = self.cfg.task.wind
 
         self.drone.initialize()
         randomization = self.cfg.task.get("randomization", None)
@@ -38,6 +40,8 @@ class Track(IsaacEnv):
         if self.time_encoding:
             self.time_encoding_dim = 4
             obs_dim += self.time_encoding_dim
+        if self.intrinsics:
+            obs_dim += sum(spec.shape[-1] for name, spec in self.drone.info_spec.items())
         
         self.agent_spec["drone"] = AgentSpec(
             "drone",
@@ -76,6 +80,10 @@ class Track(IsaacEnv):
         self.traj_w = torch.ones(self.num_envs, device=self.device)
 
         self.target_pos = torch.zeros(self.num_envs, self.future_traj_len, 3, device=self.device)
+
+        if self.wind:
+            self.wind_w = torch.zeros(self.num_envs, 3, 8, device=self.device)
+            self.wind_i = torch.zeros(self.num_envs, 1, device=self.device)
 
         self.alpha = 0.8
         stats_spec = CompositeSpec({
@@ -139,10 +147,19 @@ class Track(IsaacEnv):
             colors = [(1.0, 1.0, 1.0, 1.0) for _ in range(len(point_list_0))]
             sizes = [1 for _ in range(len(point_list_0))]
             self.draw.draw_lines(point_list_0, point_list_1, colors, sizes)
+        
+        self.wind_i[env_ids] = torch.rand(*env_ids.shape, 1, device=self.device) * 2
+        self.wind_w[env_ids] = torch.randn(*env_ids.shape, 3, 8, device=self.device)
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("action", "drone.action")]
         self.effort = self.drone.apply_action(actions)
+
+        if self.wind:
+            t = (self.progress_buf * self.dt).reshape(-1, 1, 1)
+            wind_forces = self.drone.mass_0 * self.wind_i * torch.sin(t * self.wind_w).sum(-1)
+            wind_forces = wind_forces.unsqueeze(1).expand(*self.drone.shape, 3)
+            self.drone.base_link.apply_forces(wind_forces, is_global=True)
 
     def _compute_state_and_obs(self):
         self.root_state = self.drone.get_state()
@@ -157,6 +174,8 @@ class Track(IsaacEnv):
         if self.time_encoding:
             t = (self.progress_buf / self.max_episode_length).unsqueeze(-1)
             obs.append(t.expand(-1, self.time_encoding_dim).unsqueeze(1))
+        if self.intrinsics:
+            obs.append(self.drone.get_info())
         obs = torch.cat(obs, dim=-1)
 
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))

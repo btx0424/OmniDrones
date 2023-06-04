@@ -91,27 +91,6 @@ class MultirotorBase(RobotBase):
         self.throttle = self.rotor_params["throttle"]
         self.directions = self.rotor_params["directions"]
 
-        self.masses = self.base_link.get_masses().clone()
-        self.mass_0 = self.masses[0].clone()
-        self.inertia_0 = self.base_link.get_inertias().reshape(-1, 3, 3)[0].diagonal().clone()
-        self.drag_coef = torch.zeros(*self.shape, device=self.device) * self.params["drag_coef"]
-        self.info_spec = CompositeSpec({
-            "mass": UnboundedContinuousTensorSpec(1),
-            "inertia": UnboundedContinuousTensorSpec(3),
-            "com": UnboundedContinuousTensorSpec(3),
-            "KF": UnboundedContinuousTensorSpec(self.num_rotors),
-            "KM": UnboundedContinuousTensorSpec(self.num_rotors),
-            "drag_coef": UnboundedContinuousTensorSpec(1)
-        }).expand(self.shape).to(self.device)
-        self.info = TensorDict({
-            "mass": (self.masses / self.mass_0).unsqueeze(-1),
-            "inertia": self.base_link.get_inertias().reshape(*self.shape, 3, 3).diagonal(0, -2, -1) / self.inertia_0,
-            "com": self.base_link.get_coms()[0] / self.params["l"],
-            "KF": self.KF / self.KF_0,
-            "KM": self.KM / self.KM_0,
-            "drag_coef": self.drag_coef.unsqueeze(-1)
-        }, self.shape)
-
         self.thrusts = torch.zeros(*self.shape, self.num_rotors, 3, device=self.device)
         self.torques = torch.zeros(*self.shape, 3, device=self.device)
         self.forces = torch.zeros(*self.shape, 3, device=self.device)
@@ -124,6 +103,35 @@ class MultirotorBase(RobotBase):
         self.acc = torch.zeros(*self.shape, 6, device=self.device)
         self.jerk = torch.zeros(*self.shape, 6, device=self.device)
         self.alpha = 0.9
+
+        self.rotor_pos_0 = (
+            self.rotors_view.get_world_poses()[0][0] 
+            - self.pos[0].unsqueeze(1)
+        )
+        self.rotor_pos_offset = torch.zeros(*self.shape, self.num_rotors, 3, device=self.device)
+
+        self.masses = self.base_link.get_masses().clone()
+        self.mass_0 = self.masses[0].clone()
+        self.inertia_0 = self.base_link.get_inertias().reshape(-1, 3, 3)[0].diagonal().clone()
+        self.drag_coef = torch.zeros(*self.shape, device=self.device) * self.params["drag_coef"]
+        self.info_spec = CompositeSpec({
+            "mass": UnboundedContinuousTensorSpec(1),
+            "inertia": UnboundedContinuousTensorSpec(3),
+            # "com": UnboundedContinuousTensorSpec(3),
+            "KF": UnboundedContinuousTensorSpec(self.num_rotors),
+            "KM": UnboundedContinuousTensorSpec(self.num_rotors),
+            "drag_coef": UnboundedContinuousTensorSpec(1),
+            "rotor_pos_offset": UnboundedContinuousTensorSpec(1),
+        }).expand(self.shape).to(self.device)
+        self.info = TensorDict({
+            "mass": (self.masses / self.mass_0).unsqueeze(-1),
+            "inertia": self.base_link.get_inertias().reshape(*self.shape, 3, 3).diagonal(0, -2, -1) / self.inertia_0,
+            # "com": self.base_link.get_coms()[0] / self.params["l"],
+            "KF": self.KF / self.KF_0,
+            "KM": self.KM / self.KM_0,
+            "drag_coef": self.drag_coef.unsqueeze(-1),
+            "rotor_pos_offset": torch.zeros(*self.shape, 1, device=self.device),
+        }, self.shape)
 
     def setup_randomization(self, cfg):
         if not self.initialized:
@@ -176,6 +184,14 @@ class MultirotorBase(RobotBase):
                     torch.tensor(low, device=self.device),
                     torch.tensor(high, device=self.device)
                 )
+            rotor_pos_offset_scale = cfg[phase].get("rotor_pos_offset_scale")
+            if rotor_pos_offset_scale is not None:
+                self.randomization[phase]["rotor_pos_offset"] = D.Normal(
+                    torch.tensor([0], device=self.device), 
+                    torch.tensor(rotor_pos_offset_scale, device=self.device)
+                )
+            if not len(self.randomization[phase]) == len(cfg[phase]):
+                raise ValueError(f"Unknown randomization in {cfg[phase]}.")
 
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
         rotor_cmds = actions.expand(*self.shape, self.num_rotors)
@@ -205,7 +221,11 @@ class MultirotorBase(RobotBase):
             ).sum(-2)
         self.forces[:] += (self.drag_coef * self.masses).unsqueeze(-1) * self.vel[..., :3]
 
-        self.rotors_view.apply_forces(self.thrusts.reshape(-1, 3), is_global=False)
+        self.rotors_view.apply_forces_and_torques_at_pos(
+            self.thrusts.reshape(-1, 3), 
+            positions=self.rotor_pos_offset,
+            is_global=False
+        )
         self.base_link.apply_forces_and_torques_at_pos(
             vmap(torch_utils.quat_rotate)(self.rot, self.forces).reshape(-1, 3), 
             self.torques.reshape(-1, 3), 
@@ -229,11 +249,15 @@ class MultirotorBase(RobotBase):
         state = [self.pos, self.rot, self.vel, self.heading, self.up, self.throttle * 2 - 1]
         if self.use_force_sensor:
             self.force_sensor_readings = self.get_force_sensor_forces() 
-            state.append(self.force_sensor_readings.flatten(-2)/ self.mass)
+            state.append(self.force_sensor_readings.flatten(-2)/ self.masses.unsqueeze(-1))
         state = torch.cat(state, dim=-1)
         if check_nan:
             assert not torch.isnan(state).any()
         return state
+
+    def get_info(self):
+        info = torch.cat(list(self.info.values()), dim=-1)
+        return info
 
     def _reset_idx(self, env_ids: torch.Tensor, train: bool=True):
         if env_ids is None:
@@ -279,7 +303,12 @@ class MultirotorBase(RobotBase):
             self.info["KF"][env_ids] = KF / self.KF_0
         if "drag_coef" in distributions:
             self.drag_coef[env_ids] = distributions["drag_coef"].sample(shape)
-        
+        if "rotor_offset" in distributions:
+            dist: D.Normal = distributions["rotor_offset"]
+            scale = dist.sample((*env_ids.shape, self.n)).clamp(-3*dist.scale, 3*dist.scale)
+            pos_offset = self.rotor_pos_0[..., :2] * scale.reshape(len(env_ids), self.n, 1, 1)
+            self.rotor_pos_offset[env_ids, ..., :2] = pos_offset
+
     def get_thrust_to_weight_ratio(self):
         return self.KF.sum(-1) / (self.masses * 9.81)
 

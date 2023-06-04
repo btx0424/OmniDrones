@@ -28,12 +28,29 @@ class Track(IsaacEnv):
         assert self.future_traj_len > 0
         self.intrinsics = self.cfg.task.intrinsics
         self.wind = self.cfg.task.wind
+        self.observe_wind = self.cfg.task.observe_wind
 
         self.drone.initialize()
         randomization = self.cfg.task.get("randomization", None)
         if randomization is not None:
             if "drone" in self.cfg.task.randomization:
                 self.drone.setup_randomization(self.cfg.task.randomization["drone"])
+
+        if self.wind:
+            if randomization is not None:
+                if "wind" in self.cfg.task.randomization:
+                    cfg = self.cfg.task.randomization["wind"]
+                    # for phase in ("train", "eval"):
+                    wind_intensity_scale = cfg['train'].get("intensity", None)
+                    self.wind_intensity_low = wind_intensity_scale[0]
+                    self.wind_intensity_high = wind_intensity_scale[1]
+            else:
+                self.wind_intensity_low = 0
+                self.wind_intensity_high = 2
+            self.wind_w = torch.zeros(self.num_envs, 3, 8, device=self.device)
+            self.wind_i = torch.zeros(self.num_envs, 1, device=self.device)
+        else:
+            self.observe_wind = False
 
         drone_state_dim = self.drone.state_spec.shape[-1]
         obs_dim = drone_state_dim + 3 * (self.future_traj_len-1)
@@ -42,6 +59,8 @@ class Track(IsaacEnv):
             obs_dim += self.time_encoding_dim
         if self.intrinsics:
             obs_dim += sum(spec.shape[-1] for name, spec in self.drone.info_spec.items())
+        if self.observe_wind:
+            obs_dim += 3
         
         self.agent_spec["drone"] = AgentSpec(
             "drone",
@@ -78,12 +97,10 @@ class Track(IsaacEnv):
         self.traj_scale = torch.zeros(self.num_envs, 3, device=self.device)
         self.traj_rot = torch.zeros(self.num_envs, 4, device=self.device)
         self.traj_w = torch.ones(self.num_envs, device=self.device)
+        if self.observe_wind:
+            self.wind_force = torch.zeros(self.num_envs, 3, device=self.device)
 
         self.target_pos = torch.zeros(self.num_envs, self.future_traj_len, 3, device=self.device)
-
-        if self.wind:
-            self.wind_w = torch.zeros(self.num_envs, 3, 8, device=self.device)
-            self.wind_i = torch.zeros(self.num_envs, 1, device=self.device)
 
         self.alpha = 0.8
         stats_spec = CompositeSpec({
@@ -147,9 +164,12 @@ class Track(IsaacEnv):
             colors = [(1.0, 1.0, 1.0, 1.0) for _ in range(len(point_list_0))]
             sizes = [1 for _ in range(len(point_list_0))]
             self.draw.draw_lines(point_list_0, point_list_1, colors, sizes)
-        
-        self.wind_i[env_ids] = torch.rand(*env_ids.shape, 1, device=self.device) * 2
-        self.wind_w[env_ids] = torch.randn(*env_ids.shape, 3, 8, device=self.device)
+            
+        if self.wind:
+            self.wind_i[env_ids] = torch.rand(*env_ids.shape, 1, device=self.device) * (self.wind_intensity_high-self.wind_intensity_low) + self.wind_intensity_low
+            self.wind_w[env_ids] = torch.randn(*env_ids.shape, 3, 8, device=self.device)
+            if self.observe_wind:
+                self.wind_force[env_ids] = torch.zeros(3, device=self.device)
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("action", "drone.action")]
@@ -157,7 +177,8 @@ class Track(IsaacEnv):
 
         if self.wind:
             t = (self.progress_buf * self.dt).reshape(-1, 1, 1)
-            wind_forces = self.drone.mass_0 * self.wind_i * torch.sin(t * self.wind_w).sum(-1)
+            self.wind_force = self.wind_i * torch.sin(t * self.wind_w).sum(-1)
+            wind_forces = self.drone.mass_0 * self.wind_force
             wind_forces = wind_forces.unsqueeze(1).expand(*self.drone.shape, 3)
             self.drone.base_link.apply_forces(wind_forces, is_global=True)
 
@@ -176,6 +197,8 @@ class Track(IsaacEnv):
             obs.append(t.expand(-1, self.time_encoding_dim).unsqueeze(1))
         if self.intrinsics:
             obs.append(self.drone.get_info())
+        if self.observe_wind:
+            obs.append(self.wind_force.unsqueeze(1))
         obs = torch.cat(obs, dim=-1)
 
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))

@@ -1,5 +1,6 @@
 from .mappo import MAPPOPolicy
 from .happo import HAPPOPolicy
+from .qmix import QMIXPolicy
 
 from .dqn import DQNPolicy
 from .sac import SACPolicy

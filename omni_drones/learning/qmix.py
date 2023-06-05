@@ -16,7 +16,7 @@ from tqdm import tqdm
 from omegaconf import OmegaConf
 from collections import defaultdict
 
-class QMIX:
+class QMIXPolicy:
     def __init__(
         self,
         cfg,
@@ -57,7 +57,7 @@ class QMIX:
         self.target_agent_q = copy.deepcopy(self.agent_q)
 
         self.action_selector = TensorDictModule(
-            EpsilonGreedyActionSelector(), 
+            EpsilonGreedyActionSelector(anneal_time=self.cfg.anneal_time), 
             [f"{self.agent_name}.q", "epsilon_t"], 
             [self.action_name, "epsilon"]
         )
@@ -107,17 +107,21 @@ class QMIX:
         reward = tensordict[("next", "reward", f"{self.agent_name}.reward")]
         if reward.dim() == 4: # [N, L, M, *]
             # force shared reward
-            tensordict.set(
+            tensordict = tensordict.clone().set(
                 ("next", "reward", f"{self.agent_name}.reward"),
                 reward.sum(dim=(-1, -2)).unsqueeze(-1)
             )
 
-        self.rb.extend(tensordict)
+        self.rb.extend(tensordict.cpu())
+
+        if len(self.rb) < self.cfg.buffer_size:
+            print(f"{len(self.rb)} < {self.cfg.buffer_size}")
+            return {}
 
         infos = defaultdict(list)
         t = tqdm(range(self.cfg.gradient_steps))
         for gradient_step in t:
-            batch: TensorDict = self.rb.sample(self.cfg.batch_size)
+            batch: TensorDict = self.rb.sample(self.cfg.batch_size).to(self.device)
             chosen_actions = batch[self.action_name]  # [N, L, M, 1]
             reward = batch[("next", "reward", f"{self.agent_name}.reward")]
             next_done = batch[("next", "done")].float()
@@ -156,7 +160,6 @@ class QMIX:
 
         t.close()
         infos = {k: torch.stack(v).mean().item() for k, v in infos.items()}
-        print(OmegaConf.to_yaml(infos))
         return infos
 
 class EpsilonGreedyActionSelector(nn.Module):

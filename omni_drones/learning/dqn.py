@@ -123,7 +123,8 @@ class DQNPolicy:
         
         self.replay_buffer = TensorDictReplayBuffer(
             batch_size=self.batch_size,
-            storage=LazyTensorStorage(max_size=self.cfg.buffer_size, device="cpu")
+            storage=LazyTensorStorage(max_size=self.cfg.buffer_size, device=self.device),
+            sampler=RandomSampler()
         )
         self.t = 0
         self.epsilon = 0

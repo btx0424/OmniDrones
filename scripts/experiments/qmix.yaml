@@ -1,5 +1,5 @@
 program: train.py
-name: DQN
+name: QMIX
 project: gpu-onpolicy
 entity: marl-drones
 method: grid
@@ -12,25 +12,21 @@ parameters:
 
   algo:
     values:
-    - dqn
+    - qmix
 
   task: 
     values: 
-    # - Hover
-    # - Track
-    - InvPendulumHover
-    # - InvPendulumFlyThrough
-    # - PayloadFlyThrough
-    - PayloadTrack
+    - TransportHover # easy
+    - PlatformHover # easy
 
+  task.env.num_envs:
+    value: 1024
+    
   task.action_transform:
     value: discrete:2
-    
-  # task.env.num_envs:
-  #   value: 1024
 
   total_frames: 
-    value: 50_500_000
+    value: 75_500_000
 
   headless:
     value: true

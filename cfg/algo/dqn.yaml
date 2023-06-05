@@ -15,9 +15,9 @@ q_net:
 
 epsilon_start: 1.0
 epsilon_finish: 0.05
-anneal_time: 50000
+anneal_time: 2000
 
 target_update_interval: 4
 tau: 0.005
 
-use_double: true
+use_double: false

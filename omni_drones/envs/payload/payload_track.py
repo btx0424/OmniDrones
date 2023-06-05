@@ -106,7 +106,7 @@ class PayloadTrack(IsaacEnv):
             "action_smoothness": UnboundedContinuousTensorSpec(1),
             "motion_smoothness": UnboundedContinuousTensorSpec(1)
         }).expand(self.num_envs).to(self.device)
-        info_spec = self.drone.info_spec.to(self.device)
+        info_spec.update(self.drone.info_spec.to(self.device))
         self.observation_spec["info"] = info_spec
         self.observation_spec["stats"] = stats_spec
         # self.info = self.drone.info
@@ -156,7 +156,7 @@ class PayloadTrack(IsaacEnv):
 
         self.stats[env_ids] = 0.
 
-        self.info[env_ids] = self.drone.info[env_ids]
+        self.info.update_at_(self.drone.info[env_ids], env_ids)
 
         if self._should_render(0) and (env_ids == self.central_env_idx).any() :
             # visualize the trajectory

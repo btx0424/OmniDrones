@@ -97,7 +97,8 @@ class PayloadTrack(IsaacEnv):
         self.alpha = 0.8
 
         info_spec  = CompositeSpec({
-            "payload_mass": UnboundedContinuousTensorSpec(1)
+            "payload_mass": UnboundedContinuousTensorSpec(1),
+            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13)),
         }).expand(self.num_envs).to(self.device)
         stats_spec = CompositeSpec({
             "tracking_error": UnboundedContinuousTensorSpec(1),
@@ -175,6 +176,7 @@ class PayloadTrack(IsaacEnv):
 
     def _compute_state_and_obs(self):
         self.root_state = self.drone.get_state()
+        self.info["drone_state"][:] = self.root_state[..., :13]
         self.payload_pos = self.get_env_poses(self.payload.get_world_poses())[0]
         self.payload_vels = self.payload.get_velocities()
 

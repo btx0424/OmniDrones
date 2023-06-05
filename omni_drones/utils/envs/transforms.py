@@ -218,7 +218,7 @@ class VelController(Transform):
     
     def transform_input_spec(self, input_spec: TensorSpec) -> TensorSpec:
         action_spec = input_spec[self.action_key]
-        spec = UnboundedContinuousTensorSpec(action_spec.shape[:-1]+(3,), device=action_spec.device)
+        spec = UnboundedContinuousTensorSpec(action_spec.shape[:-1]+(4,), device=action_spec.device)
         input_spec[self.action_key] = spec
         return input_spec
     
@@ -230,11 +230,11 @@ class VelController(Transform):
     def _inv_call(self, tensordict: TensorDictBase) -> TensorDictBase:
         drone_state = tensordict[("info", "drone_state")][..., :13]
         controller_state = tensordict["controller_state"]
-        target_vel = tensordict[("action", "drone.action")]
+        target_vel, target_rpy = tensordict[("action", "drone.action")].split([3, 1], -1)
         control_target = torch.cat([
             drone_state[..., :3],
             target_vel,
-            torch.zeros_like(target_vel[..., [0]]),
+            target_rpy,
         ], dim=-1)
         cmds, controller_state = self.controller(drone_state, control_target, controller_state)
         torch.nan_to_num_(cmds, 0.)

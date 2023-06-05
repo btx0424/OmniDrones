@@ -79,8 +79,13 @@ class InvPendulumHover(IsaacEnv):
             "action_smoothness": UnboundedContinuousTensorSpec(1),
             "motion_smoothness": UnboundedContinuousTensorSpec(1)
         }).expand(self.num_envs).to(self.device)
+        info_spec = CompositeSpec({
+            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13)),
+        }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
+        self.observation_spec["info"] = info_spec
         self.stats = stats_spec.zero()
+        self.info = info_spec.zero()
 
     def _design_scene(self):
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
@@ -133,6 +138,7 @@ class InvPendulumHover(IsaacEnv):
 
     def _compute_state_and_obs(self):
         self.drone_state = self.drone.get_state()
+        self.info["drone_state"][:] = self.drone_state[..., :13]
         self.drone_up = self.drone_state[..., 16:19]
         payload_pos, payload_rot = self.get_env_poses(self.payload.get_world_poses())
         self.payload_vels = self.payload.get_velocities()

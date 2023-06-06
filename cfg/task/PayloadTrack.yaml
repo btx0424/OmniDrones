@@ -6,6 +6,8 @@ defaults:
   - /base/sim_base@_here_
   # - /base/randomization_base@_here_
 
+env:
+  max_epsiode_length: 600
 
 drone_model: Hummingbird
 force_sensor: false

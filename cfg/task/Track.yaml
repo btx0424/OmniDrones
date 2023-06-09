@@ -16,11 +16,11 @@ intrinsics: false
 wind: false
 observe_wind: false
 
-randomization:
-  wind:
-    train:
-      intensity: [0,5]
-      direction: [0,0]
+# randomization:
+#   wind:
+#     train:
+#       intensity: [0,5]
+#       direction: [0,0]
     # eval:
     #   intensity: [5,10]
     #   direction: [0,0]

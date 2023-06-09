@@ -98,7 +98,8 @@ class PayloadTrack(IsaacEnv):
         self.alpha = 0.8
 
         info_spec  = CompositeSpec({
-            "payload_mass": UnboundedContinuousTensorSpec(1)
+            "payload_mass": UnboundedContinuousTensorSpec(1),
+            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13)),
         }).expand(self.num_envs).to(self.device)
         stats_spec = CompositeSpec({
             "tracking_error": UnboundedContinuousTensorSpec(1),
@@ -106,7 +107,7 @@ class PayloadTrack(IsaacEnv):
             "action_smoothness": UnboundedContinuousTensorSpec(1),
             "motion_smoothness": UnboundedContinuousTensorSpec(1)
         }).expand(self.num_envs).to(self.device)
-        info_spec = self.drone.info_spec.to(self.device)
+        info_spec.update(self.drone.info_spec.to(self.device))
         self.observation_spec["info"] = info_spec
         self.observation_spec["stats"] = stats_spec
         # self.info = self.drone.info
@@ -156,7 +157,7 @@ class PayloadTrack(IsaacEnv):
 
         self.stats[env_ids] = 0.
 
-        self.info[env_ids] = self.drone.info[env_ids]
+        self.info.update_at_(self.drone.info[env_ids], env_ids)
 
         if self._should_render(0) and (env_ids == self.central_env_idx).any() :
             # visualize the trajectory
@@ -176,6 +177,7 @@ class PayloadTrack(IsaacEnv):
 
     def _compute_state_and_obs(self):
         self.root_state = self.drone.get_state()
+        self.info["drone_state"][:] = self.root_state[..., :13]
         self.payload_pos = self.get_env_poses(self.payload.get_world_poses())[0]
         self.payload_vels = self.payload.get_velocities()
 

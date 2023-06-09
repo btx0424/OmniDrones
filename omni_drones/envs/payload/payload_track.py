@@ -80,9 +80,10 @@ class PayloadTrack(IsaacEnv):
             torch.tensor(0.7, device=self.device),
             torch.tensor(1.0, device=self.device)
         )
+        payload_mass_scale = self.cfg.task.payload_mass_scale
         self.payload_mass_dist = D.Uniform(
-            torch.as_tensor(self.cfg.task.payload_mass_min, device=self.device),
-            torch.as_tensor(self.cfg.task.payload_mass_max, device=self.device)
+            torch.as_tensor(payload_mass_scale[0] * self.drone.mass_0, device=self.device),
+            torch.as_tensor(payload_mass_scale[1] * self.drone.mass_0, device=self.device)
         )
         self.origin = torch.tensor([0., 0., 2.], device=self.device)
         self.phase = torch.pi / 2

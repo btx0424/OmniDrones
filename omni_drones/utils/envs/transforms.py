@@ -230,11 +230,11 @@ class VelController(Transform):
     def _inv_call(self, tensordict: TensorDictBase) -> TensorDictBase:
         drone_state = tensordict[("info", "drone_state")][..., :13]
         controller_state = tensordict["controller_state"]
-        target_vel, target_rpy = tensordict[("action", "drone.action")].split([3, 1], -1)
+        target_vel, target_yaw = tensordict[("action", "drone.action")].split([3, 1], -1)
         control_target = torch.cat([
             drone_state[..., :3],
             target_vel,
-            target_rpy,
+            target_yaw * torch.pi,
         ], dim=-1)
         cmds, controller_state = self.controller(drone_state, control_target, controller_state)
         torch.nan_to_num_(cmds, 0.)

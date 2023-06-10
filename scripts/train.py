@@ -128,6 +128,7 @@ def main(cfg):
             transforms.append(transform)
         elif action_transform == "controller":
             controller_cls = base_env.drone.DEFAULT_CONTROLLER
+            print(f"Use controller {controller_cls}")
             controller = controller_cls(
                 base_env.dt, 
                 9.81, 

@@ -23,6 +23,7 @@ def main(cfg):
     from omni.isaac.core.prims import GeometryPrim, RigidPrim
     from omni.isaac.core.simulation_context import SimulationContext
 
+    from omni_drones.robots import RobotBase
     from omni_drones.robots.drone import MultirotorBase
 
     sim = SimulationContext(
@@ -40,13 +41,14 @@ def main(cfg):
 
     drones: Dict[str, MultirotorBase] = {}
     n = 2
-    for i, model in enumerate(["Firefly", "Hummingbird", "Neo11"]):
+    for i, model in enumerate(["Firefly", "Hummingbird"]):
         drones[model] = MultirotorBase.REGISTRY[model]()
         translations = torch.zeros(n, 3)
         translations[:, 0] = i * 0.5
         translations[:, 1] = torch.arange(n) * 0.5
         translations[:, 2] = 0.5
-        drones[model].spawn(n, translations=translations)
+        #drones[model].spawn(n, translations=translations)
+        drones[model].spawn(translations=translations)
 
     scene_utils.design_scene()
 

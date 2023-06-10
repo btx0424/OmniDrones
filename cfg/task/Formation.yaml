@@ -6,11 +6,15 @@ defaults:
   - /base/sim_base@_here_
   # - /base/randomization_base@_here_
 
-envs: 
+env: 
   num_envs: 1024
 
-drone_model: Crazyflie
+drone_model: Hummingbird
+force_sensor: false
+time_encoding: true
 
+
+safe_distance: 0.4
 formation: tetragon
 
 action_transform: null

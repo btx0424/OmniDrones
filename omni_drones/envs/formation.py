@@ -68,7 +68,7 @@ class Formation(IsaacEnv):
 
         self.agent_spec["drone"] = AgentSpec(
             "drone",
-            5,
+            self.drone.n,
             observation_spec,
             self.drone.action_spec.to(self.device),
             UnboundedContinuousTensorSpec(1).to(self.device),
@@ -76,7 +76,7 @@ class Formation(IsaacEnv):
         )
 
         # initial state distribution
-        self.cells = make_cells([-2, -2, 0.6], [2, 2, 2], [0.5, 0.5, 0.2], device=self.device).flatten(0, -2)
+        self.cells = make_cells([-2, -2, 0.5], [2, 2, 2], [0.5, 0.5, 0.25], device=self.device).flatten(0, -2)
         self.target_pos = self.target_pos.expand(self.num_envs, 1, 3)
         
         # additional infos & buffers
@@ -101,16 +101,17 @@ class Formation(IsaacEnv):
 
         self.target_pos = torch.tensor([0.0, 0.0, 1.5], device=self.device)
         
-        if isinstance(self.cfg.task.formation, str):
+        formation = self.cfg.task.formation
+        if isinstance(formation, str):
             self.formation = torch.as_tensor(
-                FORMATIONS["tetragon"], device=self.device
+                FORMATIONS[formation], device=self.device
             ).float()
-        elif isinstance(self.cfg.task.formation, list):
+        elif isinstance(formation, list):
             self.formation = torch.as_tensor(
                 self.cfg.task.formation, device=self.device
             )
         else:
-            raise ValueError(f"Invalid target formation {self.cfg.task.formation}")
+            raise ValueError(f"Invalid target formation {formation}")
 
         self.formation = self.formation + self.target_pos
         self.formation_L = laplacian(self.formation)
@@ -187,10 +188,10 @@ class Formation(IsaacEnv):
         
         cost_pos = torch.square(pos.mean(-2, keepdim=True) - self.target_pos).sum(-1)
 
-        # reward_formation =  1 / (1 + torch.square(cost_h * 1.6)) 
+        reward_formation =  1 / (1 + torch.square(cost_h * 1.6)) 
         # reward_pos = 1 / (1 + cost_pos)
 
-        reward_formation = torch.exp(- cost_h * 1.6)
+        # reward_formation = torch.exp(- cost_h * 1.6)
         reward_pos = torch.exp(- cost_pos)
 
         separation = self.drone_pdist.min(dim=-2).values.min(dim=-2).values
@@ -212,7 +213,7 @@ class Formation(IsaacEnv):
         terminated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
         crash = (pos[..., 2] < 0.2).any(-1, keepdim=True)
 
-        done = terminated | crash
+        done = terminated | crash | (separation<0.23)
 
         self.stats["cost_laplacian"] -= cost_l
         self.stats["cost_hausdorff"] -= cost_h

@@ -13,8 +13,9 @@ drone_model: Hummingbird
 force_sensor: false
 time_encoding: true
 
-
 safe_distance: 0.4
 formation: tetragon
+
+flatten_state: false
 
 action_transform: null

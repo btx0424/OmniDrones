@@ -48,7 +48,8 @@ class Formation(IsaacEnv):
         self.drone.initialize()
         self.init_poses = self.drone.get_world_poses(clone=True)
 
-        obs_self_dim = self.drone.state_spec.shape[0]
+        drone_state_dim = self.drone.state_spec.shape[0]
+        obs_self_dim = drone_state_dim
         if self.time_encoding:
             self.time_encoding_dim = 4
             obs_self_dim += self.time_encoding_dim
@@ -58,13 +59,9 @@ class Formation(IsaacEnv):
             "obs_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13+1)).to(self.device),
         })
 
-        state_spec = CompositeSpec(
-            {
-                "drones": self.drone.state_spec.expand(
-                    self.drone.n, *self.drone.state_spec.shape
-                ).to(self.device),
-            }
-        )
+        state_spec = CompositeSpec({
+            "drones": UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim)),
+        }).to(self.device)
 
         self.agent_spec["drone"] = AgentSpec(
             "drone",
@@ -78,17 +75,19 @@ class Formation(IsaacEnv):
         # initial state distribution
         self.cells = make_cells([-2, -2, 0.5], [2, 2, 2], [0.5, 0.5, 0.25], device=self.device).flatten(0, -2)
         self.target_pos = self.target_pos.expand(self.num_envs, 1, 3)
-        
+        self.target_heading = torch.zeros(self.num_envs, 3, device=self.device)
+        self.target_heading[..., 0] = -1
+
         # additional infos & buffers
         stats_spec = CompositeSpec({
-            "cost_laplacian": UnboundedContinuousTensorSpec((self.num_envs, 1)),
+            # "cost_laplacian": UnboundedContinuousTensorSpec((self.num_envs, 1)),
             "cost_hausdorff": UnboundedContinuousTensorSpec((self.num_envs, 1)),
         }, shape=[self.num_envs]).to(self.device)
         self.observation_spec["stats"] = stats_spec
 
         self.stats = stats_spec.zero()
 
-        self.last_cost_l = torch.zeros(self.num_envs, 1, device=self.device)
+        # self.last_cost_l = torch.zeros(self.num_envs, 1, device=self.device)
         self.last_cost_h = torch.zeros(self.num_envs, 1, device=self.device)
         self.last_cost_pos = torch.zeros(self.num_envs, 1, device=self.device)
 
@@ -114,7 +113,7 @@ class Formation(IsaacEnv):
             raise ValueError(f"Invalid target formation {formation}")
 
         self.formation = self.formation + self.target_pos
-        self.formation_L = laplacian(self.formation)
+        # self.formation_L = laplacian(self.formation)
 
         self.drone.spawn(translations=self.formation)
         return ["/World/defaultGroundPlane"]
@@ -130,12 +129,12 @@ class Formation(IsaacEnv):
         self.drone.set_world_poses(pos, rot[env_ids], env_ids)
         self.drone.set_velocities(vel, env_ids)
 
-        self.last_cost_h[env_ids] = vmap(cost_formation_laplacian)(
-            pos, desired_L=self.formation_L
-        )
-        self.last_cost_l[env_ids] = vmap(cost_formation_hausdorff)(
+        self.last_cost_h[env_ids] = vmap(cost_formation_hausdorff)(
             pos, desired_p=self.formation
         )
+        # self.last_cost_l[env_ids] = vmap(cost_formation_laplacian)(
+        #     pos, desired_p=self.formation
+        # )
         com_pos = (pos - self.envs_positions[env_ids].unsqueeze(1)).mean(1, keepdim=True)
         self.last_cost_pos[env_ids] = torch.square(
             com_pos - self.target_pos[env_ids]
@@ -183,7 +182,7 @@ class Formation(IsaacEnv):
     def _compute_reward_and_done(self):
         pos, rot = self.get_env_poses(self.drone.get_world_poses())
 
-        cost_l = vmap(cost_formation_laplacian)(pos, desired_L=self.formation_L)
+        # cost_l = vmap(cost_formation_laplacian)(pos, desired_L=self.formation_L)
         cost_h = vmap(cost_formation_hausdorff)(pos, desired_p=self.formation)
         
         cost_pos = torch.square(pos.mean(-2, keepdim=True) - self.target_pos).sum(-1)
@@ -204,7 +203,7 @@ class Formation(IsaacEnv):
             )
         ).unsqueeze(1).expand(-1, self.drone.n, 1)
 
-        self.last_cost_l[:] = cost_l
+        # self.last_cost_l[:] = cost_l
         self.last_cost_h[:] = cost_h
         self.last_cost_pos[:] = cost_pos
 
@@ -215,7 +214,7 @@ class Formation(IsaacEnv):
 
         done = terminated | crash | (separation<0.23)
 
-        self.stats["cost_laplacian"] -= cost_l
+        # self.stats["cost_laplacian"] -= cost_l
         self.stats["cost_hausdorff"] -= cost_h
 
         return TensorDict(

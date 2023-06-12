@@ -89,9 +89,7 @@ def make_encoder(cfg, input_spec: TensorSpec) -> nn.Module:
                 raise ValueError
             
         # create state encoder
-        if len(state_spec_dict) == 1:
-            state_encoder = make_encoder(cfg, list(state_spec_dict.values())[0])
-        elif len(state_spec_dict) > 1:
+        if len(state_spec_dict) > 0:
             encoder_cls = ENCODERS_MAP[cfg.attn_encoder]
             state_encoder = encoder_cls(CompositeSpec(state_spec_dict))
         else:

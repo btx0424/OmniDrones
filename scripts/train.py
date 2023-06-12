@@ -252,7 +252,7 @@ def main(cfg):
         logging.info(f"Save checkpoint to {str(ckpt_path)}")
         torch.save(policy.state_dict(), ckpt_path)
 
-    wandb.save()
+    wandb.save(os.path.join(run.dir, "checkpoint*"))
     wandb.finish()
     
     simulation_app.close()

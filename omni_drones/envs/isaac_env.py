@@ -28,23 +28,6 @@ class IsaacEnv(EnvBase):
 
     REGISTRY: Dict[str, Type["IsaacEnv"]] = {}
 
-    _DEFAULT_CAMERA_CONFIG = {
-        "cfg": PinholeCameraCfg(
-            sensor_tick=0,
-            resolution=(640, 480),
-            data_types=["rgb"],
-            usd_params=PinholeCameraCfg.UsdCameraCfg(
-                focal_length=24.0,
-                focus_distance=400.0,
-                horizontal_aperture=20.955,
-                clipping_range=(0.1, 1.0e5),
-            ),
-        ),
-        "parent_prim_path": "/World",
-        "translation": (4.0, 2.0, 3.0),
-        "target": (0.0, 0.0, 1.0),
-    }
-
     def __init__(self, cfg, headless):
         super().__init__(
             device=cfg.sim.device, batch_size=[cfg.env.num_envs], run_type_checks=False

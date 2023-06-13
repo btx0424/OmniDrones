@@ -83,8 +83,8 @@ class InvPendulumFlyThrough(IsaacEnv):
         )
         payload_mass_scale = self.cfg.task.payload_mass_scale
         self.payload_mass_dist = D.Uniform(
-            torch.as_tensor(payload_mass_scale[0] * self.drone.mass_0, device=self.device),
-            torch.as_tensor(payload_mass_scale[1] * self.drone.mass_0, device=self.device)
+            torch.as_tensor(payload_mass_scale[0] * self.drone.MASS_0, device=self.device),
+            torch.as_tensor(payload_mass_scale[1] * self.drone.MASS_0, device=self.device)
         )
         self.bar_mass_dist = D.Uniform(
             torch.as_tensor(self.cfg.task.bar_mass_min, device=self.device),

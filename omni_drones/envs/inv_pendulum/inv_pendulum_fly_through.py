@@ -1,4 +1,3 @@
-import functorch
 import torch
 import torch.distributions as D
 from tensordict.tensordict import TensorDict, TensorDictBase
@@ -12,6 +11,7 @@ import omni.isaac.core.utils.torch as torch_utils
 import omni.isaac.core.utils.prims as prim_utils
 import omni.physx.scripts.utils as script_utils
 import omni.isaac.core.objects as objects
+from omni.isaac.debug_draw import _debug_draw
 
 import omni_drones.utils.kit as kit_utils
 from omni_drones.utils.torch import euler_to_quaternion, normalize
@@ -51,7 +51,6 @@ class InvPendulumFlyThrough(IsaacEnv):
         )
         self.bar.initialize()
 
-        self.init_poses = self.drone.get_world_poses(clone=True)
         self.init_vels = torch.zeros_like(self.drone.get_velocities())
         self.init_joint_pos = self.drone.get_joint_positions(True)
         self.init_joint_vels = torch.zeros_like(self.drone.get_joint_velocities())
@@ -82,9 +81,10 @@ class InvPendulumFlyThrough(IsaacEnv):
             torch.tensor(self.obstacle_spacing[0], device=self.device),
             torch.tensor(self.obstacle_spacing[1], device=self.device)
         )
+        payload_mass_scale = self.cfg.task.payload_mass_scale
         self.payload_mass_dist = D.Uniform(
-            torch.as_tensor(self.cfg.task.payload_mass_min, device=self.device),
-            torch.as_tensor(self.cfg.task.payload_mass_max, device=self.device)
+            torch.as_tensor(payload_mass_scale[0] * self.drone.mass_0, device=self.device),
+            torch.as_tensor(payload_mass_scale[1] * self.drone.mass_0, device=self.device)
         )
         self.bar_mass_dist = D.Uniform(
             torch.as_tensor(self.cfg.task.bar_mass_min, device=self.device),
@@ -101,9 +101,13 @@ class InvPendulumFlyThrough(IsaacEnv):
         self.observation_spec["stats"] = stats_spec
         self.stats = stats_spec.zero()
 
+        self.draw = _debug_draw.acquire_debug_draw_interface()
+        self.payload_traj_vis = []
+        self.drone_traj_vis = []
+
     def _design_scene(self):
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
-        cfg = drone_model.cfg_cls()
+        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
         self.drone: MultirotorBase = drone_model(cfg=cfg)
 
         kit_utils.create_ground_plane(
@@ -174,6 +178,11 @@ class InvPendulumFlyThrough(IsaacEnv):
         self.stats.exclude("success")[env_ids] = 0.
         self.stats["success"][env_ids] = False
 
+        if (env_ids == self.central_env_idx).any():
+            self.payload_traj_vis.clear()
+            self.drone_traj_vis.clear()
+            self.draw.clear_lines()
+
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("action", "drone.action")]
         self.effort = self.drone.apply_action(actions)
@@ -205,6 +214,21 @@ class InvPendulumFlyThrough(IsaacEnv):
         self.stats["pos_error"].lerp_(self.pos_error, (1-self.alpha))
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
 
+        if self._should_render(0):
+            central_env_pos = self.envs_positions[self.central_env_idx]
+            drone_pos = (self.drone.pos[self.central_env_idx, 0]+central_env_pos).tolist()
+            payload_pos = (self.payload_pos[self.central_env_idx]+central_env_pos).tolist()
+            
+            if len(self.payload_traj_vis)>1:
+                point_list_0 = [self.payload_traj_vis[-1], self.drone_traj_vis[-1]]
+                point_list_1 = [payload_pos, drone_pos]
+                colors = [(1., .1, .1, 1.), (.1, 1., .1, 1.)]
+                sizes = [1.5, 1.5]
+                self.draw.draw_lines(point_list_0, point_list_1, colors, sizes)
+            
+            self.drone_traj_vis.append(drone_pos)
+            self.payload_traj_vis.append(payload_pos)
+        
         return TensorDict({
             "drone.obs": obs,
             "stats": self.stats

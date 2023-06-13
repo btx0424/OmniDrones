@@ -62,9 +62,10 @@ class InvPendulumHover(IsaacEnv):
             torch.tensor([-.15, -.15, 0.], device=self.device) * torch.pi,
             torch.tensor([0.15, 0.15, 2], device=self.device) * torch.pi
         )
+        payload_mass_scale = self.cfg.task.payload_mass_scale
         self.payload_mass_dist = D.Uniform(
-            torch.as_tensor(self.cfg.task.payload_mass_min, device=self.device),
-            torch.as_tensor(self.cfg.task.payload_mass_max, device=self.device)
+            torch.as_tensor(payload_mass_scale[0] * self.drone.mass_0, device=self.device),
+            torch.as_tensor(payload_mass_scale[1] * self.drone.mass_0, device=self.device)
         )
         self.bar_mass_dist = D.Uniform(
             torch.as_tensor(self.cfg.task.bar_mass_min, device=self.device),

@@ -221,7 +221,7 @@ class PayloadFlyThrough(IsaacEnv):
             drone_pos = (self.drone.pos[self.central_env_idx, 0]+central_env_pos).tolist()
             payload_pos = (self.payload_pos[self.central_env_idx]+central_env_pos).tolist()
             
-            if len(self.payload_traj_vis)>0:
+            if len(self.payload_traj_vis)>1:
                 point_list_0 = [self.payload_traj_vis[-1], self.drone_traj_vis[-1]]
                 point_list_1 = [payload_pos, drone_pos]
                 colors = [(1., .1, .1, 1.), (.1, 1., .1, 1.)]

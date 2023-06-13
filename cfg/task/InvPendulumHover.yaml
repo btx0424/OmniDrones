@@ -15,8 +15,7 @@ reward_effort_weight: 0.1
 reward_action_smoothness_weight: 0.
 reward_distance_scale: 1.2
 
-payload_mass_min: 0.38
-payload_mass_max: 0.42
+payload_mass_scale: [0.2, 0.3]
 bar_mass_min: 0.01
 bar_mass_max: 0.04
 

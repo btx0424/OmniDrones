@@ -97,9 +97,10 @@ class TransportFlyThrough(IsaacEnv):
             torch.tensor([0., 0., -.5], device=self.device) * torch.pi,
             torch.tensor([0., 0., 0.5], device=self.device) * torch.pi
         )
+        payload_mass_scale = self.cfg.task.payload_mass_scale
         self.payload_mass_dist = D.Uniform(
-            torch.as_tensor(self.cfg.task.payload_mass_min, device=self.device),
-            torch.as_tensor(self.cfg.task.payload_mass_max, device=self.device)
+            torch.as_tensor(payload_mass_scale[0] * self.drone.mass_0.sum(), device=self.device),
+            torch.as_tensor(payload_mass_scale[1] * self.drone.mass_0.sum(), device=self.device)
         )
         self.obstacle_spacing_dist = D.Uniform(
             torch.tensor(self.obstacle_spacing[0], device=self.device),

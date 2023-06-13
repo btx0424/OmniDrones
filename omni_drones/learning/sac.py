@@ -112,84 +112,84 @@ class SACPolicy(object):
         tensordict.update(actor_output)
         return tensordict
 
-    def train_op(self, data: TensorDict):
+    def train_op(self, data: TensorDict, verbose: bool=False):
         self.replay_buffer.extend(data.reshape(-1))
 
         if len(self.replay_buffer) < self.cfg.buffer_size:
-            print(f"{len(self.replay_buffer)} < {self.cfg.buffer_size}")
+            print(f"filling buffer: {len(self.replay_buffer)} < {self.cfg.buffer_size}")
             return {}
         
         infos_critic = []
         infos_actor = []
 
-        with tqdm(range(1, self.gradient_steps+1)) as t:
-            for gradient_step in t:
+        t = range(1, self.gradient_steps+1)
+       
+        for gradient_step in tqdm(t) if verbose else t:
 
-                transition = self.replay_buffer.sample()
+            transition = self.replay_buffer.sample()
 
-                state   = transition[self.state_name]
-                actions = transition[self.act_name]
+            state   = transition[self.state_name]
+            actions = transition[self.act_name]
 
-                reward  = transition[("next", "reward", f"{self.agent_spec.name}.reward")]
-                next_dones  = transition[("next", "done")].float().unsqueeze(-1)
-                next_state  = transition[("next", self.state_name)]
+            reward  = transition[("next", "reward", f"{self.agent_spec.name}.reward")]
+            next_dones  = transition[("next", "done")].float().unsqueeze(-1)
+            next_state  = transition[("next", self.state_name)]
 
-                # TODO@btx0424 optimize this part
+            with torch.no_grad():
+                actor_output = self.actor(transition["next"], deterministic=False)
+                next_act = actor_output[self.act_name]
+                next_logp = actor_output[f"{self.agent_spec.name}.logp"]
+                next_qs = self.critic_target(next_state, next_act)
+                next_q = torch.min(next_qs, dim=-1, keepdim=True).values
+                next_q = next_q - self.log_alpha.exp() * next_logp
+                target_q = (reward + self.cfg.gamma * (1 - next_dones) * next_q).detach().squeeze(-1)
+                assert not torch.isinf(target_q).any()
+                assert not torch.isnan(target_q).any()
+
+            qs = self.critic(state, actions)
+            critic_loss = sum(self.critic_loss_fn(q, target_q) for q in qs.unbind(-1))
+            self.critic_opt.zero_grad()
+            critic_loss.backward()
+            critic_grad_norm = nn.utils.clip_grad_norm_(self.critic.parameters(), self.cfg.max_grad_norm)
+            self.critic_opt.step()
+            infos_critic.append(TensorDict({
+                "critic_loss": critic_loss,
+                "critic_grad_norm": critic_grad_norm,
+                "q_taken": qs.mean()
+            }, []))
+
+            if (gradient_step + 1) % self.cfg.actor_delay == 0:
+
+                with hold_out_net(self.critic):
+                    actor_output = self.actor(transition, deterministic=False)
+                    act = actor_output[self.act_name]
+                    logp = actor_output[f"{self.agent_spec.name}.logp"]
+
+                    qs = self.critic(state, act)
+                    q = torch.min(qs, dim=-1).values
+                    actor_loss = (self.log_alpha.exp() * logp - q).mean()
+                    self.actor_opt.zero_grad()
+                    actor_loss.backward()
+                    actor_grad_norm = nn.utils.clip_grad_norm_(self.actor.parameters(), self.cfg.max_grad_norm)
+                    self.actor_opt.step()
+
+                    self.alpha_opt.zero_grad()
+                    alpha_loss = -(self.log_alpha * (logp + self.target_entropy).detach()).mean()
+                    alpha_loss.backward()
+                    self.alpha_opt.step()
+
+                    infos_actor.append(TensorDict({
+                        "actor_loss": actor_loss,
+                        "actor_grad_norm": actor_grad_norm,
+                        "entropy": -logp.mean(),
+                        "alpha": self.log_alpha.exp().detach(),
+                        "alpha_loss": alpha_loss,
+                    }, []))
+
+
+            if (gradient_step + 1) % self.cfg.target_update_interval == 0:
                 with torch.no_grad():
-                    actor_output = self.actor(transition["next"], deterministic=False)
-                    next_act = actor_output[self.act_name]
-                    next_logp = actor_output[f"{self.agent_spec.name}.logp"]
-                    next_qs = self.critic_target(next_state, next_act)
-                    next_q = torch.min(next_qs, dim=-1, keepdim=True).values
-                    next_q = next_q - self.log_alpha.exp() * next_logp
-                    target_q = (reward + self.cfg.gamma * (1 - next_dones) * next_q).detach().squeeze(-1)
-                    assert not torch.isinf(target_q).any()
-                    assert not torch.isnan(target_q).any()
-
-                qs = self.critic(state, actions)
-                critic_loss = sum(self.critic_loss_fn(q, target_q) for q in qs.unbind(-1))
-                self.critic_opt.zero_grad()
-                critic_loss.backward()
-                critic_grad_norm = nn.utils.clip_grad_norm_(self.critic.parameters(), self.cfg.max_grad_norm)
-                self.critic_opt.step()
-                infos_critic.append(TensorDict({
-                    "critic_loss": critic_loss,
-                    "critic_grad_norm": critic_grad_norm,
-                    "q_taken": qs.mean()
-                }, []))
-
-                if (gradient_step + 1) % self.cfg.actor_delay == 0:
-
-                    with hold_out_net(self.critic):
-                        actor_output = self.actor(transition, deterministic=False)
-                        act = actor_output[self.act_name]
-                        logp = actor_output[f"{self.agent_spec.name}.logp"]
-
-                        qs = self.critic(state, act)
-                        q = torch.min(qs, dim=-1).values
-                        actor_loss = (self.log_alpha.exp() * logp - q).mean()
-                        self.actor_opt.zero_grad()
-                        actor_loss.backward()
-                        actor_grad_norm = nn.utils.clip_grad_norm_(self.actor.parameters(), self.cfg.max_grad_norm)
-                        self.actor_opt.step()
-
-                        self.alpha_opt.zero_grad()
-                        alpha_loss = -(self.log_alpha * (logp + self.target_entropy).detach()).mean()
-                        alpha_loss.backward()
-                        self.alpha_opt.step()
-
-                        infos_actor.append(TensorDict({
-                            "actor_loss": actor_loss,
-                            "actor_grad_norm": actor_grad_norm,
-                            "entropy": -logp.mean(),
-                            "alpha": self.log_alpha.exp().detach(),
-                            "alpha_loss": alpha_loss,
-                        }, []))
-
-
-                if (gradient_step + 1) % self.cfg.target_update_interval == 0:
-                    with torch.no_grad():
-                        soft_update(self.critic_target, self.critic, self.cfg.tau)
+                    soft_update(self.critic_target, self.critic, self.cfg.tau)
         
         infos = {**torch.stack(infos_actor), **torch.stack(infos_critic)}
         infos = {k: torch.mean(v).item() for k, v in infos.items()}

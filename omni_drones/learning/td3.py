@@ -114,7 +114,7 @@ class TD3Policy(object):
         tensordict.update(actor_output)
         return tensordict
 
-    def train_op(self, data: TensorDict):
+    def train_op(self, data: TensorDict, verbose: bool=False):
         self.replay_buffer.extend(data.reshape(-1))
 
         if len(self.replay_buffer) < self.cfg.buffer_size:
@@ -124,70 +124,71 @@ class TD3Policy(object):
         infos_critic = []
         infos_actor = []
 
-        with tqdm(range(1, self.gradient_steps+1)) as t:
-            for gradient_step in t:
+        t = range(1, self.gradient_steps+1)
 
-                transition = self.replay_buffer.sample(self.batch_size)
+        for gradient_step in tqdm(t) if verbose else t:
 
-                state   = transition[self.state_name]
-                action_taken = transition[self.act_name]
+            transition = self.replay_buffer.sample(self.batch_size)
 
-                reward  = transition[("next", "reward", f"{self.agent_spec.name}.reward")]
-                next_dones  = transition[("next", "done")].float().unsqueeze(-1)
-                next_state  = transition[("next", self.state_name)]
+            state   = transition[self.state_name]
+            action_taken = transition[self.act_name]
 
+            reward  = transition[("next", "reward", f"{self.agent_spec.name}.reward")]
+            next_dones  = transition[("next", "done")].float().unsqueeze(-1)
+            next_state  = transition[("next", self.state_name)]
+
+            with torch.no_grad():
+
+                next_action: torch.Tensor = self.actor_target(transition["next"])[self.act_name]
+                action_noise = (
+                    next_action
+                    .clone()
+                    .normal_(0, self.target_noise)
+                    .clamp_(-self.noise_clip, self.noise_clip)
+                )
+                next_action = torch.clamp(next_action + action_noise, -1, 1)
+
+                next_qs = self.critic_target(next_state, next_action)
+                next_q = torch.min(next_qs, dim=-1, keepdim=True).values
+                target_q = (reward + self.cfg.gamma * (1 - next_dones) * next_q).detach().squeeze(-1)
+                assert not torch.isinf(target_q).any()
+                assert not torch.isnan(target_q).any()
+
+            qs = self.critic(state, action_taken)
+            critic_loss = sum(self.critic_loss_fn(q, target_q) for q in qs.unbind(-1))
+            self.critic_opt.zero_grad()
+            critic_loss.backward()
+            critic_grad_norm = nn.utils.clip_grad_norm_(self.critic.parameters(), self.cfg.max_grad_norm)
+            self.critic_opt.step()
+            infos_critic.append(TensorDict({
+                "critic_loss": critic_loss,
+                "critic_grad_norm": critic_grad_norm,
+                "q_taken": qs.mean()
+            }, []))
+
+            if (gradient_step + 1) % self.cfg.actor_delay == 0:
+
+                with hold_out_net(self.critic):
+                    actor_output = self.actor(transition)
+                    action = actor_output[self.act_name]
+
+                    qs = self.critic(state, action)
+                    q = torch.min(qs, dim=-1, keepdim=True).values
+                    actor_loss = - q.mean()
+
+                    self.actor_opt.zero_grad()
+                    actor_loss.backward()
+                    actor_grad_norm = nn.utils.clip_grad_norm_(self.actor.parameters(), self.cfg.max_grad_norm)
+                    self.actor_opt.step()
+
+                    infos_actor.append(TensorDict({
+                        "actor_loss": actor_loss,
+                        "actor_grad_norm": actor_grad_norm,
+                    }, []))
+                
                 with torch.no_grad():
-
-                    next_action: torch.Tensor = self.actor_target(transition["next"])[self.act_name]
-                    action_noise = (
-                        next_action
-                        .clone()
-                        .normal_(0, self.target_noise)
-                        .clamp_(-self.noise_clip, self.noise_clip)
-                    )
-                    next_action = torch.clamp(next_action + action_noise, -1, 1)
-
-                    next_qs = self.critic_target(next_state, next_action)
-                    next_q = torch.min(next_qs, dim=-1, keepdim=True).values
-                    target_q = (reward + self.cfg.gamma * (1 - next_dones) * next_q).detach().squeeze(-1)
-                    assert not torch.isinf(target_q).any()
-                    assert not torch.isnan(target_q).any()
-
-                qs = self.critic(state, action_taken)
-                critic_loss = sum(self.critic_loss_fn(q, target_q) for q in qs.unbind(-1))
-                self.critic_opt.zero_grad()
-                critic_loss.backward()
-                critic_grad_norm = nn.utils.clip_grad_norm_(self.critic.parameters(), self.cfg.max_grad_norm)
-                self.critic_opt.step()
-                infos_critic.append(TensorDict({
-                    "critic_loss": critic_loss,
-                    "critic_grad_norm": critic_grad_norm,
-                    "q_taken": qs.mean()
-                }, []))
-
-                if (gradient_step + 1) % self.cfg.actor_delay == 0:
-
-                    with hold_out_net(self.critic):
-                        actor_output = self.actor(transition)
-                        action = actor_output[self.act_name]
-
-                        qs = self.critic(state, action)
-                        q = torch.min(qs, dim=-1, keepdim=True).values
-                        actor_loss = - q.mean()
-
-                        self.actor_opt.zero_grad()
-                        actor_loss.backward()
-                        actor_grad_norm = nn.utils.clip_grad_norm_(self.actor.parameters(), self.cfg.max_grad_norm)
-                        self.actor_opt.step()
-
-                        infos_actor.append(TensorDict({
-                            "actor_loss": actor_loss,
-                            "actor_grad_norm": actor_grad_norm,
-                        }, []))
-                    
-                    with torch.no_grad():
-                        soft_update(self.actor_target, self.actor, self.cfg.tau)
-                        soft_update(self.critic_target, self.critic, self.cfg.tau)
+                    soft_update(self.actor_target, self.actor, self.cfg.tau)
+                    soft_update(self.critic_target, self.critic, self.cfg.tau)
         
         infos = {**torch.stack(infos_actor), **torch.stack(infos_critic)}
         infos = {k: torch.mean(v).item() for k, v in infos.items()}

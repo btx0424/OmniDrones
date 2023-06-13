@@ -220,15 +220,16 @@ class PayloadFlyThrough(IsaacEnv):
             central_env_pos = self.envs_positions[self.central_env_idx]
             drone_pos = (self.drone.pos[self.central_env_idx, 0]+central_env_pos).tolist()
             payload_pos = (self.payload_pos[self.central_env_idx]+central_env_pos).tolist()
-
-            point_list_0 = [self.payload_traj_vis[-1], self.drone_traj_vis[-1]]
-            point_list_1 = [payload_pos, drone_pos]
+            
+            if len(self.payload_traj_vis)>0:
+                point_list_0 = [self.payload_traj_vis[-1], self.drone_traj_vis[-1]]
+                point_list_1 = [payload_pos, drone_pos]
+                colors = [(1., .1, .1, 1.), (.1, 1., .1, 1.)]
+                sizes = [1.5, 1.5]
+                self.draw.draw_lines(point_list_0, point_list_1, colors, sizes)
             
             self.drone_traj_vis.append(drone_pos)
             self.payload_traj_vis.append(payload_pos)
-            colors = [(1., .1, .1, 1.), (.1, 1., .1, 1.)]
-            sizes = [1., 1.]
-            self.draw.draw_lines(point_list_0, point_list_1, colors, sizes)
             
         return TensorDict({
             "drone.obs": obs,

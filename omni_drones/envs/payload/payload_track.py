@@ -159,7 +159,7 @@ class PayloadTrack(IsaacEnv):
 
         self.info.update_at_(self.drone.info[env_ids], env_ids)
 
-        if self._should_render(0) and (env_ids == self.central_env_idx).any() :
+        if self._should_render(0) and (env_ids == self.central_env_idx).any():
             # visualize the trajectory
             self.draw.clear_lines()
 

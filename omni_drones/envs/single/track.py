@@ -178,7 +178,7 @@ class Track(IsaacEnv):
         if self.wind:
             t = (self.progress_buf * self.dt).reshape(-1, 1, 1)
             self.wind_force = self.wind_i * torch.sin(t * self.wind_w).sum(-1)
-            wind_forces = self.drone.mass_0 * self.wind_force
+            wind_forces = self.drone.MASS_0 * self.wind_force
             wind_forces = wind_forces.unsqueeze(1).expand(*self.drone.shape, 3)
             self.drone.base_link.apply_forces(wind_forces, is_global=True)
 

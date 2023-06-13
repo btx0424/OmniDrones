@@ -497,7 +497,11 @@ class RigidPrimView(_RigidPrimView):
         clone: bool = True
     ) -> torch.Tensor:
         indices = self._resolve_env_indices(env_indices)
-        return super().get_masses(indices, clone).unflatten(0, self.shape)
+        return (
+            super()
+            .get_masses(indices, clone)
+            .reshape(-1, *self.shape[1:], 1)
+        )
     
     def set_masses(
         self, 

@@ -10,11 +10,10 @@ env:
   max_episode_length: 600
 
 drone_model: Hummingbird
-force_sensor: true
+force_sensor: false
 time_encoding: true
 intrinsics: false
 wind: false
-observe_wind: false
 
 # randomization:
 #   wind:

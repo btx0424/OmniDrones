@@ -337,7 +337,7 @@ class MultirotorBase(RobotBase):
     def __str__(self):
         default_params = "\n".join([
             "Default parameters:",
-            f"Mass: {self.MASS_0.item()}",
+            f"Mass: {self.MASS_0.tolist()}",
             f"Inertia: {self.INERTIA_0.tolist()}",
             f"Thrust2Weight: {self.THRUST2WEIGHT_0.tolist()}",
             f"Force2Moment: {self.FORCE2MOMENT_0.tolist()}",

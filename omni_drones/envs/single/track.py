@@ -28,7 +28,6 @@ class Track(IsaacEnv):
         assert self.future_traj_len > 0
         self.intrinsics = self.cfg.task.intrinsics
         self.wind = self.cfg.task.wind
-        self.observe_wind = self.cfg.task.observe_wind
 
         self.drone.initialize()
         randomization = self.cfg.task.get("randomization", None)
@@ -49,8 +48,7 @@ class Track(IsaacEnv):
                 self.wind_intensity_high = 2
             self.wind_w = torch.zeros(self.num_envs, 3, 8, device=self.device)
             self.wind_i = torch.zeros(self.num_envs, 1, device=self.device)
-        else:
-            self.observe_wind = False
+
 
         drone_state_dim = self.drone.state_spec.shape[-1]
         obs_dim = drone_state_dim + 3 * (self.future_traj_len-1)
@@ -59,8 +57,6 @@ class Track(IsaacEnv):
             obs_dim += self.time_encoding_dim
         if self.intrinsics:
             obs_dim += sum(spec.shape[-1] for name, spec in self.drone.info_spec.items())
-        if self.observe_wind:
-            obs_dim += 3
         
         self.agent_spec["drone"] = AgentSpec(
             "drone",
@@ -91,14 +87,12 @@ class Track(IsaacEnv):
             torch.tensor(1.1, device=self.device)
         )
         self.origin = torch.tensor([0., 0., 2.], device=self.device)
-        self.phase = torch.pi / 2
 
+        self.traj_t0 = torch.pi / 2
         self.traj_c = torch.zeros(self.num_envs, device=self.device)
         self.traj_scale = torch.zeros(self.num_envs, 3, device=self.device)
         self.traj_rot = torch.zeros(self.num_envs, 4, device=self.device)
         self.traj_w = torch.ones(self.num_envs, device=self.device)
-        if self.observe_wind:
-            self.wind_force = torch.zeros(self.num_envs, 3, device=self.device)
 
         self.target_pos = torch.zeros(self.num_envs, self.future_traj_len, 3, device=self.device)
 
@@ -141,7 +135,7 @@ class Track(IsaacEnv):
         self.traj_w[env_ids] = torch.randn_like(traj_w).sign() * traj_w
 
         t0 = torch.zeros(len(env_ids), device=self.device)
-        pos = lemniscate(t0 + self.phase, self.traj_c[env_ids]) + self.origin
+        pos = lemniscate(t0 + self.traj_t0, self.traj_c[env_ids]) + self.origin
         rot = euler_to_quaternion(self.init_rpy_dist.sample(env_ids.shape))
         vel = torch.zeros(len(env_ids), 1, 6, device=self.device)
         self.drone.set_world_poses(
@@ -168,8 +162,6 @@ class Track(IsaacEnv):
         if self.wind:
             self.wind_i[env_ids] = torch.rand(*env_ids.shape, 1, device=self.device) * (self.wind_intensity_high-self.wind_intensity_low) + self.wind_intensity_low
             self.wind_w[env_ids] = torch.randn(*env_ids.shape, 3, 8, device=self.device)
-            if self.observe_wind:
-                self.wind_force[env_ids] = torch.zeros(3, device=self.device)
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("action", "drone.action")]
@@ -197,8 +189,7 @@ class Track(IsaacEnv):
             obs.append(t.expand(-1, self.time_encoding_dim).unsqueeze(1))
         if self.intrinsics:
             obs.append(self.drone.get_info())
-        if self.observe_wind:
-            obs.append(self.wind_force.unsqueeze(1))
+
         obs = torch.cat(obs, dim=-1)
 
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
@@ -274,7 +265,7 @@ class Track(IsaacEnv):
         if env_ids is None:
             env_ids = ...
         t = self.progress_buf[env_ids].unsqueeze(1) + step_size * torch.arange(steps, device=self.device)
-        t = self.phase + self.traj_w[env_ids].unsqueeze(1) * t * self.dt
+        t = self.traj_t0 + self.traj_w[env_ids].unsqueeze(1) * t * self.dt
         traj_rot = self.traj_rot[env_ids].unsqueeze(1).expand(-1, t.shape[1], 4)
         
         target_pos = vmap(lemniscate)(t, self.traj_c[env_ids])

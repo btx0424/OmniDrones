@@ -218,6 +218,9 @@ class OveractuatedPlatform(RobotBase):
         self.acc = torch.zeros(*self.shape, 6, device=self.device)
         self.jerk = torch.zeros(*self.shape, 6, device=self.device)
 
+        self.init_joint_pos = self.get_joint_positions(clone=True)
+        self.init_joint_vel = torch.zeros_like(self.get_joint_velocities())
+
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
         self.drone.apply_action(actions)
     
@@ -251,6 +254,9 @@ class OveractuatedPlatform(RobotBase):
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
+        self.set_joint_positions(self.init_joint_pos[env_ids], env_ids)
+        self.set_joint_velocities(self.init_joint_vel[env_ids], env_ids)
+
         self.vel[env_ids] = 0.
         self.acc[env_ids] = 0.
         self.jerk[env_ids] = 0.

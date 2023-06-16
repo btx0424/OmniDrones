@@ -35,3 +35,7 @@ def lemniscate(t, c):
     ], dim=-1) / sin2p1.unsqueeze(-1)
 
     return x
+
+def scale_time(t, a: float=1.0):
+    return t / (1 + 1/(a*torch.abs(t)))
+

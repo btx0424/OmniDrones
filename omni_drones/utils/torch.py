@@ -112,7 +112,6 @@ def make_cells(
     range_min: Union[Sequence[float], torch.Tensor],
     range_max: Union[Sequence[float], torch.Tensor],
     size: Union[float, Sequence[float], torch.Tensor],
-    device="cpu"
 ):
     """Compute the cell centers of a n-d grid.
 
@@ -130,7 +129,7 @@ def make_cells(
     size = torch.as_tensor(size)
     shape = ((range_max - range_min) / size).round().int()
 
-    cells = torch.meshgrid(*[torch.linspace(l, r, n+1, device=device) for l, r, n in zip(range_min, range_max, shape)], indexing="ij")
+    cells = torch.meshgrid(*[torch.linspace(l, r, n+1) for l, r, n in zip(range_min, range_max, shape)], indexing="ij")
     cells = torch.stack(cells, dim=-1)
     for dim in range(cells.dim()-1):
         cells = (cells.narrow(dim, 0, cells.size(dim)-1) + cells.narrow(dim, 1, cells.size(dim)-1)) / 2

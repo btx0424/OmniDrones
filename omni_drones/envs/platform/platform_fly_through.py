@@ -22,19 +22,6 @@ from omni_drones.utils.torch import euler_to_quaternion
 from .utils import OveractuatedPlatform, PlatformCfg
 
 
-def compose_transform(
-    parent_translation: torch.Tensor,
-    parent_rotation: torch.Tensor,
-    translation: torch.Tensor,
-    rotation: torch.Tensor,
-):
-    rotation = torch_utils.quat_mul(
-        parent_rotation.expand_as(rotation), 
-        rotation
-    )
-    translation = parent_translation + torch_utils.quat_rotate(rotation, translation)
-    return translation, rotation
-
 def create_obstacle(
     prim_path: str,
     translation=(0., 0., 2.5),

@@ -17,7 +17,7 @@ sim:
 
   # GPU buffers
   gpu_max_rigid_contact_count: 524288
-  gpu_max_rigid_patch_count: 81920 # 33554432
+  gpu_max_rigid_patch_count: 163840 # 33554432
   gpu_found_lost_pairs_capacity: 4194304
   gpu_found_lost_aggregate_pairs_capacity: 33554432
   gpu_total_aggregate_pairs_capacity: 4194304

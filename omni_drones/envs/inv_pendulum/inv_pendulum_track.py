@@ -69,8 +69,8 @@ class InvPendulumTrack(IsaacEnv):
 
         payload_mass_scale = self.cfg.task.payload_mass_scale
         self.payload_mass_dist = D.Uniform(
-            torch.as_tensor(payload_mass_scale[0] * self.drone.MASS_0, device=self.device),
-            torch.as_tensor(payload_mass_scale[1] * self.drone.MASS_0, device=self.device)
+            torch.as_tensor(payload_mass_scale[0] * self.drone.MASS_0[0], device=self.device),
+            torch.as_tensor(payload_mass_scale[1] * self.drone.MASS_0[0], device=self.device)
         )
         self.traj_rpy_dist = D.Uniform(
             torch.tensor([0., 0., 0.], device=self.device) * torch.pi,
@@ -98,11 +98,13 @@ class InvPendulumTrack(IsaacEnv):
 
         self.alpha = 0.8
         stats_spec = CompositeSpec({
-            "pos_error": UnboundedContinuousTensorSpec(1),
+            "tracking_error": UnboundedContinuousTensorSpec(1),
+            "tracking_error_ema": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(1),
             "motion_smoothness": UnboundedContinuousTensorSpec(1)
         }).expand(self.num_envs).to(self.device)
         info_spec = CompositeSpec({
+            "payload_mass": UnboundedContinuousTensorSpec(1),
             "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13)),
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
@@ -127,18 +129,15 @@ class InvPendulumTrack(IsaacEnv):
         self.drone.spawn(translations=[(0.0, 0.0, 2.)])
         create_pendulum(f"/World/envs/env_0/{self.drone.name}_0", self.cfg.task.bar_length, 0.04)
 
-        sphere = objects.DynamicSphere(
-            "/World/envs/env_0/target",
-            translation=(0., 0., 2.5),
-            radius=0.05,
-            color=torch.tensor([1., 0., 0.])
-        )
-        kit_utils.set_collision_properties(sphere.prim_path, collision_enabled=False)
-        kit_utils.set_rigid_body_properties(sphere.prim_path, disable_gravity=True)
         return ["/World/defaultGroundPlane"]
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
+        self.traj_c[env_ids] = self.traj_c_dist.sample(env_ids.shape)
+        self.traj_rot[env_ids] = euler_to_quaternion(self.traj_rpy_dist.sample(env_ids.shape))
+        self.traj_scale[env_ids] = self.traj_scale_dist.sample(env_ids.shape)
+        traj_w = self.traj_w_dist.sample(env_ids.shape)
+        self.traj_w[env_ids] = torch.randn_like(traj_w).sign() * traj_w
         
         t0 = torch.zeros(len(env_ids), device=self.device)
         drone_pos = lemniscate(t0 + self.traj_t0, self.traj_c[env_ids]) + self.origin
@@ -146,7 +145,7 @@ class InvPendulumTrack(IsaacEnv):
         drone_rpy = self.init_rpy_dist.sample((*env_ids.shape, 1))
         drone_rot = euler_to_quaternion(drone_rpy)
         self.drone.set_world_poses(
-            drone_pos + self.envs_positions[env_ids].unsqueeze(1), drone_rot, env_ids
+            drone_pos + self.envs_positions[env_ids], drone_rot, env_ids
         )
         self.drone.set_velocities(self.init_vels[env_ids], env_ids)
         self.drone.set_joint_positions(self.init_joint_pos[env_ids], env_ids)
@@ -154,6 +153,7 @@ class InvPendulumTrack(IsaacEnv):
 
         payload_mass = self.payload_mass_dist.sample(env_ids.shape)
         self.payload.set_masses(payload_mass, env_ids)
+        self.info["payload_mass"][env_ids] = payload_mass
 
         self.stats[env_ids] = 0.
 
@@ -176,7 +176,7 @@ class InvPendulumTrack(IsaacEnv):
     def _compute_state_and_obs(self):
         self.drone_state = self.drone.get_state()
         self.info["drone_state"][:] = self.drone_state[..., :13]
-        payload_pos, payload_rot = self.get_env_poses(self.payload.get_world_poses())
+        payload_pos = self.get_env_poses(self.payload.get_world_poses())[0]
         self.payload_vels = self.payload.get_velocities()
 
         # relative position and heading
@@ -186,8 +186,8 @@ class InvPendulumTrack(IsaacEnv):
 
         obs = [
             self.drone_payload_rpos, # 3
-            self.drone_state,
-            self.target_payload_rpos, # self.future_traj_len * 3
+            self.drone_state[..., 3:],
+            self.target_payload_rpos.flatten(1).unsqueeze(1), # self.future_traj_len * 3
             self.payload_vels.unsqueeze(1), # 6
         ]
         if self.time_encoding:
@@ -218,18 +218,11 @@ class InvPendulumTrack(IsaacEnv):
 
         reward_bar_up = normalize(-self.drone_payload_rpos)[..., 2]
 
-        spin = torch.square(self.drone.up[..., -1])
-        reward_spin = 1. / (1.0 + torch.square(spin))
-
-        swing = torch.norm(self.payload_vels[..., :3], dim=-1, keepdim=True)
-        reward_swing = torch.exp(-swing)
-
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort)
         reward_action_smoothness = self.reward_action_smoothness_weight * torch.exp(-self.drone.throttle_difference)
         
         reward = (
-            reward_bar_up + reward_pos
-            + reward_bar_up * (reward_spin + reward_swing) 
+            reward_pos
             + reward_effort
             + reward_action_smoothness
         ).unsqueeze(-1)
@@ -245,6 +238,12 @@ class InvPendulumTrack(IsaacEnv):
         )
 
         self._tensordict["return"] += reward
+
+        ep_len = self.progress_buf.unsqueeze(-1)
+        self.stats["tracking_error"].div_(
+            torch.where(done, ep_len, torch.ones_like(ep_len))
+        )
+
         return TensorDict(
             {
                 "reward": {"drone.reward": reward},

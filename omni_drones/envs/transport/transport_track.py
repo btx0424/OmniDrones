@@ -20,7 +20,7 @@ from .utils import TransportationGroup, TransportationCfg
 from ..utils import lemniscate
 
 def scale_time(t, a: float=1.0):
-    return t / (1 + 1/(a*t))
+    return t / (1 + 1/(a*torch.abs(t)))
 
 class TransportTrack(IsaacEnv):
     def __init__(self, cfg, headless):

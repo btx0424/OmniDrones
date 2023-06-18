@@ -1,14 +1,15 @@
 import omni.isaac.core.utils.prims as prim_utils
 import omni.physx.scripts.utils as script_utils
-import omni_drones.utils.kit as kit_utils
 from pxr import UsdPhysics
 import omni.isaac.core.objects as objects
 
+import omni_drones.utils.kit as kit_utils
+from ..utils import create_bar
 
 def attach_payload(
     drone_prim_path: str,
     bar_length: str,
-    payload_radius: float=0.08,
+    payload_radius: float=0.04,
     payload_mass: float=0.3
 ):
     bar = prim_utils.create_prim(
@@ -21,7 +22,7 @@ def attach_payload(
     UsdPhysics.RigidBodyAPI.Apply(bar)
     UsdPhysics.CollisionAPI.Apply(bar)
     massAPI = UsdPhysics.MassAPI.Apply(bar)
-    massAPI.CreateMassAttr().Set(0.02)
+    massAPI.CreateMassAttr().Set(0.001)
 
     base_link = prim_utils.get_prim_at_path(drone_prim_path + "/base_link")
     stage = prim_utils.get_current_stage()
@@ -32,8 +33,8 @@ def attach_payload(
     joint.GetAttribute("limit:rotY:physics:high").Set(120)
     UsdPhysics.DriveAPI.Apply(joint, "rotX")
     UsdPhysics.DriveAPI.Apply(joint, "rotY")
-    joint.GetAttribute("drive:rotX:physics:damping").Set(0.0001)
-    joint.GetAttribute("drive:rotY:physics:damping").Set(0.0001)
+    joint.GetAttribute("drive:rotX:physics:damping").Set(2e-6)
+    joint.GetAttribute("drive:rotY:physics:damping").Set(2e-6)
     # joint.GetAttribute('physics:excludeFromArticulation').Set(True)
 
     payload = objects.DynamicSphere(
@@ -49,3 +50,29 @@ def attach_payload(
     kit_utils.set_collision_properties(
         drone_prim_path + "/payload", contact_offset=0.02, rest_offset=0
     )
+
+
+# def attach_payload(
+#     drone_prim_path: str,
+#     bar_length: float,
+#     payload_radius: float=0.04,
+#     payload_mass: float=0.3
+# ):
+
+#     payload = objects.DynamicSphere(
+#         prim_path=drone_prim_path + "/payload",
+#         translation=(0., 0., -bar_length),
+#         radius=payload_radius,
+#         mass=payload_mass
+#     )
+#     create_bar(
+#         drone_prim_path + "/bar",
+#         length=bar_length,
+#         from_prim=drone_prim_path + "/base_link",
+#         to_prim=drone_prim_path + "/payload",
+#         joint_to_attributes={}
+#     )
+#     kit_utils.set_collision_properties(
+#         drone_prim_path + "/payload", contact_offset=0.02, rest_offset=0
+#     )
+

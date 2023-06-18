@@ -26,8 +26,6 @@ time_encoding: true
 #       KM_scale: [0.75, 1.25]
 #       drag_coef_scale: [0.5, 2.]
 
-# disturbance
-wind_intensity_scale: null
 
 reward_effort_weight: 0.1
 reward_action_smoothness_weight: 0.0

@@ -15,7 +15,7 @@ from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec
 from omni.isaac.debug_draw import _debug_draw
 
-from ..utils import lemniscate
+from ..utils import lemniscate, scale_time
 from .utils import attach_payload
 
 class PayloadTrack(IsaacEnv):
@@ -86,7 +86,7 @@ class PayloadTrack(IsaacEnv):
             torch.as_tensor(payload_mass_scale[1] * self.drone.MASS_0, device=self.device)
         )
         self.origin = torch.tensor([0., 0., 2.], device=self.device)
-        self.phase = torch.pi / 2
+        self.traj_t0 = torch.pi / 2
 
         self.traj_c = torch.zeros(self.num_envs, device=self.device)
         self.traj_scale = torch.zeros(self.num_envs, 3, device=self.device)
@@ -140,7 +140,7 @@ class PayloadTrack(IsaacEnv):
         self.traj_w[env_ids] = torch.randn_like(traj_w).sign() * traj_w
 
         t0 = torch.zeros(len(env_ids), device=self.device)
-        pos = lemniscate(t0 + self.phase, self.traj_c[env_ids]) + self.origin
+        pos = lemniscate(t0 + self.traj_t0, self.traj_c[env_ids]) + self.origin
         pos[..., 2] += self.bar_length
         rot = euler_to_quaternion(self.init_rpy_dist.sample(env_ids.shape))
         vel = torch.zeros(len(env_ids), 1, 6, device=self.device)
@@ -264,7 +264,7 @@ class PayloadTrack(IsaacEnv):
         if env_ids is None:
             env_ids = ...
         t = self.progress_buf[env_ids].unsqueeze(1) + step_size * torch.arange(steps, device=self.device)
-        t = self.phase + self.traj_w[env_ids].unsqueeze(1) * t * self.dt
+        t = self.traj_t0 + scale_time(self.traj_w[env_ids].unsqueeze(1) * t * self.dt)
         traj_rot = self.traj_rot[env_ids].unsqueeze(1).expand(-1, t.shape[1], 4)
         
         target_pos = vmap(lemniscate)(t, self.traj_c[env_ids])

@@ -1,6 +1,6 @@
 program: train.py
-name: SingleOffpolicy
-project: gpu-onpolicy
+name: SingleOffpolicy125M
+project: omnidrones
 entity: marl-drones
 method: grid
 
@@ -20,24 +20,23 @@ parameters:
     - Hover
     - Track
     - InvPendulumHover
+    - InvPendulumTrack
     - InvPendulumFlyThrough
+    - PayloadHover
     - PayloadFlyThrough
     - PayloadTrack
 
-  # task.env.num_envs:
-  #   value: 1024
-
   total_frames: 
-    value: 50_500_000
+    value: 125_000_000
 
   headless:
     value: true
   
   seed:
-    values: [0, 42, 81, 57, 127]
+    values: [0, 42] #, 81] #, 57] #, 127]
 
   task.drone_model:
-    values: [Firefly, Hummingbird]
+    values: [Firefly, Hummingbird, Omav]
 
 command:
   - ${env}

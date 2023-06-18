@@ -13,7 +13,7 @@ from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec
 from omni.isaac.debug_draw import _debug_draw
 
-from ..utils import lemniscate
+from ..utils import lemniscate, scale_time
 
 class Track(IsaacEnv):
     def __init__(self, cfg, headless):
@@ -265,7 +265,7 @@ class Track(IsaacEnv):
         if env_ids is None:
             env_ids = ...
         t = self.progress_buf[env_ids].unsqueeze(1) + step_size * torch.arange(steps, device=self.device)
-        t = self.traj_t0 + self.traj_w[env_ids].unsqueeze(1) * t * self.dt
+        t = self.traj_t0 + scale_time(self.traj_w[env_ids].unsqueeze(1) * t * self.dt)
         traj_rot = self.traj_rot[env_ids].unsqueeze(1).expand(-1, t.shape[1], 4)
         
         target_pos = vmap(lemniscate)(t, self.traj_c[env_ids])

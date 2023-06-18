@@ -28,11 +28,6 @@ class PayloadHover(IsaacEnv):
         self.reward_distance_scale = self.cfg.task.reward_distance_scale
         self.time_encoding = self.cfg.task.time_encoding
         self.bar_length = self.cfg.task.bar_length
-        self.R = (
-            2 + self.reward_effort_weight
-            + self.reward_action_smoothness_weight
-            + self.reward_action_smoothness_weight
-        )
 
         self.drone.initialize()
         randomization = self.cfg.task.get("randomization", None)
@@ -220,7 +215,7 @@ class PayloadHover(IsaacEnv):
             + reward_effort
             + reward_action_smoothness
             + reward_motion_smoothness
-        ) / self.R
+        )
         self._tensordict["return"] += reward.unsqueeze(-1)
 
         done = (

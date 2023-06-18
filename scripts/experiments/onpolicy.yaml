@@ -1,6 +1,6 @@
 program: train.py
 name: SinglePPO
-project: gpu-onpolicy
+project: omnidrones
 entity: marl-drones
 method: grid
 
@@ -19,21 +19,23 @@ parameters:
     - Hover
     - Track
     - InvPendulumHover
+    - InvPendulumTrack
     - InvPendulumFlyThrough
+    - PayloadHover
     - PayloadTrack
     - PayloadFlyThrough
 
   total_frames: 
-    value: 105_000_000
+    value: 125_500_000
 
   headless:
     value: true
   
   seed:
-    values: [0, 42, 81, 57, 127]
+    values: [0, 42] #, 81] #, 57]
 
   task.drone_model:
-    values: [Firefly, Hummingbird]
+    values: [Firefly, Hummingbird, Omav]
 
   algo.train_every:
     value: 128

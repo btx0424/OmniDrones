@@ -21,7 +21,7 @@ def create_pendulum(
     UsdPhysics.RigidBodyAPI.Apply(bar)
     UsdPhysics.CollisionAPI.Apply(bar)
     massAPI = UsdPhysics.MassAPI.Apply(bar)
-    massAPI.CreateMassAttr().Set(0.02)
+    massAPI.CreateMassAttr().Set(0.001)
 
     base_link = prim_utils.get_prim_at_path(drone_prim_path + "/base_link")
     stage = prim_utils.get_current_stage()
@@ -32,8 +32,8 @@ def create_pendulum(
     joint.GetAttribute("limit:rotY:physics:high").Set(torch.inf)
     UsdPhysics.DriveAPI.Apply(joint, "rotX")
     UsdPhysics.DriveAPI.Apply(joint, "rotY")
-    joint.GetAttribute("drive:rotX:physics:damping").Set(0.0001)
-    joint.GetAttribute("drive:rotY:physics:damping").Set(0.0001)
+    joint.GetAttribute("drive:rotX:physics:damping").Set(2e-6)
+    joint.GetAttribute("drive:rotY:physics:damping").Set(2e-6)
 
     payload = objects.DynamicSphere(
         prim_path=drone_prim_path + "/payload",

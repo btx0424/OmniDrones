@@ -21,14 +21,14 @@ actor:
   lr_scheduler_kwargs: 
   
   # mlp
-  hidden_units: [256, 128]
+  hidden_units: [256, 128, 128]
   layer_norm: true
 
   weight_decay: 0.0
   gain: 0.01
 
   vision_encoder: MobileNetV3Small
-  attn_encoder: PartialAttentionEncoder
+  attn_encoder: PartialAttentionEncoder # if applicable
   use_orthogonal: true
 
   # rnn:
@@ -49,7 +49,7 @@ critic:
   lr_scheduler_kwargs: 
 
   # mlp
-  hidden_units: [256, 128]
+  hidden_units: [256, 128, 128]
   layer_norm: true
 
   weight_decay: 0.0
@@ -65,6 +65,6 @@ critic:
   #   train_seq_len: 16
 
   vision_encoder: MobileNetV3Small
-  attn_encoder: PartialAttentionEncoder
+  attn_encoder: PartialAttentionEncoder # if applicable
   use_feature_normalization: true
   use_orthogonal: true

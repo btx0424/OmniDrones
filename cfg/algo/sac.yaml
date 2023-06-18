@@ -12,12 +12,12 @@ share_actor: true
 gradient_steps: 2048
 
 actor:
-  hidden_units: [256, 128]
+  hidden_units: [256, 128, 128]
   lr: 0.0005
   layer_norm: true
 
 critic:
-  hidden_units: [256, 128]
+  hidden_units: [256, 128, 128]
   lr: 0.0005
   layer_norm: true
 

@@ -127,3 +127,6 @@ def lemniscate(t, c):
 
     return x
 
+def scale_time(t, a: float=1.0):
+    return t / (1 + 1/(a*torch.abs(t)))
+

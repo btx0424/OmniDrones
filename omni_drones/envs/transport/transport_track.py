@@ -1,12 +1,11 @@
 from functorch import vmap
-
-import omni.isaac.core.utils.torch as torch_utils
 import torch
 import torch.distributions as D
 
-from omni.isaac.debug_draw import _debug_draw
+import omni.isaac.core.utils.torch as torch_utils
 import omni_drones.utils.kit as kit_utils
 import omni_drones.utils.scene as scene_utils
+from omni.isaac.debug_draw import _debug_draw
 
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import CompositeSpec, UnboundedContinuousTensorSpec
@@ -17,10 +16,8 @@ from omni_drones.utils.torch import cpos, off_diag, others, euler_to_quaternion
 from omni_drones.robots.drone import MultirotorBase
 
 from .utils import TransportationGroup, TransportationCfg
-from ..utils import lemniscate
+from ..utils import lemniscate, scale_time
 
-def scale_time(t, a: float=1.0):
-    return t / (1 + 1/(a*torch.abs(t)))
 
 class TransportTrack(IsaacEnv):
     def __init__(self, cfg, headless):
@@ -94,8 +91,8 @@ class TransportTrack(IsaacEnv):
             torch.tensor([3.6, 3.6, 1.6], device=self.device)
         )
         self.traj_w_dist = D.Uniform(
-            torch.tensor(0.6, device=self.device),
-            torch.tensor(0.9, device=self.device)
+            torch.tensor(0.8, device=self.device),
+            torch.tensor(1.1, device=self.device)
         )
         self.origin = torch.tensor([0., 0., 2.], device=self.device)
 

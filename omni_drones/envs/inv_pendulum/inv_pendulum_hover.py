@@ -183,7 +183,7 @@ class InvPendulumHover(IsaacEnv):
 
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort)
 
-        spin = torch.square(self.drone.up[..., -1])
+        spin = torch.square(self.drone.vel[..., -1])
         reward_spin = 1. / (1.0 + torch.square(spin))
 
         swing = torch.norm(self.payload_vels[..., :3], dim=-1, keepdim=True)

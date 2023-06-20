@@ -177,6 +177,8 @@ class PayloadHover(IsaacEnv):
             obs.append(t.expand(-1, self.time_encoding_dim).unsqueeze(1))
         obs = torch.cat(obs, dim=-1)
 
+        self.target_distance = torch.norm(self.target_payload_rpos[:, [0]], dim=-1)
+        self.stats["pos_error"].lerp_(self.target_distance, (1-self.alpha))
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
         self.smoothness = (
             self.drone.get_linear_smoothness() 
@@ -192,9 +194,7 @@ class PayloadHover(IsaacEnv):
 
     def _compute_reward_and_done(self):
         # pos reward
-        distance = torch.norm(self.target_payload_rpos[:, [0]], dim=-1)
-        
-        reward_pose = torch.exp(-self.reward_distance_scale * distance)
+        reward_pose = torch.exp(-self.reward_distance_scale * self.target_distance)
         
         # uprightness
         tiltage = torch.abs(1 - self.drone.up[..., 2])

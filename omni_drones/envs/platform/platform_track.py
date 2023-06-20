@@ -4,15 +4,17 @@ import torch.distributions as D
 
 import omni.isaac.core.utils.torch as torch_utils
 import omni.isaac.core.utils.prims as prim_utils
-import omni_drones.utils.kit as kit_utils
+import omni.isaac.core.objects as objects
 from omni.isaac.debug_draw import _debug_draw
+
+import omni_drones.utils.kit as kit_utils
 
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.views import RigidPrimView
-from omni_drones.utils.torch import cpos, off_diag, others
+from omni_drones.utils.torch import cpos, off_diag, others, normalize
 from omni_drones.robots.drone import MultirotorBase
 from omni_drones.utils.scene import design_scene
 from omni_drones.utils.torch import euler_to_quaternion
@@ -34,6 +36,11 @@ class PlatformTrack(IsaacEnv):
         self.future_traj_len = int(self.cfg.task.future_traj_len)
 
         self.platform.initialize()
+        self.target_vis = RigidPrimView(
+            "/World/envs/env_*/target",
+            reset_xform_properties=False
+        )
+        self.target_vis.initialize()
         
         self.init_vels = torch.zeros_like(self.platform.get_velocities())
 
@@ -128,6 +135,15 @@ class PlatformTrack(IsaacEnv):
         )
 
         design_scene()
+
+        sphere = objects.DynamicSphere(
+            "/World/envs/env_0/target",
+            translation=(0., 0., 2.5),
+            radius=0.05,
+            color=torch.tensor([1., 0., 0.])
+        )
+        kit_utils.set_collision_properties(sphere.prim_path, collision_enabled=False)
+        kit_utils.set_rigid_body_properties(sphere.prim_path, disable_gravity=True)
         return ["/World/defaultGroundPlane"]
 
     def _reset_idx(self, env_ids: torch.Tensor):
@@ -148,7 +164,12 @@ class PlatformTrack(IsaacEnv):
             platform_rot, env_indices=env_ids
         )
         self.platform.set_velocities(self.init_vels[env_ids], env_ids)
-        self.up_target[env_ids] = self.up_target_dist.sample(env_ids)
+
+        up_target = normalize(torch.randn(len(env_ids), 3, device=self.device)) * 3.
+        up_target[..., 2] = up_target[..., 2].abs()
+        up_target = up_target + self.origin
+        self.up_target[env_ids] = up_target
+        self.target_vis.set_world_poses(up_target + self.envs_positions[env_ids], env_indices=env_ids)
 
         self.stats[env_ids] = 0.
 
@@ -226,7 +247,8 @@ class PlatformTrack(IsaacEnv):
         # reward_pose = 1 / (1 + torch.square(distance * self.reward_distance_scale))
         reward_pose = torch.exp(- self.reward_distance_scale * self.target_distance)
         
-        up = torch.sum(self.platform.up * self.target_up.unsqueeze(1), dim=-1)
+        target_up = self.up_target - self.platform.pos
+        up = torch.sum(self.platform.up * target_up.unsqueeze(1), dim=-1)
         reward_up = torch.square((up + 1) / 2)
 
         spinnage = platform_vels[:, -3:].abs().sum(-1)

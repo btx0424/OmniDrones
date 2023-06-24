@@ -1,6 +1,6 @@
 program: train.py
 name: MultiPPO
-project: gpu-onpolicy
+project: omnidrones
 entity: marl-drones
 method: grid
 
@@ -31,6 +31,7 @@ parameters:
     - PlatformHover # easy
     - PlatformTrack
     - TransportFlyThrough # hard
+    # - Formation
     # - PlatformFlyThrough # medium
 
   total_frames: 
@@ -45,12 +46,12 @@ parameters:
   task.drone_model:
     values: [Hummingbird] #, Firefly]
 
-  task.action_transform:
-    values:
-      - None # sweep does not support passing "null"
-      # - multidiscrete:2
-      - multidiscrete:5
-      - discrete:2
+  # task.action_transform:
+  #   values:
+  #     - None # sweep does not support passing "null"
+  #     # - multidiscrete:2
+  #     - multidiscrete:5
+  #     - discrete:2
 
   # algo.num_minibatches:
   #   values: [16, 32]

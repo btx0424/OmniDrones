@@ -5,9 +5,9 @@ defaults:
   - /base/env_base@_here_
   - /base/sim_base@_here_
   # - /base/randomization_base@_here_
-
+  
 env:
-  num_envs: 2048
+  num_envs: 1024
 
 drone_model: Hummingbird
 num_drones: 4
@@ -16,13 +16,14 @@ time_encoding: true
 
 payload_mass_scale: [0.5, 0.8]
 
-reward_effort_weight: 0.1
+reward_effort_weight: 0.2
 reward_distance_scale: 1.0
 reward_action_smoothness_weight: 0.0
 reward_motion_smoothness_weight: 0.0
 safe_distance: 0.5
 
 reset_on_collision: false
+collision_penalty: 0.
 obstacle_spacing: [1., 1.2]
 
 flatten_obs: true

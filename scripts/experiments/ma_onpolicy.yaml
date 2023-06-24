@@ -27,8 +27,10 @@ parameters:
   task: 
     values: 
     - TransportHover # easy
+    - TransportTrack
     - PlatformHover # easy
-    # - TransportFlyThrough # hard
+    - PlatformTrack
+    - TransportFlyThrough # hard
     # - PlatformFlyThrough # medium
 
   total_frames: 
@@ -41,7 +43,7 @@ parameters:
     values: [0, 42, 81]
 
   task.drone_model:
-    values: [Firefly, Hummingbird]
+    values: [Hummingbird] #, Firefly]
 
   task.action_transform:
     values:

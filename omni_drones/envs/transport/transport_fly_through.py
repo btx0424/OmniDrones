@@ -31,9 +31,11 @@ class TransportFlyThrough(IsaacEnv):
         self.reward_action_smoothness_weight = self.cfg.task.reward_action_smoothness_weight
         self.reward_motion_smoothness_weight = self.cfg.task.reward_motion_smoothness_weight
         self.safe_distance = self.cfg.task.safe_distance
-        self.reset_on_collision = self.cfg.task.reset_on_collision
-        self.time_encoding = self.cfg.task.time_encoding
         self.obstacle_spacing = self.cfg.task.obstacle_spacing
+        self.reset_on_collision = self.cfg.task.reset_on_collision
+        self.collision_penalty = self.cfg.task.collision_penalty
+
+        self.time_encoding = self.cfg.task.time_encoding
 
         self.group.initialize(track_contact_forces=True)
         self.payload = self.group.payload_view
@@ -45,12 +47,6 @@ class TransportFlyThrough(IsaacEnv):
             track_contact_forces=True
         )
         self.obstacles.initialize()
-        
-        self.payload_target_visual = RigidPrimView(
-            "/World/envs/.*/payloadTargetVis",
-            reset_xform_properties=False
-        )
-        self.payload_target_visual.initialize()
         
         self.init_poses = self.group.get_world_poses(clone=True)
         self.init_velocities = torch.zeros_like(self.group.get_velocities())
@@ -99,14 +95,18 @@ class TransportFlyThrough(IsaacEnv):
         )
         payload_mass_scale = self.cfg.task.payload_mass_scale
         self.payload_mass_dist = D.Uniform(
-            torch.as_tensor(payload_mass_scale[0] * self.drone.mass_0.sum(), device=self.device),
-            torch.as_tensor(payload_mass_scale[1] * self.drone.mass_0.sum(), device=self.device)
+            torch.as_tensor(payload_mass_scale[0] * self.drone.MASS_0.sum(), device=self.device),
+            torch.as_tensor(payload_mass_scale[1] * self.drone.MASS_0.sum(), device=self.device)
         )
         self.obstacle_spacing_dist = D.Uniform(
             torch.tensor(self.obstacle_spacing[0], device=self.device),
             torch.tensor(self.obstacle_spacing[1], device=self.device)
         )
-        self.payload_target_pos = torch.tensor([1.75, 0., 1.5], device=self.device)
+        self.target_pos_dist = D.Uniform(
+            torch.tensor([1.75, -.2, 1.25], device=self.device),
+            torch.tensor([2.25, 0.2, 1.75], device=self.device)
+        )
+        self.payload_target_pos = torch.zeros(self.num_envs, 3, device=self.device)
 
         self.alpha = 0.8
         
@@ -148,21 +148,6 @@ class TransportFlyThrough(IsaacEnv):
             attributes={"axis": "Y", "radius": 0.04, "height": 5}
         )
 
-        DynamicCuboid(
-            "/World/envs/env_0/payloadTargetVis",
-            translation=(1.5, 0., 1.5),
-            scale=torch.tensor([0.5, 0.5, 0.2]),
-            color=torch.tensor([0.8, 0.1, 0.1]),
-            size=2.01,
-        )
-        kit_utils.set_collision_properties(
-            "/World/envs/env_0/payloadTargetVis",
-            collision_enabled=False
-        )
-        kit_utils.set_rigid_body_properties(
-            "/World/envs/env_0/payloadTargetVis",
-            disable_gravity=True
-        )
         self.group.spawn(translations=[(0, 0, 2.0)], enable_collision=True)
 
         return ["/World/defaultGroundPlane"]
@@ -191,6 +176,7 @@ class TransportFlyThrough(IsaacEnv):
             obstacle_pos + self.envs_positions[env_ids].unsqueeze(1), env_indices=env_ids
         )
         self.obstacle_pos[env_ids] = obstacle_pos
+        self.payload_target_pos[env_ids] = self.target_pos_dist.sample(env_ids.shape)
 
         self.stats.exclude("success")[env_ids] = 0.
         self.stats["success"][env_ids] = False
@@ -305,7 +291,7 @@ class TransportFlyThrough(IsaacEnv):
                 + reward_action_smoothness.mean(1, True)
                 + reward_motion_smoothness.mean(1, True)
                 + reward_effort
-            ) * (1 - collision_reward)
+            )  * (1. - self.collision_penalty * collision_reward)
         ).unsqueeze(1)
 
         done_misbehave = (
@@ -321,8 +307,8 @@ class TransportFlyThrough(IsaacEnv):
 
         if self.reset_on_collision:
             done = done | collision
-
-        self.stats["success"].bitwise_or_(self.payload_pos_error < 0.2)
+        success = (self.payload_pos_error < 0.2) & (self.drone.pos[..., 0] > 0.05).all(-1, True)
+        self.stats["success"].bitwise_or_(success)
         self._tensordict["return"] += reward
         return TensorDict(
             {

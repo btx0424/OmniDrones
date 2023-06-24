@@ -45,7 +45,7 @@ class PlatformTrack(IsaacEnv):
         self.init_vels = torch.zeros_like(self.platform.get_velocities())
 
         drone_state_dim = self.drone.state_spec.shape.numel()
-        frame_state_dim = 19 + (self.future_traj_len-1) * 3
+        frame_state_dim = 22 + (self.future_traj_len-1) * 3
         if self.time_encoding:
             self.time_encoding_dim = 4
             frame_state_dim += self.time_encoding_dim
@@ -166,7 +166,7 @@ class PlatformTrack(IsaacEnv):
         self.platform.set_velocities(self.init_vels[env_ids], env_ids)
 
         up_target = normalize(torch.randn(len(env_ids), 3, device=self.device)) * 3.
-        up_target[..., 2] = up_target[..., 2].abs()
+        up_target[..., 2] = up_target[..., 2].abs() + 0.1
         up_target = up_target + self.origin
         self.up_target[env_ids] = up_target
         self.target_vis.set_world_poses(up_target + self.envs_positions[env_ids], env_indices=env_ids)
@@ -197,12 +197,15 @@ class PlatformTrack(IsaacEnv):
         self.drone_rpos = vmap(off_diag)(self.drone_rpos)
 
         target_pos = self._compute_traj(self.future_traj_len, step_size=5)
+        target_up = normalize(self.up_target.unsqueeze(1) - self.platform.pos)
         target_platform_rpos = target_pos - self.platform.pos
+        target_platform_rup = target_up - self.platform.up
         self.target_distance = torch.norm(target_platform_rpos[..., 0, :], dim=-1, keepdim=True)
 
         platform_drone_rpos = self.platform.pos - self.drone_states[..., :3]
         platform_state = [
             target_platform_rpos.flatten(-2).unsqueeze(1),
+            target_platform_rup,
             self.platform_state[..., 3:],
         ]
         if self.time_encoding:
@@ -225,8 +228,10 @@ class PlatformTrack(IsaacEnv):
         state["drones"] = obs["obs_self"].squeeze(2)    # [num_envs, drone.n, drone_state_dim]
         state["frame"] = platform_state                # [num_envs, 1, platform_state_dim]
         
+        self.heading_alignment = torch.sum(self.platform.up * target_up, dim=-1)
+
         self.stats["pos_error"].lerp_(self.target_distance, (1-self.alpha))
-        # self.stats["heading_alignment"].lerp_(heading_alignment, (1-self.alpha))
+        self.stats["heading_alignment"].lerp_(self.heading_alignment, (1-self.alpha))
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference.mean(-1, True), (1-self.alpha))
         self.motion_smoothness = (
             self.platform.get_linear_smoothness() 
@@ -247,9 +252,7 @@ class PlatformTrack(IsaacEnv):
         # reward_pose = 1 / (1 + torch.square(distance * self.reward_distance_scale))
         reward_pose = torch.exp(- self.reward_distance_scale * self.target_distance)
         
-        target_up = self.up_target - self.platform.pos
-        up = torch.sum(self.platform.up * target_up.unsqueeze(1), dim=-1)
-        reward_up = torch.square((up + 1) / 2)
+        reward_up = torch.square((self.heading_alignment + 1) / 2)
 
         spinnage = platform_vels[:, -3:].abs().sum(-1)
         reward_spin = 1. / (1 + torch.square(spinnage))

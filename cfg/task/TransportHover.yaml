@@ -16,7 +16,7 @@ time_encoding: true
 
 payload_mass_scale: [0.5, 0.8]
 
-reward_effort_weight: 0.1
+reward_effort_weight: 0.2
 reward_spin_weight: 0.8
 reward_swing_weight: 0.8
 reward_action_smoothness_weight: 0.0

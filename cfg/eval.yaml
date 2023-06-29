@@ -3,10 +3,8 @@ headless: false
 sim: ${task.sim}
 env: ${task.env}
 
-total_frames: 250_000_000
-max_iters: -1
-eval_interval: -1
-save_interval: -1
+total_frames: -1
+total_episodes: ${eval:2 * ${env.num_envs}}
 seed: 0
 
 viewer:

@@ -61,10 +61,6 @@ class FlyThrough(IsaacEnv):
 
         drone_state_dim = self.drone.state_spec.shape[-1]
         observation_spec = UnboundedContinuousTensorSpec(drone_state_dim + 6)
-        
-        state_spec = CompositeSpec({
-            'state': UnboundedContinuousTensorSpec((1, drone_state_dim + 6))
-        })
 
         self.agent_spec["drone"] = AgentSpec(
             "drone",
@@ -72,7 +68,6 @@ class FlyThrough(IsaacEnv):
             observation_spec.to(self.device),
             self.drone.action_spec.to(self.device),
             UnboundedContinuousTensorSpec(1).to(self.device),
-            state_spec.to(self.device),
         )
 
         self.init_pos_dist = D.Uniform(
@@ -202,7 +197,6 @@ class FlyThrough(IsaacEnv):
         
         return TensorDict({
             "drone.obs": obs,
-            "drone.state": TensorDict({'state': state}, [self.num_envs]),
             "stats": self.stats,
             "info": self.info
         }, self.batch_size)

@@ -19,6 +19,5 @@ gate_moving_range: 1.0
 gate_scale: 1.1
 reset_on_collision: false
 
-flatten_state: true
 
 action_transform: null

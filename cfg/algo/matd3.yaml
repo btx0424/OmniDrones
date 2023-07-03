@@ -18,10 +18,14 @@ actor:
   lr: 0.0005
   layer_norm: true
 
+  attn_encoder: PartialAttentionEncoder # if applicable
+
 critic:
   hidden_units: [256, 128, 128]
   lr: 0.0005
   layer_norm: true
+
+  attn_encoder: PartialAttentionEncoder # if applicable
 
 critic_loss: smooth_l1
 

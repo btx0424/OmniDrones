@@ -132,7 +132,7 @@ class MATD3Policy(object):
         return actor_output
 
     def train_op(self, data: TensorDict):
-        self.replay_buffer.extend(data.reshape(-1))
+        self.replay_buffer.extend(data.to("cpu").reshape(-1))
 
         if len(self.replay_buffer) < self.cfg.buffer_size:
             print(f"{len(self.replay_buffer)} < {self.cfg.buffer_size}")

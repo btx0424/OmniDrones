@@ -32,7 +32,7 @@ parameters:
     value: true
   
   seed:
-    values: [0, 42] #, 81] #, 57]
+    values: [0, 42, 81] #, 57]
 
   task.drone_model:
     values: [Firefly, Hummingbird, Omav]

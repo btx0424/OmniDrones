@@ -22,16 +22,17 @@ parameters:
     value: [256, 128, 128]
 
   algo.critic_input:
-    value: state
+    # value: state
+    value: obs
 
   task: 
     values: 
-    - TransportHover # easy
-    - TransportTrack
-    - PlatformHover # easy
-    - PlatformTrack
-    - TransportFlyThrough # hard
-    # - Formation
+    # - TransportHover # easy
+    # - TransportTrack
+    # - PlatformHover # easy
+    # - PlatformTrack
+    # - TransportFlyThrough # hard
+    - Formation
     # - PlatformFlyThrough # medium
 
   total_frames: 

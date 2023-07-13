@@ -119,6 +119,8 @@ class IsaacEnv(EnvBase):
         )
         self.progress_buf = self._tensordict["progress"]
         self._set_specs()
+        import pprint
+        pprint.pprint(self.fake_tensordict().shapes)
         
 
     @classmethod

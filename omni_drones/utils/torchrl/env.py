@@ -27,8 +27,10 @@ class AgentSpec:
     def action_spec(self) -> TensorSpec:
         if self.action_key is None:
             return self._env.action_spec
-        return self._env.action_spec[self.action_key]
-        return self._env.input_spec["_action_spec"][self.action_key]
+        try:
+            return self._env.input_spec["_action_spec"][self.action_key]
+        except:
+            return self._env.action_spec[self.action_key]
     
     @property
     def state_spec(self) -> TensorSpec:
@@ -43,13 +45,19 @@ class AgentSpec:
     def reward_spec(self) -> TensorSpec:
         if self.reward_key is None:
             return self._env.reward_spec
-        return self._env.reward_spec[self.reward_key]
+        try:
+            return self._env.output_spec["_reward_spec"][self.reward_key]
+        except:
+            return self._env.reward_spec[self.reward_key]
 
     @property
     def done_spec(self) -> TensorSpec:
         if self.done_key is None:
             return self._env.done_spec
-        return self._env.done_spec[self.done_key]
+        try:
+            return self._env.output_spec["_done_spec"][self.done_key]
+        except:
+            return self._env.done_spec[self.done_key]
 
 
 class SyncDataCollector(_SyncDataCollector):

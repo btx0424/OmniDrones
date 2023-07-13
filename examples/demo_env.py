@@ -51,7 +51,6 @@ def main(cfg):
         tensordict["controller_state"] = controller_state
         return tensordict
 
-    env.enable_render = True
     env.rollout(
         max_steps=env.num_envs * 1000,
         policy=policy,

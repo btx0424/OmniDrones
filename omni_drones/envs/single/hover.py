@@ -11,7 +11,9 @@ from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.robots.drone import MultirotorBase, MultirotorCfg
 from omni_drones.views import ArticulationView
 from tensordict.tensordict import TensorDict, TensorDictBase
-from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec
+from torchrl.data import (
+    UnboundedContinuousTensorSpec, CompositeSpec, DiscreteTensorSpec
+)
 
 
 class Hover(IsaacEnv):
@@ -36,19 +38,6 @@ class Hover(IsaacEnv):
         self.target_vis.initialize()
         self.init_poses = self.drone.get_world_poses(clone=True)
         self.init_vels = torch.zeros_like(self.drone.get_velocities())
-
-        drone_state_dim = self.drone.state_spec.shape[-1]
-        if self.time_encoding:
-            self.time_encoding_dim = 4
-            drone_state_dim += self.time_encoding_dim
-
-        self.agent_spec["drone"] = AgentSpec(
-            "drone",
-            1,
-            UnboundedContinuousTensorSpec(drone_state_dim + 3).to(self.device),
-            self.drone.action_spec.to(self.device),
-            UnboundedContinuousTensorSpec(1).to(self.device),
-        )
 
         self.init_pos_dist = D.Uniform(
             torch.tensor([-2.5, -2.5, 1.], device=self.device),
@@ -81,7 +70,6 @@ class Hover(IsaacEnv):
         self.observation_spec["info"] = info_spec
         self.stats = stats_spec.zero()
         self.info = info_spec.zero()
-
 
     def _design_scene(self):
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
@@ -120,6 +108,42 @@ class Hover(IsaacEnv):
         )
         self.drone.spawn(translations=[(0.0, 0.0, 2.)])
         return ["/World/defaultGroundPlane"]
+
+    def _set_specs(self):
+        drone_state_dim = self.drone.state_spec.shape[-1]
+        observation_dim = drone_state_dim + 3
+
+        if self.cfg.task.time_encoding:
+            self.time_encoding_dim = 4
+            observation_dim += self.time_encoding_dim
+
+        self.observation_spec = CompositeSpec({
+            "drone.obs": UnboundedContinuousTensorSpec((1, observation_dim)) ,
+            # "stats": stats_spec,
+            # "info": info_spec,
+        }).expand(self.num_envs).to(self.device)
+        self.action_spec = CompositeSpec({
+            "drone": self.drone.action_spec.unsqueeze(0),
+        }).expand(self.num_envs).to(self.device)
+        # self.reward_spec = (
+        #     UnboundedContinuousTensorSpec(1)
+        #     .expand(self.num_envs, 1, 1)
+        #     .to(self.device)
+        # )
+        self.reward_spec = CompositeSpec({
+            "drone.reward": UnboundedContinuousTensorSpec((1, 1))
+        }).expand(self.num_envs).to(self.device)
+        self.done_spec = (
+            DiscreteTensorSpec(2, dtype=bool)
+            .expand(self.num_envs, 1)
+            .to(self.device)
+        )
+        self.agent_spec["drone"] = AgentSpec(
+            "drone", 1,
+            observation_key="drone.obs",
+            action_key="drone",
+            reward_key="drone.reward",
+        )
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids, self.training)
@@ -213,11 +237,9 @@ class Hover(IsaacEnv):
             | done_hasnan
         )
 
-        self._tensordict["return"] += reward.unsqueeze(-1)
         return TensorDict(
             {
                 "reward": {"drone.reward": reward.unsqueeze(-1)},
-                "return": self._tensordict["return"],
                 "done": done,
             },
             self.batch_size,

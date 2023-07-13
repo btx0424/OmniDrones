@@ -4,7 +4,9 @@ from typing import Any, Dict, Optional, Sequence, Union
 import torch
 from tensordict.tensordict import TensorDictBase, TensorDict
 from torchrl.data.tensor_specs import TensorSpec
+from torchrl.envs.common import EnvBase
 from torchrl.envs.transforms import (
+    TransformedEnv,
     Transform,
     Compose,
     FlattenObservation,
@@ -18,6 +20,26 @@ from torchrl.data import (
     MultiDiscreteTensorSpec,
     CompositeSpec,
 )
+from .env import AgentSpec
+from dataclasses import replace
+
+
+def _transform_agent_spec(self: Transform, agent_spec: AgentSpec) -> AgentSpec:
+    return agent_spec
+Transform.transform_agent_spec = _transform_agent_spec
+
+
+def _transform_agent_spec(self: Compose, agent_spec: AgentSpec) -> AgentSpec:
+    for transform in self.transforms:
+        agent_spec = transform.transform_agent_spec(agent_spec)
+    return agent_spec
+Compose.transform_agent_spec = _transform_agent_spec
+
+
+def _agent_spec(self: TransformedEnv) -> AgentSpec:
+    agent_spec = self.transform.transform_agent_spec(self.base_env.agent_spec)
+    return {name: replace(spec, _env=self) for name, spec in agent_spec.items()}
+TransformedEnv.agent_spec = property(_agent_spec)
 
 
 class LogOnEpisode(Transform):

@@ -11,8 +11,8 @@ from functorch import vmap
 from omegaconf import OmegaConf
 
 from omni_drones import CONFIG_PATH, init_simulation_app
-from omni_drones.utils.torchrl import SyncDataCollector, AgentSpec
-from omni_drones.utils.envs.transforms import (
+from omni_drones.utils.torchrl.env import SyncDataCollector, AgentSpec
+from omni_drones.utils.torchrl.transforms import (
     DepthImageNorm,
     LogOnEpisode, 
     FromMultiDiscreteAction, 
@@ -94,8 +94,8 @@ def main(cfg):
     ]
     logger = LogOnEpisode(
         cfg.env.num_envs,
-        in_keys=["return", "return", "progress", *stats_keys],
-        log_keys=["return", "return_std", "ep_length", *stats_keys],
+        in_keys=["progress", *stats_keys],
+        log_keys=["ep_length", *stats_keys],
         logger_func=log,
         process_func={"return_std": lambda x: torch.std(x).item()}
     )
@@ -158,15 +158,7 @@ def main(cfg):
     camera.spawn(["/World/Camera"], translations=[(7.5, 7.5, 7.5)], targets=[(0, 0, 0.5)])
     camera.initialize("/World/Camera")
 
-    # TODO: create a agent_spec view for TransformedEnv
-    agent_spec = AgentSpec(
-        name=base_env.agent_spec["drone"].name,
-        n=base_env.agent_spec["drone"].n,
-        observation_spec=env.observation_spec["drone.obs"],
-        action_spec=env.action_spec["drone.action"],
-        reward_spec=env.reward_spec["drone.reward"],
-        state_spec=env.observation_spec["drone.state"] if base_env.agent_spec["drone"].state_spec is not None else None,
-    )
+    agent_spec: AgentSpec = env.agent_spec["drone"]
     policy = algos[cfg.algo.name.lower()](
         cfg.algo, agent_spec=agent_spec, device="cuda"
     )

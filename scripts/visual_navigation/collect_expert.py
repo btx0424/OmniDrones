@@ -18,7 +18,7 @@ from setproctitle import setproctitle
 from tensordict import TensorDict
 from tensordict.nn import TensorDictModule
 from torchrl.envs.transforms import TransformedEnv, InitTracker, Compose
-from omni_drones.utils.envs.transforms import DepthImageNorm
+from omni_drones.utils.torchrl.transforms import DepthImageNorm
 
 from tqdm import tqdm
 from functools import partial

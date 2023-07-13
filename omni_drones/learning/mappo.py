@@ -19,7 +19,7 @@ from torchrl.data import (
     UnboundedContinuousTensorSpec as UnboundedTensorSpec,
 )
 
-from omni_drones.utils.torchrl import AgentSpec
+from omni_drones.utils.torchrl.env import AgentSpec
 
 from .utils import valuenorm
 from .utils.gae import compute_gae
@@ -449,6 +449,7 @@ def make_ppo_actor(cfg, observation_spec: TensorSpec, action_spec: TensorSpec):
 
 
 def make_critic(cfg, state_spec: TensorSpec, reward_spec: TensorSpec, centralized=False):
+    assert isinstance(reward_spec, (UnboundedTensorSpec, BoundedTensorSpec))
     encoder = make_encoder(cfg, state_spec)
     
     if cfg.get("rnn", None):

@@ -118,12 +118,8 @@ class IsaacEnv(EnvBase):
             self.batch_size,
         )
         self.progress_buf = self._tensordict["progress"]
-        self.observation_spec = CompositeSpec(shape=self.batch_size)
-        self.action_spec = CompositeSpec(shape=self.batch_size)
-        self.reward_spec = CompositeSpec(shape=self.batch_size)
-        self.done_spec = DiscreteTensorSpec(
-            n=2, shape=(*self.batch_size, 1), dtype=torch.bool, device=self.device
-        )
+        self._set_specs()
+        
 
     @classmethod
     def __init_subclass__(cls, **kwargs):
@@ -139,12 +135,17 @@ class IsaacEnv(EnvBase):
         if not hasattr(self, "_agent_spec"):
             self._agent_spec = {}
         return _AgentSpecView(self)
+    
+    @agent_spec.setter
+    def agent_spec(self, value):
+        raise AttributeError(
+            "Do not set agent_spec directly."
+            "Use `self.agent_spec[agent_name] = AgentSpec(...)` instead."
+        )
 
-    @property
-    def DEFAULT_CAMERA_CONFIG(self):
-        import copy
-
-        return copy.deepcopy(self._DEFAULT_CAMERA_CONFIG)
+    @abc.abstractmethod
+    def _set_specs(self):
+        raise NotImplementedError
 
     @abc.abstractmethod
     def _design_scene(self) -> Optional[List[str]]:
@@ -186,7 +187,6 @@ class IsaacEnv(EnvBase):
         # self.sim.step(render=False)
         self.sim._physics_sim_view.flush()
         self.progress_buf[env_ids] = 0.
-        self._tensordict["return"][env_ids] = 0.
         return self._tensordict.update(self._compute_state_and_obs())
 
     @abc.abstractmethod
@@ -282,31 +282,7 @@ class _AgentSpecView(Dict[str, AgentSpec]):
         super().__init__(env._agent_spec)
         self.env = env
 
-    def __setitem__(self, __key, __value) -> None:
-        if isinstance(__value, AgentSpec):
-            if __key in self:
-                raise ValueError(
-                    f"Can not set agent_spec with duplicated name {__key}."
-                )
-            name = __value.name
-
-            def expand(spec: TensorSpec) -> TensorSpec:
-                return spec.expand(*self.env.batch_size, __value.n, *spec.shape)
-
-            self.env.observation_spec[f"{name}.obs"] = expand(__value.observation_spec)
-            if __value.state_spec is not None:
-                shape = (*self.env.batch_size, *__value.state_spec.shape)
-                self.env.observation_spec[f"{name}.state"] = __value.state_spec.expand(
-                    *shape
-                )
-            self.env.action_spec[f"{name}.action"] = expand(__value.action_spec)
-            self.env.reward_spec[f"{name}.reward"] = expand(__value.reward_spec)
-
-            self.env._tensordict["return"] = self.env.reward_spec[
-                f"{name}.reward"
-            ].zero()
-            super().__setitem__(__key, __value)
-            self.env._agent_spec[__key] = __value
-        else:
-            raise TypeError
+    def __setitem__(self, k: str, v: AgentSpec) -> None:
+        v._env = self.env
+        return self.env._agent_spec.__setitem__(k, v)
 

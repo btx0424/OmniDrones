@@ -21,7 +21,6 @@ class Hover(IsaacEnv):
         super().__init__(cfg, headless)
         self.reward_effort_weight = self.cfg.task.reward_effort_weight
         self.reward_action_smoothness_weight = self.cfg.task.reward_action_smoothness_weight
-        self.reward_motion_smoothness_weight = self.cfg.task.reward_motion_smoothness_weight
         self.reward_distance_scale = self.cfg.task.reward_distance_scale
         self.time_encoding = self.cfg.task.time_encoding
 
@@ -55,21 +54,6 @@ class Hover(IsaacEnv):
         self.target_pos = torch.tensor([[0.0, 0.0, 2.]], device=self.device)
         self.target_heading = torch.zeros(self.num_envs, 1, 3, device=self.device)
         self.alpha = 0.8
-
-        stats_spec = CompositeSpec({
-            "pos_error": UnboundedContinuousTensorSpec(1),
-            "heading_alignment": UnboundedContinuousTensorSpec(1),
-            "uprightness": UnboundedContinuousTensorSpec(1),
-            "action_smoothness": UnboundedContinuousTensorSpec(1),
-            "motion_smoothness": UnboundedContinuousTensorSpec(1)
-        }).expand(self.num_envs).to(self.device)
-        info_spec = CompositeSpec({
-            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13)),
-        }).expand(self.num_envs).to(self.device)
-        self.observation_spec["stats"] = stats_spec
-        self.observation_spec["info"] = info_spec
-        self.stats = stats_spec.zero()
-        self.info = info_spec.zero()
 
     def _design_scene(self):
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
@@ -119,31 +103,36 @@ class Hover(IsaacEnv):
 
         self.observation_spec = CompositeSpec({
             "drone.obs": UnboundedContinuousTensorSpec((1, observation_dim)) ,
-            # "stats": stats_spec,
-            # "info": info_spec,
         }).expand(self.num_envs).to(self.device)
         self.action_spec = CompositeSpec({
-            "drone": self.drone.action_spec.unsqueeze(0),
+            "drone.action": self.drone.action_spec.unsqueeze(0),
         }).expand(self.num_envs).to(self.device)
-        # self.reward_spec = (
-        #     UnboundedContinuousTensorSpec(1)
-        #     .expand(self.num_envs, 1, 1)
-        #     .to(self.device)
-        # )
         self.reward_spec = CompositeSpec({
             "drone.reward": UnboundedContinuousTensorSpec((1, 1))
         }).expand(self.num_envs).to(self.device)
-        self.done_spec = (
-            DiscreteTensorSpec(2, dtype=bool)
-            .expand(self.num_envs, 1)
-            .to(self.device)
-        )
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,
             observation_key="drone.obs",
-            action_key="drone",
+            action_key="drone.action",
             reward_key="drone.reward",
         )
+
+        stats_spec = CompositeSpec({
+            "return": UnboundedContinuousTensorSpec(1),
+            "episode_len": UnboundedContinuousTensorSpec(1),
+            "pos_error": UnboundedContinuousTensorSpec(1),
+            "heading_alignment": UnboundedContinuousTensorSpec(1),
+            "uprightness": UnboundedContinuousTensorSpec(1),
+            "action_smoothness": UnboundedContinuousTensorSpec(1),
+        }).expand(self.num_envs).to(self.device)
+        info_spec = CompositeSpec({
+            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13)),
+        }).expand(self.num_envs).to(self.device)
+        self.observation_spec["stats"] = stats_spec
+        self.observation_spec["info"] = info_spec
+        self.stats = stats_spec.zero()
+        self.info = info_spec.zero()
+
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids, self.training)
@@ -181,18 +170,6 @@ class Hover(IsaacEnv):
             obs.append(t.expand(-1, self.time_encoding_dim).unsqueeze(1))
         obs = torch.cat(obs, dim=-1)
 
-        pos_error = torch.norm(self.rpos, dim=-1)
-        heading_alignment = torch.sum(self.root_state[..., 13:16] * self.target_heading, dim=-1)
-        self.stats["pos_error"].lerp_(pos_error, (1-self.alpha))
-        self.stats["heading_alignment"].lerp_(heading_alignment, (1-self.alpha))
-        self.stats["uprightness"].lerp_(self.root_state[..., 18], (1-self.alpha))
-        self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
-        self.smoothness = (
-            self.drone.get_linear_smoothness() 
-            + self.drone.get_angular_smoothness()
-        )
-        self.stats["motion_smoothness"].lerp_(self.smoothness, (1-self.alpha))
-        
         return TensorDict({
             "drone.obs": obs,
             "stats": self.stats,
@@ -200,24 +177,24 @@ class Hover(IsaacEnv):
         }, self.batch_size)
 
     def _compute_reward_and_done(self):
-        pos, rot, vels, heading, up = self.root_state[..., :19].split([3, 4, 6, 3, 3], dim=-1)
-
         # pose reward
+        pos_error = torch.norm(self.rpos, dim=-1)
+        heading_alignment = torch.sum(self.drone.heading * self.target_heading, dim=-1)
+        
         distance = torch.norm(torch.cat([self.rpos, self.rheading], dim=-1), dim=-1)
 
         reward_pose = 1.0 / (1.0 + torch.square(self.reward_distance_scale * distance))
         # pose_reward = torch.exp(-distance * self.reward_distance_scale)
         # uprightness
-        reward_up = torch.square((up[..., 2] + 1) / 2)
+        reward_up = torch.square((self.drone.up[..., 2] + 1) / 2)
 
         # spin reward
-        spinnage = torch.square(vels[..., -1])
+        spinnage = torch.square(self.drone.vel[..., -1])
         reward_spin = 1.0 / (1.0 + torch.square(spinnage))
 
         # effort
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort)
         reward_action_smoothness = self.reward_action_smoothness_weight * torch.exp(-self.drone.throttle_difference)
-        reward_motion_smoothness = self.reward_motion_smoothness_weight * (self.smoothness / 1000)
 
         assert reward_pose.shape == reward_up.shape == reward_spin.shape
         reward = (
@@ -225,17 +202,21 @@ class Hover(IsaacEnv):
             + reward_pose * (reward_up + reward_spin) 
             + reward_effort 
             + reward_action_smoothness
-            + reward_motion_smoothness
         )
         
-        done_misbehave = (pos[..., 2] < 0.2) | (distance > 4)
-        done_hasnan = torch.isnan(self.root_state).any(-1)
+        done_misbehave = (self.drone.pos[..., 2] < 0.2) | (distance > 4)
 
         done = (
             (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
             | done_misbehave
-            | done_hasnan
         )
+
+        self.stats["pos_error"].lerp_(pos_error, (1-self.alpha))
+        self.stats["heading_alignment"].lerp_(heading_alignment, (1-self.alpha))
+        self.stats["uprightness"].lerp_(self.root_state[..., 18], (1-self.alpha))
+        self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
+        self.stats["return"] += reward
+        self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
 
         return TensorDict(
             {

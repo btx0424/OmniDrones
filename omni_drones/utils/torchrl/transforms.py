@@ -84,12 +84,13 @@ class LogOnEpisode(Transform):
                 stats: TensorDictBase = torch.stack(self.stats)
                 dict_to_log = {}
                 for in_key, log_key in zip(self.in_keys, self.log_keys):
-                    if in_key in stats.keys(True, True):
+                    try:
                         process_func = self.process_func[log_key]
                         if isinstance(log_key, tuple):
                             log_key = ".".join(log_key)
                         dict_to_log[log_key] = process_func(stats[in_key])
-                
+                    except:
+                        pass
                 if self.training:
                     dict_to_log = {f"train/{k}": v for k, v in dict_to_log.items()}
                 else:

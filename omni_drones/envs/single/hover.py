@@ -102,19 +102,25 @@ class Hover(IsaacEnv):
             observation_dim += self.time_encoding_dim
 
         self.observation_spec = CompositeSpec({
-            "drone.obs": UnboundedContinuousTensorSpec((1, observation_dim)) ,
+            "agents":{
+                "observation": UnboundedContinuousTensorSpec((1, observation_dim)) ,
+            }
         }).expand(self.num_envs).to(self.device)
         self.action_spec = CompositeSpec({
-            "drone.action": self.drone.action_spec.unsqueeze(0),
+            "agents": {
+                "action": self.drone.action_spec.unsqueeze(0),
+            }
         }).expand(self.num_envs).to(self.device)
         self.reward_spec = CompositeSpec({
-            "drone.reward": UnboundedContinuousTensorSpec((1, 1))
+            "agents": {
+                "reward": UnboundedContinuousTensorSpec((1, 1))
+            }
         }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,
-            observation_key="drone.obs",
-            action_key="drone.action",
-            reward_key="drone.reward",
+            observation_key=("agents", "observation"),
+            action_key=("agents", "action"),
+            reward_key=("agents", "reward"),
         )
 
         stats_spec = CompositeSpec({
@@ -153,7 +159,7 @@ class Hover(IsaacEnv):
         self.stats[env_ids] = 0.
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
-        actions = tensordict[("action", "drone.action")]
+        actions = tensordict[("agents", "action")].clone()
         self.effort = self.drone.apply_action(actions)
 
     def _compute_state_and_obs(self):
@@ -171,7 +177,9 @@ class Hover(IsaacEnv):
         obs = torch.cat(obs, dim=-1)
 
         return TensorDict({
-            "drone.obs": obs,
+            "agents": {
+                "observation": obs,
+            },
             "stats": self.stats,
             "info": self.info
         }, self.batch_size)
@@ -220,7 +228,9 @@ class Hover(IsaacEnv):
 
         return TensorDict(
             {
-                "reward": {"drone.reward": reward.unsqueeze(-1)},
+                "agents": {
+                    "reward": reward.unsqueeze(-1)
+                },
                 "done": done,
             },
             self.batch_size,

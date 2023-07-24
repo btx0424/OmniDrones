@@ -154,9 +154,9 @@ def main(cfg):
         ),
     )
     
-    camera = Camera(camera_cfg)
-    camera.spawn(["/World/Camera"], translations=[(7.5, 7.5, 7.5)], targets=[(0, 0, 0.5)])
-    camera.initialize("/World/Camera")
+    # camera = Camera(camera_cfg)
+    # camera.spawn(["/World/Camera"], translations=[(7.5, 7.5, 7.5)], targets=[(0, 0, 0.5)])
+    # camera.initialize("/World/Camera")
 
     agent_spec: AgentSpec = env.agent_spec["drone"]
     policy = algos[cfg.algo.name.lower()](
@@ -211,6 +211,7 @@ def main(cfg):
     pbar = tqdm(collector)
     for i, data in enumerate(pbar):
         info = {"env_frames": collector._frames, "rollout_fps": collector._fps}
+        continue
         info.update(policy.train_op(data))
 
         if eval_interval > 0 and i % eval_interval == 0:
@@ -236,7 +237,7 @@ def main(cfg):
     
     logging.info(f"Final Eval at {collector._frames} steps.")
     info = {"env_frames": collector._frames}
-    info.update(evaluate())
+    # info.update(evaluate())
     run.log(info)
 
     if hasattr(policy, "state_dict"):

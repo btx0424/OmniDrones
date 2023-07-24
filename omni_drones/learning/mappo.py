@@ -58,10 +58,13 @@ class MAPPOPolicy(object):
                 self.agent_spec.reward_spec.shape, device=device
             )
 
-        self.obs_name = f"{self.agent_spec.name}.obs"
-        self.act_name = ("action", f"{self.agent_spec.name}.action")
-        self.state_name = f"{self.agent_spec.name}.state"
-        self.reward_name = f"{self.agent_spec.name}.reward"
+        # self.obs_name = f"{self.agent_spec.name}.obs"
+        # self.act_name = ("action", f"{self.agent_spec.name}.action")
+        # self.state_name = f"{self.agent_spec.name}.state"
+        # self.reward_name = f"{self.agent_spec.name}.reward"
+        self.obs_name = ("agents", "observation")
+        self.act_name = ("agents", "action")
+        self.reward_name = ("agents", "reward")
 
         self.make_actor()
         self.make_critic()
@@ -151,7 +154,7 @@ class MAPPOPolicy(object):
             ).to(self.device)
             self.value_func = self.critic
         else:
-            self.critic_in_keys = [f"{self.agent_spec.name}.obs"]
+            self.critic_in_keys = [self.obs_name]
             self.critic_out_keys = ["state_value"]
             if cfg.get("rnn", None):
                 self.critic_in_keys.extend([
@@ -213,7 +216,7 @@ class MAPPOPolicy(object):
         )
 
         tensordict.update(actor_output)
-        tensordict["action"].batch_size = tensordict.shape
+        # tensordict[self.act_name].batch_size = tensordict.shape
         tensordict.update(self.value_op(tensordict))
         return tensordict
 
@@ -308,7 +311,7 @@ class MAPPOPolicy(object):
         with torch.no_grad():
             value_output = self.value_op(next_tensordict)
 
-        rewards = tensordict.get(("next", "reward", f"{self.agent_spec.name}.reward"))
+        rewards = tensordict.get(("next", *self.reward_name))
         if rewards.shape[-1] != 1:
             rewards = rewards.sum(-1, keepdim=True)
 

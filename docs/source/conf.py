@@ -61,4 +61,5 @@ autodoc_mock_imports = [
     "gym",
     "tqdm",
     "toml",
+    "yaml",
 ]

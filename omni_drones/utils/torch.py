@@ -135,3 +135,19 @@ def make_cells(
         cells = (cells.narrow(dim, 0, cells.size(dim)-1) + cells.narrow(dim, 1, cells.size(dim)-1)) / 2
     return cells
 
+
+def quat_rotate(q: torch.Tensor, v: torch.Tensor):
+    shape = q.shape
+    q_w = q[:, 0]
+    q_vec = q[:, 1:]
+    a = v * (2.0 * q_w ** 2 - 1.0).unsqueeze(-1)
+    b = torch.cross(q_vec, v, dim=-1) * q_w.unsqueeze(-1) * 2.0
+    c = q_vec * torch.bmm(q_vec.view(shape[0], 1, 3), v.view(shape[0], 3, 1)).squeeze(-1) * 2.0
+    return a + b + c
+
+
+def quat_axis(q: torch.Tensor, axis: int=0):
+    basis_vec = torch.zeros(q.shape[0], 3, device=q.device)
+    basis_vec[:, axis] = 1
+    return quat_rotate(q, basis_vec)
+

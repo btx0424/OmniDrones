@@ -15,6 +15,8 @@ Welcome to OmniDrones's documentation!
    installation/workstation
    installation/container
 
+   tasks
+
 
 Indices and tables
 ==================

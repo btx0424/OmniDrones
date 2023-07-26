@@ -1,22 +1,26 @@
 import functorch
-
-import omni.isaac.core.utils.torch as torch_utils
-import omni_drones.utils.kit as kit_utils
-from omni_drones.utils.torch import euler_to_quaternion, normalize
-import omni.isaac.core.utils.prims as prim_utils
 import torch
 import torch.distributions as D
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.robots.drone import MultirotorBase, MultirotorCfg
 from omni_drones.views import ArticulationView
+from omni_drones.utils.torch import euler_to_quaternion, normalize, quat_axis
+
 from tensordict.tensordict import TensorDict, TensorDictBase
-from torchrl.data import (
-    UnboundedContinuousTensorSpec, CompositeSpec, DiscreteTensorSpec
-)
+from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec
 
 
 class Hover(IsaacEnv):
+    """
+    A basic control task. The goal for the agent is to maintain a stable
+    position and heading in mid-air without drifting. 
+
+    observation:
+
+    reward: 
+
+    """
     def __init__(self, cfg, headless):
         super().__init__(cfg, headless)
         self.reward_effort_weight = self.cfg.task.reward_effort_weight
@@ -56,6 +60,9 @@ class Hover(IsaacEnv):
         self.alpha = 0.8
 
     def _design_scene(self):
+        import omni_drones.utils.kit as kit_utils
+        import omni.isaac.core.utils.prims as prim_utils
+
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
         cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
         self.drone: MultirotorBase = drone_model(cfg=cfg)
@@ -144,7 +151,7 @@ class Hover(IsaacEnv):
 
         target_rpy = self.target_rpy_dist.sample((*env_ids.shape, 1))
         target_rot = euler_to_quaternion(target_rpy)
-        self.target_heading[env_ids] = torch_utils.quat_axis(target_rot.squeeze(1), 0).unsqueeze(1)
+        self.target_heading[env_ids] = quat_axis(target_rot.squeeze(1), 0).unsqueeze(1)
         self.target_vis.set_world_poses(orientations=target_rot, env_indices=env_ids)
 
         self.stats[env_ids] = 0.

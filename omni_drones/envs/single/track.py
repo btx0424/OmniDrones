@@ -16,6 +16,17 @@ from omni.isaac.debug_draw import _debug_draw
 from ..utils import lemniscate, scale_time
 
 class Track(IsaacEnv):
+    """
+    A basic control task. The goal for the agent is to track a reference lemniscate 
+    trajectory in the 3D space. 
+
+    observation:
+
+    reward:
+
+    config:
+
+    """
     def __init__(self, cfg, headless):
         super().__init__(cfg, headless)
         self.reset_thres = self.cfg.task.reset_thres

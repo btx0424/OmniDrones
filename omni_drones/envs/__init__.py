@@ -1,4 +1,4 @@
-from .single import Hover, Track
+from .single import Hover, Track, TrackV1
 from .platform import PlatformHover, PlatformFlyThrough
 from .inv_pendulum import InvPendulumHover, InvPendulumFlyThrough
 from .transport import TransportHover, TransportFlyThrough, TransportTrack

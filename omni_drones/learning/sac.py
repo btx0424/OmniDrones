@@ -37,13 +37,16 @@ class SACPolicy(object):
         self.buffer_size = int(cfg.buffer_size)
         self.batch_size = int(cfg.batch_size)
 
-        self.obs_name = f"{self.agent_spec.name}.obs"
-        self.act_name = ("action", f"{self.agent_spec.name}.action")
-        if agent_spec.state_spec is not None:
-            self.state_name = f"{self.agent_spec.name}.state"
-        else:
-            self.state_name = f"{self.agent_spec.name}.obs"
-        self.reward_name = f"{self.agent_spec.name}.reward"
+        # self.obs_name = f"{self.agent_spec.name}.obs"
+        # self.act_name = ("action", f"{self.agent_spec.name}.action")
+        # if agent_spec.state_spec is not None:
+        #     self.state_name = f"{self.agent_spec.name}.state"
+        # else:
+        #     self.state_name = f"{self.agent_spec.name}.obs"
+        # self.reward_name = f"{self.agent_spec.name}.reward"
+        self.obs_name = ("agents", "observation")
+        self.act_name = ("agents", "action")
+        self.reward_name = ("agents", "reward")
 
         self.make_actor()
         self.make_critic()
@@ -106,10 +109,11 @@ class SACPolicy(object):
         self.critic_loss_fn = {"mse": F.mse_loss, "smooth_l1": F.smooth_l1_loss}[self.cfg.critic_loss]
 
     def __call__(self, tensordict: TensorDict, deterministic: bool=False) -> TensorDict:
+        return tensordict.update({self.act_name: self.agent_spec.action_spec.zero()})
         actor_input = tensordict.select(*self.policy_in_keys)
         actor_input.batch_size = [*actor_input.batch_size, self.agent_spec.n]
         actor_output = self.actor(actor_input)
-        actor_output["action"].batch_size = tensordict.batch_size
+        # actor_output["action"].batch_size = tensordict.batch_size
         tensordict.update(actor_output)
         return tensordict
 

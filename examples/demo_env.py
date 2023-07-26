@@ -27,7 +27,7 @@ def main(cfg):
     )
 
     def policy(tensordict: TensorDict):
-        state = tensordict["drone.obs"]
+        state = tensordict[("info", "drone_state")]
         controller_state = tensordict.get(
             "controller_state", TensorDict({}, state.shape[:2])
         )
@@ -47,11 +47,10 @@ def main(cfg):
         cmds, controller_state = vmap(vmap(controller))(
             relative_state, control_target, controller_state
         )
-        tensordict[("action", "drone.action")] = cmds
+        tensordict[("agents", "action")] = cmds
         tensordict["controller_state"] = controller_state
         return tensordict
 
-    env.enable_render = True
     env.rollout(
         max_steps=env.num_envs * 1000,
         policy=policy,

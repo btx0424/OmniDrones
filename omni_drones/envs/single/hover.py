@@ -75,15 +75,6 @@ class Hover(IsaacEnv):
             disable_gravity=True
         )
 
-        color = (0.0, 1.0, 0.0)
-        def set_color(prim):
-            if prim.GetName() == "visuals":
-                prim.GetAttribute("primvars:displayColor").Set([color])
-            else:
-                for prim in prim.GetChildren():
-                    set_color(prim)
-        set_color(target_vis_prim)
-
         kit_utils.create_ground_plane(
             "/World/defaultGroundPlane",
             static_friction=1.0,
@@ -102,19 +93,19 @@ class Hover(IsaacEnv):
             observation_dim += self.time_encoding_dim
 
         self.observation_spec = CompositeSpec({
-            "agents":{
+            "agents": CompositeSpec({
                 "observation": UnboundedContinuousTensorSpec((1, observation_dim)) ,
-            }
+            })
         }).expand(self.num_envs).to(self.device)
         self.action_spec = CompositeSpec({
-            "agents": {
+            "agents": CompositeSpec({
                 "action": self.drone.action_spec.unsqueeze(0),
-            }
+            })
         }).expand(self.num_envs).to(self.device)
         self.reward_spec = CompositeSpec({
-            "agents": {
+            "agents": CompositeSpec({
                 "reward": UnboundedContinuousTensorSpec((1, 1))
-            }
+            })
         }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,

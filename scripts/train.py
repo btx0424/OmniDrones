@@ -11,7 +11,7 @@ from functorch import vmap
 from omegaconf import OmegaConf
 
 from omni_drones import CONFIG_PATH, init_simulation_app
-from omni_drones.utils.torchrl.env import SyncDataCollector, AgentSpec
+from omni_drones.utils.torchrl import SyncDataCollector, AgentSpec
 from omni_drones.utils.torchrl.transforms import (
     DepthImageNorm,
     LogOnEpisode, 
@@ -154,9 +154,9 @@ def main(cfg):
         ),
     )
     
-    # camera = Camera(camera_cfg)
-    # camera.spawn(["/World/Camera"], translations=[(7.5, 7.5, 7.5)], targets=[(0, 0, 0.5)])
-    # camera.initialize("/World/Camera")
+    camera = Camera(camera_cfg)
+    camera.spawn(["/World/Camera"], translations=[(7.5, 7.5, 7.5)], targets=[(0, 0, 0.5)])
+    camera.initialize("/World/Camera")
 
     agent_spec: AgentSpec = env.agent_spec["drone"]
     policy = algos[cfg.algo.name.lower()](
@@ -211,7 +211,6 @@ def main(cfg):
     pbar = tqdm(collector)
     for i, data in enumerate(pbar):
         info = {"env_frames": collector._frames, "rollout_fps": collector._fps}
-        continue
         info.update(policy.train_op(data))
 
         if eval_interval > 0 and i % eval_interval == 0:

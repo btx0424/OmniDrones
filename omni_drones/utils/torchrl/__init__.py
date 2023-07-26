@@ -1,1 +1,2 @@
-from .env import AgentSpec, SyncDataCollector
+from .env import AgentSpec
+from .collector import SyncDataCollector

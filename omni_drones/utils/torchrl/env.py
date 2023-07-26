@@ -1,11 +1,9 @@
 from dataclasses import dataclass
 from torchrl.envs import EnvBase
 from torchrl.data import TensorSpec, CompositeSpec
-from torchrl.collectors import SyncDataCollector as _SyncDataCollector
-from tensordict.tensordict import TensorDictBase
 
 from typing import Optional
-import time
+
 
 @dataclass
 class AgentSpec:
@@ -59,10 +57,3 @@ class AgentSpec:
         except:
             return self._env.done_spec[self.done_key]
 
-
-class SyncDataCollector(_SyncDataCollector):
-    def rollout(self) -> TensorDictBase:
-        start = time.perf_counter()
-        _tensordict_out = super().rollout()
-        self._fps = _tensordict_out.numel() / (time.perf_counter() - start)
-        return _tensordict_out

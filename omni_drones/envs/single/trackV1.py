@@ -48,12 +48,15 @@ class TrackV1(IsaacEnv):
     
     """
     def __init__(self, cfg, headless):
+        self.reset_thres = cfg.task.reset_thres
+        self.reward_effort_weight = cfg.task.reward_effort_weight
+        self.reward_action_smoothness_weight = cfg.task.reward_action_smoothness_weight
+        self.reward_motion_smoothness_weight = cfg.task.reward_motion_smoothness_weight
+        self.reward_distance_scale = cfg.task.reward_distance_scale
+        self.time_encoding = cfg.task.time_encoding
+        self.future_traj_len = max(int(cfg.task.future_traj_len), 2)
+
         super().__init__(cfg, headless)
-        self.reset_thres = self.cfg.task.reset_thres
-        self.reward_effort_weight = self.cfg.task.reward_effort_weight
-        self.reward_action_smoothness_weight = self.cfg.task.reward_action_smoothness_weight
-        self.reward_motion_smoothness_weight = self.cfg.task.reward_motion_smoothness_weight
-        self.reward_distance_scale = self.cfg.task.reward_distance_scale
         
         self.intrinsics = self.cfg.task.intrinsics
         self.wind = self.cfg.task.wind
@@ -109,28 +112,31 @@ class TrackV1(IsaacEnv):
         return ["/World/defaultGroundPlane"]
 
     def _set_specs(self):
-        self.time_encoding = self.cfg.task.time_encoding
-        self.future_traj_len = max(int(self.cfg.task.future_traj_len), 2)
-
         drone_state_dim = self.drone.state_spec.shape[-1]
         obs_dim = drone_state_dim + 3 * (self.future_traj_len-1) + 2
         if self.time_encoding:
             self.time_encoding = Fraction(self.max_episode_length)
             obs_dim += self.time_encoding.dim
         self.observation_spec = CompositeSpec({
-            "drone.obs": UnboundedContinuousTensorSpec((1, obs_dim))
+            "agents": {
+                "observation": UnboundedContinuousTensorSpec((1, obs_dim))
+            }
         }).expand(self.num_envs).to(self.device)
         self.action_spec = CompositeSpec({
-            "drone.action": self.drone.action_spec.unsqueeze(0),
+            "agents": {
+                "action": self.drone.action_spec.unsqueeze(0),
+            }
         }).expand(self.num_envs).to(self.device)
         self.reward_spec = CompositeSpec({
-            "drone.reward": UnboundedContinuousTensorSpec((1, 1))
+            "agents": {
+                "reward": UnboundedContinuousTensorSpec((1, 1))
+            }
         }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,
-            observation_key="drone.obs",
-            action_key="drone.action",
-            reward_key="drone.reward",
+            observation_key=("agents", "observation"),
+            action_key=("agents", "action"),
+            reward_key=("agents", "reward"),
         )
 
         stats_spec = CompositeSpec({
@@ -188,7 +194,7 @@ class TrackV1(IsaacEnv):
             self.draw.draw_lines(point_list_0, point_list_1, colors, sizes)
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
-        actions = tensordict[("action", "drone.action")]
+        actions = tensordict[("agents", "action")]
         self.effort = self.drone.apply_action(actions)
 
     def _compute_state_and_obs(self):
@@ -211,17 +217,12 @@ class TrackV1(IsaacEnv):
 
         obs = torch.cat(obs, dim=-1)
 
-        if hasattr(self, "info"):
-            return TensorDict({
-                "drone.obs": obs,
-                "stats": self.stats,
-                "info": self.info
-            }, self.batch_size)
-        else:
-            return TensorDict({
-                "drone.obs": obs,
-                "stats": self.stats
-            }, self.batch_size)
+        return TensorDict({
+            "agents": {
+                "observation": obs,
+            },
+            "stats": self.stats
+        }, self.batch_size)
 
     def _compute_reward_and_done(self):
         pos_error = torch.norm(self.rpos[:, [0]], dim=-1)
@@ -255,7 +256,9 @@ class TrackV1(IsaacEnv):
         
         return TensorDict(
             {
-                "reward": {"drone.reward": reward.unsqueeze(-1)},
+                "agents": {
+                    "reward": reward.unsqueeze(-1),
+                },
                 "done": done,
             },
             self.batch_size,

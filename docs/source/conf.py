@@ -22,6 +22,7 @@ release = '0.1'
 extensions = [
     'sphinx.ext.duration',
     'sphinx.ext.autodoc',
+    'myst_parser',
 ]
 
 templates_path = ['_templates']
@@ -32,7 +33,7 @@ exclude_patterns = []
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = 'alabaster'
+html_theme = 'sphinx_book_theme'
 html_static_path = ['_static']
 
 # Mock out modules that are not available on RTD

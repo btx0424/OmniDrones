@@ -12,13 +12,41 @@ from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec
 
 
 class Hover(IsaacEnv):
-    """
+    r"""
     A basic control task. The goal for the agent is to maintain a stable
     position and heading in mid-air without drifting. 
 
-    observation:
+    Observation
+    -----------
+    The observation space consists of the following part:
 
-    reward: 
+    - rpos (3): The position relative to the target hovering position.
+    - root_state (16 + num_rotors): The basic information of the drone (except its position), 
+      containing its rotation (in quaternion), velocities (linear and angular), 
+      heading and up vectors, and the current throttle.
+    - rheading (3): The difference between the reference heading and the current heading.
+    - *time_encoding*:
+
+    Reward 
+    ------
+    - pos: 
+    - heading_alignment:
+    - up:
+    - spin:
+
+    The total reward is 
+
+    .. math:: 
+    
+        r = r_\text{pos} + r_\text{pos} * (r_\text{up} + r_\text{heading})
+
+    Episode End
+    -----------
+    - Termination: 
+
+    Config
+    ------
+
 
     """
     def __init__(self, cfg, headless):

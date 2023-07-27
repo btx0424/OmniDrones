@@ -54,7 +54,7 @@ class TrackV1(IsaacEnv):
         self.reward_motion_smoothness_weight = cfg.task.reward_motion_smoothness_weight
         self.reward_distance_scale = cfg.task.reward_distance_scale
         self.time_encoding = cfg.task.time_encoding
-        self.future_traj_len = max(int(cfg.task.future_traj_len), 2)
+        self.future_traj_steps = max(int(cfg.task.future_traj_steps), 2)
 
         super().__init__(cfg, headless)
         
@@ -91,7 +91,7 @@ class TrackV1(IsaacEnv):
         self.traj_rot = torch.zeros(self.num_envs, 4, device=self.device)
         self.traj_w = torch.ones(self.num_envs, device=self.device)
 
-        self.ref_pos = torch.zeros(self.num_envs, self.future_traj_len, 3, device=self.device)
+        self.ref_pos = torch.zeros(self.num_envs, self.future_traj_steps, 3, device=self.device)
         self.ref_heading = torch.zeros(self.num_envs, 2, device=self.device)
 
         self.alpha = 0.8
@@ -113,7 +113,7 @@ class TrackV1(IsaacEnv):
 
     def _set_specs(self):
         drone_state_dim = self.drone.state_spec.shape[-1]
-        obs_dim = drone_state_dim + 3 * (self.future_traj_len-1) + 2
+        obs_dim = drone_state_dim + 3 * (self.future_traj_steps-1) + 2
         if self.time_encoding:
             self.time_encoding = Fraction(self.max_episode_length)
             obs_dim += self.time_encoding.dim
@@ -200,7 +200,7 @@ class TrackV1(IsaacEnv):
     def _compute_state_and_obs(self):
         self.root_state = self.drone.get_state()
 
-        self.ref_pos[:] = self._compute_traj(self.future_traj_len, step_size=5)
+        self.ref_pos[:] = self._compute_traj(self.future_traj_steps, step_size=5)
         self.ref_heading[:] = normalize(self.ref_pos[:, 1, :2] - self.ref_pos[:, 0, :2])
 
         self.rpos = self.ref_pos - self.root_state[..., :3]

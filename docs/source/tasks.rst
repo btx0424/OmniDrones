@@ -1,6 +1,7 @@
 Reinforcement Learning Tasks
 ============================
 
+
 .. autoclass:: omni_drones.envs.Hover
     :show-inheritance:
 

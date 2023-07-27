@@ -6,6 +6,8 @@
 Welcome to OmniDrones's documentation!
 ======================================
 
+.. image:: _static/overview.pdf
+
 .. toctree::
    :maxdepth: 2
    :caption: Contents:

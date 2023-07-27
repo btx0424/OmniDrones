@@ -16,15 +16,30 @@ from omni.isaac.debug_draw import _debug_draw
 from ..utils import lemniscate, scale_time
 
 class Track(IsaacEnv):
-    """
+    r"""
     A basic control task. The goal for the agent is to track a reference lemniscate 
     trajectory in the 3D space. 
 
-    observation:
+    Observation
+    -----------
+    - rpos (3 * future_traj_steps): 
+    - root_state (16 + num_rotors): The basic information of the drone (except its position), 
+      containing its rotation (in quaternion), velocities (linear and angular), 
+      heading and up vectors, and the current throttle.
+    - *time_encoding*: 
 
-    reward:
+    Reward
+    ------
 
-    config:
+
+    Episode End
+    -----------
+    - Termination: 
+
+    Config
+    ------
+    - reset_thres: 
+    - future_traj_steps:
 
     """
     def __init__(self, cfg, headless):
@@ -35,8 +50,8 @@ class Track(IsaacEnv):
         self.reward_motion_smoothness_weight = self.cfg.task.reward_motion_smoothness_weight
         self.reward_distance_scale = self.cfg.task.reward_distance_scale
         self.time_encoding = self.cfg.task.time_encoding
-        self.future_traj_len = int(self.cfg.task.future_traj_len)
-        assert self.future_traj_len > 0
+        self.future_traj_steps = int(self.cfg.task.future_traj_steps)
+        assert self.future_traj_steps > 0
         self.intrinsics = self.cfg.task.intrinsics
         self.wind = self.cfg.task.wind
 
@@ -62,7 +77,7 @@ class Track(IsaacEnv):
 
 
         drone_state_dim = self.drone.state_spec.shape[-1]
-        obs_dim = drone_state_dim + 3 * (self.future_traj_len-1)
+        obs_dim = drone_state_dim + 3 * (self.future_traj_steps-1)
         if self.time_encoding:
             self.time_encoding_dim = 4
             obs_dim += self.time_encoding_dim
@@ -105,7 +120,7 @@ class Track(IsaacEnv):
         self.traj_rot = torch.zeros(self.num_envs, 4, device=self.device)
         self.traj_w = torch.ones(self.num_envs, device=self.device)
 
-        self.target_pos = torch.zeros(self.num_envs, self.future_traj_len, 3, device=self.device)
+        self.target_pos = torch.zeros(self.num_envs, self.future_traj_steps, 3, device=self.device)
 
         self.alpha = 0.8
         stats_spec = CompositeSpec({
@@ -188,7 +203,7 @@ class Track(IsaacEnv):
     def _compute_state_and_obs(self):
         self.root_state = self.drone.get_state()
 
-        self.target_pos[:] = self._compute_traj(self.future_traj_len, step_size=5)
+        self.target_pos[:] = self._compute_traj(self.future_traj_steps, step_size=5)
         
         self.rpos = self.target_pos - self.root_state[..., :3]
         obs = [

@@ -29,7 +29,7 @@ class TransportTrack(IsaacEnv):
         self.reward_action_smoothness_weight = self.cfg.task.reward_action_smoothness_weight
         self.reward_distance_scale = self.cfg.task.reward_distance_scale
         self.time_encoding = self.cfg.task.time_encoding
-        self.future_traj_len = int(self.cfg.task.future_traj_len)
+        self.future_traj_steps = int(self.cfg.task.future_traj_steps)
         self.safe_distance = self.cfg.task.safe_distance
 
         self.group.initialize()
@@ -40,7 +40,7 @@ class TransportTrack(IsaacEnv):
         self.init_joint_vel = torch.zeros_like(self.group.get_joint_velocities())
 
         drone_state_dim = self.drone.state_spec.shape[-1]
-        payload_state_dim = 19 + (self.future_traj_len-1) * 3
+        payload_state_dim = 19 + (self.future_traj_steps-1) * 3
         if self.time_encoding:
             self.time_encoding_dim = 4
             payload_state_dim += self.time_encoding_dim
@@ -186,7 +186,7 @@ class TransportTrack(IsaacEnv):
         self.drone_pdist = torch.norm(self.drone_rpos, dim=-1, keepdim=True)
         payload_drone_rpos = self.payload_pos.unsqueeze(1) - self.drone.pos
 
-        target_pos = self._compute_traj(self.future_traj_len, step_size=5)
+        target_pos = self._compute_traj(self.future_traj_steps, step_size=5)
         target_payload_rpos = target_pos - self.payload_pos.unsqueeze(1)
         self.target_distance = torch.norm(target_payload_rpos[..., 0, :], dim=-1, keepdim=True)
         

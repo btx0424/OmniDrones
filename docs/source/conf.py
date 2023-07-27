@@ -15,6 +15,7 @@ project = 'OmniDrones'
 copyright = '2023, btx0424'
 author = 'btx0424'
 release = '0.1'
+master_doc = 'index'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration

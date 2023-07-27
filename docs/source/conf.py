@@ -22,7 +22,7 @@ release = '0.1'
 extensions = [
     'sphinx.ext.duration',
     'sphinx.ext.autodoc',
-    'myst_parser',
+    # 'myst_parser',
 ]
 
 templates_path = ['_templates']

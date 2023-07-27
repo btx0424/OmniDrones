@@ -8,6 +8,7 @@
 
 import os
 import sys
+import sphinx_book_theme
 
 sys.path.insert(0, os.path.abspath("../../"))
 
@@ -28,7 +29,10 @@ extensions = [
 templates_path = ['_templates']
 exclude_patterns = []
 
-
+html_theme_options = {
+    "repository_url": "https://github.com/btx0424/OmniDrones",
+    "use_repository_button": True,
+}
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output

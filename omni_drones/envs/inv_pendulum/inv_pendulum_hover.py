@@ -17,6 +17,46 @@ from .utils import create_pendulum
 
 
 class InvPendulumHover(IsaacEnv):
+    r"""
+    A control task. A vertical bar, loaded with a payload, is connected above the agent. 
+    The goal for the agent is to maintain a stable position and heading in mid-air without drifting 
+    and make the payload reach the target position. 
+
+    Observation
+    -----------
+    The observation space consists of the following part:
+
+    - drone_payload_rpos (3): The relative position of the drone and the payload.
+    - root_state (16 + num_rotors): The basic information of the drone (except its position), 
+      containing its rotation (in quaternion), velocities (linear and angular), 
+      heading and up vectors, and the current throttle.
+    - target_payload_rpos (3): The relative position of the payload and the target position.
+    - payload_vels (6): The linear and angular velocities of the payload.
+    - *time_encoding*:
+
+    Reward 
+    ------
+    - pos: 
+    - bar_up:
+    - effort:
+    - spin:
+    - swing:
+
+    The total reward is 
+
+    .. math:: 
+    
+        r = r_\text{bar_up} + r_\text{pos} + r_\text{bar_up} * (r_\text{spin} + r_\text{swing}) + r_\text{effort}
+
+    Episode End
+    -----------
+    - Termination: 
+
+    Config
+    ------
+
+
+    """
     def __init__(self, cfg, headless):
         super().__init__(cfg, headless)
         self.reward_effort_weight = self.cfg.task.reward_effort_weight

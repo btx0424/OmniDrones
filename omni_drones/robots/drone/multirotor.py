@@ -53,13 +53,17 @@ class MultirotorBase(RobotBase):
         self.state_spec = UnboundedContinuousTensorSpec(state_dim, device=self.device)
         self.randomization = defaultdict(dict)
 
-    def initialize(self, prim_paths_expr: str = None):
+    def initialize(
+        self, 
+        prim_paths_expr: str = None,
+        track_contact_forces: bool = False
+    ):
         if self.is_articulation:
             super().initialize(prim_paths_expr=prim_paths_expr)
             self.base_link = RigidPrimView(
                 prim_paths_expr=f"{self.prim_paths_expr}/base_link",
                 name="base_link",
-                # track_contact_forces=True,
+                track_contact_forces=track_contact_forces,
                 shape=self.shape,
             )
             self.base_link.initialize()

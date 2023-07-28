@@ -27,9 +27,9 @@ class PayloadTrack(IsaacEnv):
         self.reward_motion_smoothness_weight = self.cfg.task.reward_motion_smoothness_weight
         self.reward_distance_scale = self.cfg.task.reward_distance_scale
         self.time_encoding = self.cfg.task.time_encoding
-        self.future_traj_len = int(self.cfg.task.future_traj_len)
+        self.future_traj_steps = int(self.cfg.task.future_traj_steps)
         self.bar_length = self.cfg.task.bar_length
-        assert self.future_traj_len > 0
+        assert self.future_traj_steps > 0
 
         self.drone.initialize()
         randomization = self.cfg.task.get("randomization", None)
@@ -41,7 +41,7 @@ class PayloadTrack(IsaacEnv):
         self.init_joint_vels = torch.zeros_like(self.drone.get_joint_velocities())
 
         drone_state_dim = self.drone.state_spec.shape[-1]
-        obs_dim = drone_state_dim + 3 * (self.future_traj_len-1) + 9
+        obs_dim = drone_state_dim + 3 * (self.future_traj_steps-1) + 9
         if self.time_encoding:
             self.time_encoding_dim = 4
             obs_dim += self.time_encoding_dim
@@ -93,7 +93,7 @@ class PayloadTrack(IsaacEnv):
         self.traj_rot = torch.zeros(self.num_envs, 4, device=self.device)
         self.traj_w = torch.ones(self.num_envs, device=self.device)
 
-        self.target_pos = torch.zeros(self.num_envs, self.future_traj_len, 3, device=self.device)
+        self.target_pos = torch.zeros(self.num_envs, self.future_traj_steps, 3, device=self.device)
 
         self.alpha = 0.8
 
@@ -181,7 +181,7 @@ class PayloadTrack(IsaacEnv):
         self.payload_pos = self.get_env_poses(self.payload.get_world_poses())[0]
         self.payload_vels = self.payload.get_velocities()
 
-        self.target_pos[:] = self._compute_traj(self.future_traj_len, step_size=5)
+        self.target_pos[:] = self._compute_traj(self.future_traj_steps, step_size=5)
         
         self.drone_payload_rpos = self.drone.pos - self.payload_pos.unsqueeze(1)
         self.target_payload_rpos = (self.target_pos - self.payload_pos.unsqueeze(1))

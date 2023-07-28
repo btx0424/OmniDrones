@@ -12,7 +12,7 @@ from omegaconf import OmegaConf
 
 from omni_drones import CONFIG_PATH, init_simulation_app
 from omni_drones.utils.torchrl import SyncDataCollector, AgentSpec
-from omni_drones.utils.envs.transforms import (
+from omni_drones.utils.torchrl.transforms import (
     DepthImageNorm,
     LogOnEpisode, 
     FromMultiDiscreteAction, 

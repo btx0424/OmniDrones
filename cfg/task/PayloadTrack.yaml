@@ -14,7 +14,7 @@ force_sensor: false
 time_encoding: true
 
 reset_thres: 0.8
-future_traj_len: 6
+future_traj_steps: 6
 
 reward_effort_weight: 0.1
 reward_action_smoothness_weight: 0.

@@ -33,7 +33,7 @@ class PlatformTrack(IsaacEnv):
         self.reward_potential_weight = self.cfg.task.reward_potential_weight
         self.reward_distance_scale = self.cfg.task.reward_distance_scale
         self.time_encoding = self.cfg.task.time_encoding
-        self.future_traj_len = int(self.cfg.task.future_traj_len)
+        self.future_traj_steps = int(self.cfg.task.future_traj_steps)
 
         self.platform.initialize()
         self.target_vis = RigidPrimView(
@@ -45,7 +45,7 @@ class PlatformTrack(IsaacEnv):
         self.init_vels = torch.zeros_like(self.platform.get_velocities())
 
         drone_state_dim = self.drone.state_spec.shape.numel()
-        frame_state_dim = 22 + (self.future_traj_len-1) * 3
+        frame_state_dim = 22 + (self.future_traj_steps-1) * 3
         if self.time_encoding:
             self.time_encoding_dim = 4
             frame_state_dim += self.time_encoding_dim
@@ -196,7 +196,7 @@ class PlatformTrack(IsaacEnv):
         self.drone_rpos = vmap(cpos)(drone_pos, drone_pos)
         self.drone_rpos = vmap(off_diag)(self.drone_rpos)
 
-        target_pos = self._compute_traj(self.future_traj_len, step_size=5)
+        target_pos = self._compute_traj(self.future_traj_steps, step_size=5)
         target_up = normalize(self.up_target.unsqueeze(1) - self.platform.pos)
         target_platform_rpos = target_pos - self.platform.pos
         target_platform_rup = target_up - self.platform.up

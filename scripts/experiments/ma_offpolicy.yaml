@@ -1,6 +1,6 @@
 program: train.py
 name: MultiOffpolicy
-project: gpu-onpolicy
+project: omnidrones
 entity: marl-drones
 method: grid
 
@@ -27,14 +27,18 @@ parameters:
 
   task: 
     values: 
-    - TransportHover
-    - PlatformHover
+    # - TransportHover
+    # - TransportTrack
+    # - PlatformHover
+    # - PlatformTrack
+    # - TransportFlyThrough
+    - Formation
 
   # task.env.num_envs:
   #   value: 1024
 
   total_frames: 
-    value: 75_500_000
+    value: 155_500_000
 
   headless:
     value: true
@@ -43,7 +47,7 @@ parameters:
     values: [0, 42, 81]
 
   task.drone_model:
-    values: [Firefly, Hummingbird]
+    values: [Hummingbird] #, Firefly]
 
 command:
   - ${env}

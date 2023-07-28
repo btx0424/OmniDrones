@@ -1,6 +1,6 @@
 program: train.py
-name: DQN
-project: gpu-onpolicy
+name: DQN125M
+project: omnidrones
 entity: marl-drones
 method: grid
 
@@ -16,27 +16,26 @@ parameters:
 
   task: 
     values: 
-    # - Hover
-    # - Track
+    - Hover
+    - Track
     - InvPendulumHover
-    # - InvPendulumFlyThrough
-    # - PayloadFlyThrough
+    - InvPendulumTrack
+    - InvPendulumFlyThrough
+    - PayloadHover
     - PayloadTrack
+    - PayloadFlyThrough
 
   task.action_transform:
     value: discrete:2
-    
-  # task.env.num_envs:
-  #   value: 1024
 
   total_frames: 
-    value: 50_500_000
+    value: 125_500_000
 
   headless:
     value: true
   
   seed:
-    values: [0, 42, 81]
+    values: [0, 42]
 
   task.drone_model:
     values: [Firefly, Hummingbird]

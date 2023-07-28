@@ -17,7 +17,7 @@ time_encoding: true
 
 payload_mass_scale: [0.5, 0.8]
 reset_thres: 0.7
-future_traj_len: 4
+future_traj_steps: 4
 
 reward_effort_weight: 0.1
 reward_spin_weight: 0.8

@@ -20,10 +20,8 @@ from omni_drones.views import ArticulationView, RigidPrimView
 
 from omni_drones.robots import ASSET_PATH
 
-class Gate(IsaacEnv):
+class FlyThrough(IsaacEnv):
     def __init__(self, cfg, headless):
-        if cfg.task.visual_obs:
-            cfg.env.num_envs = min(cfg.env.num_envs, 31) # 31 is for A100 80G
         super().__init__(cfg, headless)
         self.reward_effort_weight = self.cfg.task.reward_effort_weight
         self.reward_distance_scale = self.cfg.task.reward_distance_scale
@@ -62,18 +60,7 @@ class Gate(IsaacEnv):
         self.crossed_plane = torch.zeros(self.num_envs, 1, device=self.device, dtype=bool)
 
         drone_state_dim = self.drone.state_spec.shape[-1]
-        if self.visual_obs:
-            self.camera.initialize(f"/World/envs/env_*/{self.drone.name}_*/base_link/Camera")
-            observation_spec = CompositeSpec({
-                "state": UnboundedContinuousTensorSpec(drone_state_dim),
-                "distance_to_camera": UnboundedContinuousTensorSpec((1, *self.camera.shape))
-            })
-        else:
-            observation_spec = UnboundedContinuousTensorSpec(drone_state_dim + 6)
-        
-        state_spec = CompositeSpec({
-            'state': UnboundedContinuousTensorSpec((1, drone_state_dim + 6))
-        })
+        observation_spec = UnboundedContinuousTensorSpec(drone_state_dim + 6)
 
         self.agent_spec["drone"] = AgentSpec(
             "drone",
@@ -81,7 +68,6 @@ class Gate(IsaacEnv):
             observation_spec.to(self.device),
             self.drone.action_spec.to(self.device),
             UnboundedContinuousTensorSpec(1).to(self.device),
-            state_spec.to(self.device),
         )
 
         self.init_pos_dist = D.Uniform(
@@ -129,24 +115,6 @@ class Gate(IsaacEnv):
         )
         
         drone_prims = self.drone.spawn(translations=[(-2., 0.0, 2.0)])
-        self.visual_obs = self.cfg.task.visual_obs
-        if self.visual_obs:
-            camera_cfg = PinholeCameraCfg(
-                sensor_tick=0,
-                resolution=(320, 240),
-                data_types=["distance_to_camera"],
-                usd_params=PinholeCameraCfg.UsdCameraCfg(
-                    focal_length=16.0,
-                    focus_distance=400.0,
-                    horizontal_aperture=20.955,
-                    clipping_range=(0.2, 5),
-                ),
-            )
-            self.camera = Camera(camera_cfg)
-            camera_paths = [
-                f"{prim.GetPath()}/base_link/Camera" for prim in drone_prims
-            ]
-            self.camera.spawn(camera_paths, targets=[(1., 0., 0.1) for _ in range(len(camera_paths))])
 
         scale = torch.ones(3) * self.cfg.task.gate_scale
         prim_utils.create_prim(
@@ -221,18 +189,7 @@ class Gate(IsaacEnv):
             self.gate_vel[..., :3],
         ], dim=-1)
         
-        if self.visual_obs:
-            obs_state = torch.cat([
-                self.drone_state[..., 3:],
-                self.target_drone_rpos,
-            ], dim=-1)
-            obs_images = self.camera.get_images().reshape(self.drone.shape)
-            obs = TensorDict({
-                "state": obs_state,
-            }, [self.num_envs, 1])
-            obs.update(obs_images)
-        else:
-            obs = state
+        obs = state
 
         pos_error = torch.norm(self.target_drone_rpos, dim=-1)
         self.stats["pos_error"].mul_(self.alpha).add_((1-self.alpha) * pos_error)
@@ -240,7 +197,6 @@ class Gate(IsaacEnv):
         
         return TensorDict({
             "drone.obs": obs,
-            "drone.state": TensorDict({'state': state}, [self.num_envs]),
             "stats": self.stats,
             "info": self.info
         }, self.batch_size)
@@ -255,7 +211,7 @@ class Gate(IsaacEnv):
         distance_to_gate_center = torch.abs(pos[..., 1:] - self.gate_pos[..., 1:])
         through_gate = (distance_to_gate_center < 0.5).all(-1)
 
-        gate_reward = torch.where(
+        reward_gate = torch.where(
             distance_to_gate_plane > 0.,
             (0.4 - distance_to_gate_center).sum(-1) * torch.exp(-distance_to_gate_plane),
             1.
@@ -264,22 +220,22 @@ class Gate(IsaacEnv):
         # pose reward
         distance_to_target = torch.norm(self.target_drone_rpos, dim=-1)
 
-        # pose_reward = 1.0 / (1.0 + torch.square(self.reward_distance_scale * distance_to_target))
-        pose_reward = torch.exp(-self.reward_distance_scale * distance_to_target)
+        # reward_pose = 1.0 / (1.0 + torch.square(self.reward_distance_scale * distance_to_target))
+        reward_pose = torch.exp(-self.reward_distance_scale * distance_to_target)
         # uprightness
-        up_reward = torch.square((self.drone_up[..., 2] + 1) / 2)
+        up_reward = .5 * torch.square((self.drone_up[..., 2] + 1) / 2)
 
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort)
 
         spin = torch.square(vels[..., -1])
-        reward_spin = 1. / (1.0 + torch.square(spin))
+        reward_spin = .5 / (1.0 + torch.square(spin))
 
-        assert pose_reward.shape == up_reward.shape == reward_spin.shape
+        assert reward_pose.shape == up_reward.shape == reward_spin.shape
         reward = (
-            pose_reward * 1.4
-            + gate_reward
-            + (pose_reward + 0.3) * (up_reward + reward_spin) 
-            + effort_reward
+            reward_pose 
+            + 0.5 * reward_gate
+            + (reward_pose + 0.3) * (up_reward + reward_spin) 
+            + reward_effort
         )
         
         done_invalid = (crossing_plane & ~through_gate)

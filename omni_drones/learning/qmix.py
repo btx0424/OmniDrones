@@ -77,7 +77,7 @@ class QMIXPolicy:
         params = list(self.agent_q.parameters()) + list(self.mixer.parameters())
         self.opt = torch.optim.Adam(params, lr=cfg.lr)
 
-        self.rb = MyBuffer(cfg.buffer_size, device=self.device)
+        self.rb = MyBuffer(cfg.buffer_size, device="cpu") # device=self.device)
         
         self.t = 0 # for epsilon annealing
 

@@ -1,6 +1,6 @@
 program: train.py
 name: QMIX
-project: gpu-onpolicy
+project: omnidrones
 entity: marl-drones
 method: grid
 
@@ -17,25 +17,25 @@ parameters:
   task: 
     values: 
     - TransportHover # easy
+    - TransportTrack
     - PlatformHover # easy
-
-  task.env.num_envs:
-    value: 1024
+    - PlatformTrack
+    - TransportFlyThrough
     
   task.action_transform:
     value: discrete:2
 
   total_frames: 
-    value: 75_500_000
+    value: 155_500_000
 
   headless:
     value: true
   
   seed:
-    values: [0, 42, 81]
+    values: [0, 42]
 
   task.drone_model:
-    values: [Firefly, Hummingbird]
+    values: [Hummingbird]
 
 command:
   - ${env}

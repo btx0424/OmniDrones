@@ -21,7 +21,6 @@ wandb:
   project: omnidrones
   mode: online # set to 'disabled' when debugging locally
   run_id: 
-  run_path:
   monitor_gym: True
   tags: 
 

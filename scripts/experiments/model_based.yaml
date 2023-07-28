@@ -17,21 +17,23 @@ parameters:
   task: 
     values: 
     - Hover
-    - InvertedPendulum
-    # - FlyThrough
-    # - InvertedPendulumFlyThrough
+    - Track
+    - InvPendulumHover
+    # - InvPendulumFlyThrough
+    # - PayloadTrack
+    - PayloadFlyThrough
 
-  task.env.num_envs:
-    value: 512
+  # task.env.num_envs:
+  #   value: 1024
 
   total_frames: 
-    value: 25_500_000
+    value: 50_500_000
 
   headless:
     value: true
   
   seed:
-    values: [57, 127]
+    values: [0, 42, 81]
 
   task.drone_model:
     values: [Firefly, Hummingbird]

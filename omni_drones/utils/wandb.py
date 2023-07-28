@@ -56,34 +56,12 @@ def init_wandb(cfg):
         mode=wandb_cfg.mode,
         tags=wandb_cfg.tags,
     )
-    if wandb_cfg.run_id is not None and wandb_cfg.run_path is None:
+    if wandb_cfg.run_id is not None:
         kwargs["id"] = wandb_cfg.run_id
         kwargs["resume"] = "must"
     else:
         kwargs["id"] = wandb.util.generate_id()
     run = wandb.init(**kwargs)
-    if (
-        wandb_cfg.run_id is not None and run.resumed
-    ):  # because wandb sweep forces resumed=True
-        logging.info(f"Trying to resume run {wandb_cfg.run_id}")
-        cfg_dict = dict_flatten(OmegaConf.to_container(cfg))
-        run.config.update(cfg_dict)
-        checkpoint_name = run.summary["checkpoint"]
-        if checkpoint_name is not None:
-            logging.info(f"Restore checkpoint {checkpoint_name}")
-            wandb.restore(checkpoint_name)
-    elif wandb_cfg.run_path is not None:
-        logging.info(f"Trying to start new run from {wandb_cfg.run_path}")
-        api = wandb.Api()
-        run.config = api.run(wandb_cfg.run_path).config
-        run.config["old_config"] = run.config.copy()
-        cfg_dict = dict_flatten(OmegaConf.to_container(cfg))
-        run.config.update(cfg_dict)
-        checkpoint_name = run.summary.get("checkpoint")
-        if checkpoint_name is not None:
-            logging.info(f"Restore checkpoint {checkpoint_name}")
-            wandb.restore(checkpoint_name, run_path=wandb_cfg.run_path)
-    else:
-        cfg_dict = dict_flatten(OmegaConf.to_container(cfg))
-        run.config.update(cfg_dict)
+    cfg_dict = dict_flatten(OmegaConf.to_container(cfg))
+    run.config.update(cfg_dict)
     return run

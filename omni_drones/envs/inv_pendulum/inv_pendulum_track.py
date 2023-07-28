@@ -27,9 +27,9 @@ class InvPendulumTrack(IsaacEnv):
         self.reward_action_smoothness_weight = self.cfg.task.reward_action_smoothness_weight
         self.reward_distance_scale = self.cfg.task.reward_distance_scale
         self.time_encoding = self.cfg.task.time_encoding
-        self.future_traj_len = int(self.cfg.task.future_traj_len)
+        self.future_traj_steps = int(self.cfg.task.future_traj_steps)
         self.bar_length = self.cfg.task.bar_length
-        assert self.future_traj_len > 0
+        assert self.future_traj_steps > 0
 
         self.drone.initialize()
 
@@ -49,7 +49,7 @@ class InvPendulumTrack(IsaacEnv):
         self.init_joint_vels = torch.zeros_like(self.drone.get_joint_velocities())
 
         drone_state_dim = self.drone.state_spec.shape[-1]
-        obs_dim = drone_state_dim + 3 * (self.future_traj_len-1) + 9
+        obs_dim = drone_state_dim + 3 * (self.future_traj_steps-1) + 9
         if self.time_encoding:
             self.time_encoding_dim = 4
             obs_dim += self.time_encoding_dim
@@ -180,14 +180,14 @@ class InvPendulumTrack(IsaacEnv):
         self.payload_vels = self.payload.get_velocities()
 
         # relative position and heading
-        target_pos = self._compute_traj(self.future_traj_len, step_size=5)
+        target_pos = self._compute_traj(self.future_traj_steps, step_size=5)
         self.drone_payload_rpos = self.drone_state[..., :3] - payload_pos.unsqueeze(1)
         self.target_payload_rpos = target_pos - payload_pos.unsqueeze(1)
 
         obs = [
             self.drone_payload_rpos, # 3
             self.drone_state[..., 3:],
-            self.target_payload_rpos.flatten(1).unsqueeze(1), # self.future_traj_len * 3
+            self.target_payload_rpos.flatten(1).unsqueeze(1), # self.future_traj_steps * 3
             self.payload_vels.unsqueeze(1), # 6
         ]
         if self.time_encoding:

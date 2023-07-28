@@ -1,0 +1,2 @@
+sphinx-book-theme
+myst-parser

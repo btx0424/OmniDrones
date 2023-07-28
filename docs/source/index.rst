@@ -17,6 +17,10 @@ Welcome to OmniDrones's documentation!
    installation/workstation
    installation/container
 
+.. toctree::
+   :maxdepth: 1
+
+   intro
    tasks
 
 

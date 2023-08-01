@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from tensordict import TensorDict
 from tensordict.utils import expand_right
-from tensordict.nn import make_functional, TensorDictModule
+from tensordict.nn import make_functional, TensorDictModule, TensorDictParams
 from torch.optim import lr_scheduler
 
 from torchrl.data import (
@@ -58,10 +58,6 @@ class MAPPOPolicy(object):
                 self.agent_spec.reward_spec.shape, device=device
             )
 
-        # self.obs_name = f"{self.agent_spec.name}.obs"
-        # self.act_name = ("action", f"{self.agent_spec.name}.action")
-        # self.state_name = f"{self.agent_spec.name}.state"
-        # self.reward_name = f"{self.agent_spec.name}.reward"
         self.obs_name = ("agents", "observation")
         self.act_name = ("agents", "action")
         self.reward_name = ("agents", "reward")
@@ -119,13 +115,14 @@ class MAPPOPolicy(object):
 
         if self.cfg.share_actor:
             self.actor = create_actor_fn()
-            self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=cfg.lr)
-            self.actor_params = make_functional(self.actor).expand(self.agent_spec.n)
+            self.actor_params = TensorDictParams(make_functional(self.actor))
         else:
             actors = nn.ModuleList([create_actor_fn() for _ in range(self.agent_spec.n)])
             self.actor = actors[0]
-            self.actor_opt = torch.optim.Adam(actors.parameters(), lr=cfg.lr)
-            self.actor_params = torch.stack([make_functional(actor) for actor in actors])
+            stacked_params = torch.stack([make_functional(actor) for actor in actors])
+            self.actor_params = TensorDictParams(stacked_params.to_tensordict())
+        
+        self.actor_opt = torch.optim.Adam(self.actor_params.parameters(), lr=cfg.lr)
 
     def make_critic(self):
         cfg = self.cfg.critic
@@ -216,7 +213,6 @@ class MAPPOPolicy(object):
         )
 
         tensordict.update(actor_output)
-        # tensordict[self.act_name].batch_size = tensordict.shape
         tensordict.update(self.value_op(tensordict))
         return tensordict
 
@@ -235,7 +231,7 @@ class MAPPOPolicy(object):
                 actor_input, self.actor_params, eval_action=True
             )
         else: # [N, A, *]
-            actor_output = vmap(self.actor, in_dims=(1, 0), out_dims=1, randomness="different")(
+            actor_output = vmap(self.actor, in_dims=(1, 0), out_dims=1)(
                 actor_input, self.actor_params, eval_action=True
             )
 
@@ -384,7 +380,8 @@ class MAPPOPolicy(object):
         return state_dict
     
     def load_state_dict(self, state_dict):
-        self.actor_params.copy_(state_dict["actor_params"])
+        self.actor_params = TensorDictParams(state_dict["actor_params"])
+        self.actor_opt = torch.optim.Adam(self.actor_params.parameters(), lr=self.cfg.actor.lr)
         self.critic.load_state_dict(state_dict["critic"])
         self.value_normalizer.load_state_dict(state_dict["value_normalizer"])
 

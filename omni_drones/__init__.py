@@ -16,7 +16,8 @@ def init_simulation_app(cfg):
     # else:
     #     app_experience = f"{os.environ['EXP_PATH']}/omni.isaac.sim.python.kit"
     # simulation_app = SimulationApp(config, experience=app_experience)
-    simulation_app = SimulationApp(config)
+    app_experience = f"{os.environ['EXP_PATH']}/omni.isaac.sim.python.kit"
+    simulation_app = SimulationApp(config, experience=app_experience)
     return simulation_app
 
 

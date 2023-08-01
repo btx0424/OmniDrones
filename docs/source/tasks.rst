@@ -1,9 +1,24 @@
 Reinforcement Learning Tasks
 ============================
 
+.. autosummary::
+
+    omni_drones.envs.Hover
+    omni_drones.envs.Track
+    omni_drones.envs.PayloadTrack
+    omni_drones.envs.InvPendulumHover
+    omni_drones.envs.PlatformHover
+    omni_drones.envs.TransportHover
+
 
 .. autoclass:: omni_drones.envs.Hover
-    :show-inheritance:
 
 .. autoclass:: omni_drones.envs.Track
-    :show-inheritance:
+
+.. autoclass:: omni_drones.envs.PayloadTrack
+
+.. autoclass:: omni_drones.envs.PlatformHover
+
+.. autoclass:: omni_drones.envs.InvPendulumHover
+
+.. autoclass:: omni_drones.envs.TransportHover

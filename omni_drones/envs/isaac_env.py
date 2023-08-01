@@ -6,6 +6,7 @@ import omni.usd
 import torch
 import logging
 import carb
+import numpy as np
 from omni.isaac.cloner import GridCloner
 from omni.isaac.core.simulation_context import SimulationContext
 from omni.isaac.core.utils import prims as prim_utils, stage as stage_utils
@@ -17,7 +18,6 @@ from torchrl.data import CompositeSpec, TensorSpec, DiscreteTensorSpec
 from torchrl.envs import EnvBase
 
 from omni_drones.robots.robot import RobotBase
-from omni_drones.sensors.camera import PinholeCameraCfg
 from omni_drones.utils.torchrl import AgentSpec
 
 
@@ -35,6 +35,7 @@ class IsaacEnv(EnvBase):
         # store inputs to class
         self.cfg = cfg
         self.enable_render(not headless)
+        self.enable_viewport = True
         # extract commonly used parameters
         self.num_envs = self.cfg.env.num_envs
         self.max_episode_length = self.cfg.env.max_episode_length
@@ -54,19 +55,19 @@ class IsaacEnv(EnvBase):
             if "physx" in sim_params:
                 physx_params = sim_params.pop("physx")
                 sim_params.update(physx_params)
-
+        # set flags for simulator
+        self._configure_simulation_flags(sim_params)
         self.sim = SimulationContext(
             stage_units_in_meters=1.0,
             physics_dt=self.cfg.sim.dt,
             rendering_dt=self.cfg.sim.dt * self.cfg.sim.substeps,
             backend="torch",
             sim_params=sim_params,
-            # physics_prim_path="/physicsScene",
+            physics_prim_path="/physicsScene",
             device="cuda:0",
         )
+        self._create_viewport_render_product()
         self.dt = self.sim.get_physics_dt()
-        # set flags for simulator
-        self._configure_simulation_flags(sim_params)
         # add flag for checking closing status
         self._is_closed = False
         # set camera view
@@ -226,7 +227,7 @@ class IsaacEnv(EnvBase):
         torch.manual_seed(seed)
 
     def _configure_simulation_flags(self, sim_params: dict = None):
-        """Configure various simulation flags for performance improvements at load and run time."""
+        """Configure simulation flags and extensions at load and run time."""
         # acquire settings interface
         carb_settings_iface = carb.settings.get_settings()
         # enable hydra scene-graph instancing
@@ -240,11 +241,26 @@ class IsaacEnv(EnvBase):
         # if sim_params["disable_contact_processing"]:
         #     carb_settings_iface.set_bool("/physics/disableContactProcessing", True)
 
-        # enable scene querying if rendering is enabled
-        # this is needed for some GUI features
-        sim_params["enable_scene_query_support"] = True
-        # enable viewport extension if not running in headless mode
-        enable_extension("omni.kit.viewport.bundle")
+        # set flags based on whether rendering is enabled or not
+        # note: enabling extensions is order-sensitive. please do not change the order.
+        if self.enable_viewport:
+            # enable scene querying if rendering is enabled
+            # this is needed for some GUI features
+            sim_params["enable_scene_query_support"] = True
+            # load extra viewport extensions if requested
+            if self.enable_viewport:
+                # extension to enable UI buttons (otherwise we get attribute errors)
+                enable_extension("omni.kit.window.toolbar")
+                # extension to make RTX realtime and path-traced renderers
+                enable_extension("omni.kit.viewport.rtx")
+                # extension to make HydraDelegate renderers
+                enable_extension("omni.kit.viewport.pxr")
+            # enable viewport extension if not running in headless mode
+            enable_extension("omni.kit.viewport.bundle")
+            # load extra render extensions if requested
+            if self.enable_viewport:
+                # extension for window status bar
+                enable_extension("omni.kit.window.status_bar")
         # enable isaac replicator extension
         # note: moved here since it requires to have the viewport extension to be enabled first.
         enable_extension("omni.replicator.isaac")
@@ -277,6 +293,55 @@ class IsaacEnv(EnvBase):
             self._should_render = enable
         else:
             raise TypeError("enable_render must be a bool or callable.")
+    
+    def render(self, mode: str="human"):
+        if mode == "human":
+            return None
+        elif mode == "rgb_array":
+            # check if viewport is enabled -- if not, then complain because we won't get any data
+            if not self.enable_viewport:
+                raise RuntimeError(
+                    f"Cannot render '{mode}' when enable viewport is False. Please check the provided"
+                    "arguments to the environment class at initialization."
+                )
+            # obtain the rgb data
+            rgb_data = self._rgb_annotator.get_data()
+            # convert to numpy array
+            rgb_data = np.frombuffer(rgb_data, dtype=np.uint8).reshape(*rgb_data.shape)
+            # return the rgb data
+            return rgb_data[:, :, :3]
+        else:
+            raise NotImplementedError(
+                f"Render mode '{mode}' is not supported. Please use: {self.metadata['render.modes']}."
+            )
+    
+    def _create_viewport_render_product(self):
+        """Create a render product of the viewport for rendering."""
+        # set camera view for "/OmniverseKit_Persp" camera
+        set_camera_view(eye=self.cfg.viewer.eye, target=self.cfg.viewer.lookat)
+
+        # check if flatcache is enabled
+        # this is needed to flush the flatcache data into Hydra manually when calling `env.render()`
+        # ref: https://docs.omniverse.nvidia.com/prod_extensions/prod_extensions/ext_physics.html
+        if  self.sim.get_physics_context().use_flatcache:
+            from omni.physxflatcache import get_physx_flatcache_interface
+
+            # acquire flatcache interface
+            self._flatcache_iface = get_physx_flatcache_interface()
+
+        # check if viewport is enabled before creating render product
+        if self.enable_viewport:
+            import omni.replicator.core as rep
+
+            # create render product
+            self._render_product = rep.create.render_product(
+                "/OmniverseKit_Persp", tuple(self.cfg.viewer.resolution)
+            )
+            # create rgb annotator -- used to read data from the render product
+            self._rgb_annotator = rep.AnnotatorRegistry.get_annotator("rgb", device="cpu")
+            self._rgb_annotator.attach([self._render_product])
+        else:
+            carb.log_info("Viewport is disabled. Skipping creation of render product.")
 
 
 class _AgentSpecView(Dict[str, AgentSpec]):

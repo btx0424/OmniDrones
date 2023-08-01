@@ -20,16 +20,44 @@ from .utils import TransportationGroup, TransportationCfg
 
 
 class TransportHover(IsaacEnv):
-    def __init__(self, cfg, headless):
-        super().__init__(cfg, headless)
-        self.reward_effort_weight = self.cfg.task.reward_effort_weight
-        self.reward_spin_weight = self.cfg.task.reward_spin_weight
-        self.reward_swing_weight = self.cfg.task.reward_swing_weight
-        self.reward_action_smoothness_weight = self.cfg.task.reward_action_smoothness_weight
-        self.reward_distance_scale = self.cfg.task.reward_distance_scale
-        self.time_encoding = self.cfg.task.time_encoding
+    r"""
+    A cooperative control task where a group of UAVs carry a box-shaped payload connected via
+    rigid links. The goal for the agents is to make the payload hover at a reference pose (position and attitude).
 
-        self.safe_distance = self.cfg.task.safe_distance
+    Observation
+    -----------
+    The observation is a `CompositeSpec` containing the following items:
+
+    - ``state_self`` (1, \*): The state of each UAV observed by itself, containing its kinematic
+      information with the position being relative to the payload.
+    - ``state_others`` (k-1, \*): The observed states of other agents.
+    - ``state_payload`` (1, \*): The state of the frame.
+
+
+    Reward
+    ------
+
+    Episode End
+    -----------
+    - Termination: 
+
+    Config
+    ------
+    - `num_drones`: The number of UAVs to carry the payload.
+    - `safe_distance`: A threshold value that gives penalty when the minimum seperation between the 
+      UAVs is too small.
+
+    """
+    def __init__(self, cfg, headless):
+        self.reward_effort_weight = cfg.task.reward_effort_weight
+        self.reward_spin_weight = cfg.task.reward_spin_weight
+        self.reward_swing_weight = cfg.task.reward_swing_weight
+        self.reward_action_smoothness_weight = cfg.task.reward_action_smoothness_weight
+        self.reward_distance_scale = cfg.task.reward_distance_scale
+        self.time_encoding = cfg.task.time_encoding
+        self.safe_distance = cfg.task.safe_distance
+
+        super().__init__(cfg, headless)
 
         self.group.initialize()
         self.payload = self.group.payload_view
@@ -47,32 +75,6 @@ class TransportHover(IsaacEnv):
 
         self.init_drone_poses = self.drone.get_world_poses(clone=True)
         self.init_drone_vels = torch.zeros_like(self.drone.get_velocities())
-
-        drone_state_dim = self.drone.state_spec.shape[-1]
-        payload_state_dim = 22
-        if self.time_encoding:
-            self.time_encoding_dim = 4
-            payload_state_dim += self.time_encoding_dim
-        
-        observation_spec = CompositeSpec({
-            "state_self": UnboundedContinuousTensorSpec((1, drone_state_dim)).to(self.device),
-            "state_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13+1)).to(self.device),
-            "state_payload": UnboundedContinuousTensorSpec((1, payload_state_dim)).to(self.device)
-        })
-
-        state_spec = CompositeSpec(
-            drones=UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim)).to(self.device),
-            payload=UnboundedContinuousTensorSpec((1, payload_state_dim)).to(self.device)
-        )
-
-        self.agent_spec["drone"] = AgentSpec(
-            "drone",
-            self.drone.n,
-            observation_spec,
-            self.drone.action_spec.to(self.device),
-            UnboundedContinuousTensorSpec(1).to(self.device),
-            state_spec=state_spec
-        )
 
         self.payload_target_rpy_dist = D.Uniform(
             torch.tensor([0., 0., 0.], device=self.device) * torch.pi,
@@ -96,22 +98,6 @@ class TransportHover(IsaacEnv):
         self.last_distance = torch.zeros(self.num_envs, 1, device=self.device)
 
         self.alpha = 0.8
-        
-        info_spec = CompositeSpec({
-            "payload_mass": UnboundedContinuousTensorSpec(1),
-        }).expand(self.num_envs).to(self.device)
-        stats_spec = CompositeSpec({
-            "payload_pos_error": UnboundedContinuousTensorSpec(1),
-            "heading_alignment": UnboundedContinuousTensorSpec(1),
-            "uprightness": UnboundedContinuousTensorSpec(1),
-            "motion_smoothness_payload": UnboundedContinuousTensorSpec(1),
-            "motion_smoothness_drone": UnboundedContinuousTensorSpec(self.drone.n),
-            "action_smoothness": UnboundedContinuousTensorSpec(self.drone.n),
-        }).expand(self.num_envs).to(self.device)
-        self.observation_spec["info"] = info_spec
-        self.observation_spec["stats"] = stats_spec
-        self.info = info_spec.zero()
-        self.stats = stats_spec.zero()
 
     def _design_scene(self):
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
@@ -141,6 +127,62 @@ class TransportHover(IsaacEnv):
         self.group.spawn(translations=[(0, 0, 2.0)], enable_collision=False)
         return ["/World/defaultGroundPlane"]
 
+    def _set_specs(self):
+        drone_state_dim = self.drone.state_spec.shape[-1]
+        payload_state_dim = 22
+        if self.time_encoding:
+            self.time_encoding_dim = 4
+            payload_state_dim += self.time_encoding_dim
+        
+        observation_spec = CompositeSpec({
+            "state_self": UnboundedContinuousTensorSpec((1, drone_state_dim)).to(self.device),
+            "state_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13+1)).to(self.device),
+            "state_payload": UnboundedContinuousTensorSpec((1, payload_state_dim)).to(self.device)
+        })
+
+        state_spec = CompositeSpec(
+            drones=UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim)).to(self.device),
+            payload=UnboundedContinuousTensorSpec((1, payload_state_dim)).to(self.device)
+        )
+        self.observation_spec = CompositeSpec({
+            "agents": {
+                "observation": observation_spec.expand(self.drone.n),
+                "state": state_spec,
+            }
+        }).expand(self.num_envs).to(self.device)
+        self.action_spec = CompositeSpec({
+            "agents": {
+                "action": self.drone.action_spec.expand(self.drone.n),
+            }
+        }).expand(self.num_envs).to(self.device)
+        self.reward_spec = CompositeSpec({
+            "agents": {
+                "reward": UnboundedContinuousTensorSpec((self.drone.n, 1))
+            }
+        }).expand(self.num_envs).to(self.device)
+        self.agent_spec["drone"] = AgentSpec(
+            "drone", self.drone.n,
+            observation_key=("agents", "observation"),
+            action_key=("agents", "action"),
+            reward_key=("agents", "reward"),
+        )
+
+        info_spec = CompositeSpec({
+            "payload_mass": UnboundedContinuousTensorSpec(1),
+        }).expand(self.num_envs).to(self.device)
+        stats_spec = CompositeSpec({
+            "return": UnboundedContinuousTensorSpec(self.drone.n),
+            "episode_len": UnboundedContinuousTensorSpec(1),
+            "pos_error": UnboundedContinuousTensorSpec(1),
+            "heading_alignment": UnboundedContinuousTensorSpec(1),
+            "uprightness": UnboundedContinuousTensorSpec(1),
+            "action_smoothness": UnboundedContinuousTensorSpec(self.drone.n),
+        }).expand(self.num_envs).to(self.device)
+        self.observation_spec["info"] = info_spec
+        self.observation_spec["stats"] = stats_spec
+        self.info = info_spec.zero()
+        self.stats = stats_spec.zero()
+    
     def _reset_idx(self, env_ids: torch.Tensor):
         pos = self.init_pos_dist.sample(env_ids.shape)
         rpy = self.init_rpy_dist.sample(env_ids.shape)
@@ -177,7 +219,7 @@ class TransportHover(IsaacEnv):
         self.last_distance[env_ids] = distance
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
-        actions = tensordict[("action", "drone.action")]
+        actions = tensordict[("agents", "action")]
         self.effort = self.drone.apply_action(actions)
 
     def _compute_state_and_obs(self):
@@ -226,28 +268,16 @@ class TransportHover(IsaacEnv):
         state["payload"] = payload_state # [..., 1, 22]
         state["drones"] = obs["state_self"].squeeze(2) # [..., n, state_dim]
 
-        pos_error = torch.norm(payload_target_rpos, dim=-1, keepdim=True)
-        heading_alignment = torch.sum(
+        self.pos_error = torch.norm(payload_target_rpos, dim=-1, keepdim=True)
+        self.heading_alignment = torch.sum(
             self.payload_heading * self.payload_target_heading, dim=-1, keepdim=True
         )
-        self.stats["payload_pos_error"].lerp_(pos_error, (1-self.alpha))
-        self.stats["heading_alignment"].lerp_(heading_alignment, (1-self.alpha))
-        self.stats["uprightness"].lerp_(self.payload_up[:, 2].unsqueeze(-1), (1-self.alpha))
-        self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
-        self.motion_smoothness_payload = (
-            self.group.get_linear_smoothness()
-            + self.group.get_angular_smoothness()
-        )
-        self.stats["motion_smoothness_payload"].lerp_(self.motion_smoothness_payload, (1-self.alpha))
-        self.motion_smoothness_drone = (
-            self.drone.get_linear_smoothness()
-            + self.drone.get_angular_smoothness()
-        )
-        self.stats["motion_smoothness_drone"].lerp_(self.motion_smoothness_drone, (1-self.alpha))
 
         return TensorDict({
-            "drone.obs": obs, 
-            "drone.state": state,
+            "agents": {
+                "observation": obs, 
+                "state": state,
+            },
             "info": self.info,
             "stats": self.stats
         }, self.num_envs)
@@ -300,11 +330,15 @@ class TransportHover(IsaacEnv):
             | done_hasnan.any(-1, keepdim=True)
         )
 
-        self._tensordict["return"] += reward
+        self.stats["return"].add_(reward.mean(1))
+        self.stats["episode_len"][:] = self.progress_buf.unsqueeze(-1)
+        self.stats["pos_error"].lerp_(self.pos_error, (1-self.alpha))
+        self.stats["heading_alignment"].lerp_(self.heading_alignment, (1-self.alpha))
+        self.stats["uprightness"].lerp_(self.payload_up[:, 2].unsqueeze(-1), (1-self.alpha))
+        self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
         return TensorDict(
             {
-                "reward": {"drone.reward": reward},
-                "return": self._tensordict["return"],
+                "agents": {"reward": reward},
                 "done": done,
             },
             self.batch_size,

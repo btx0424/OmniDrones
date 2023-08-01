@@ -10,6 +10,7 @@ save_interval: -1
 seed: 0
 
 viewer:
+  resolution: [960, 720]
   eye: [7.5, 7.5, 7.5]
   lookat: [0., 0., 0.]
 

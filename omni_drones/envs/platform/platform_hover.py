@@ -21,14 +21,49 @@ from .utils import OveractuatedPlatform, PlatformCfg
 
 
 class PlatformHover(IsaacEnv):
+    r"""
+    A cooperative control task where a group of `k` UAVs are connected together by a
+    rigid frame to form an overactuated platform. Each individual UAV, attached
+    by a 2-DoF passive gimbal joint, acts as a thrust generator.
+    The goal for the agents is to make the platform hover at a reference pose 
+    (position and attitude).
+
+    Observation
+    -----------
+    The observation is a `CompositeSpec` containing the following items:
+
+    - ``state_self`` (1, \*): The state of each UAV observed by itself, containing its kinematic
+      information with the position being relative to the frame center, and an one-hot
+      identity indicating the UAV's index.
+    - ``state_others`` (k-1, \*): The observed states of other agents.
+    - ``state_frame`` (1, \*): The state of the frame.
+
+    Reward
+    ------
+
+    Episode End
+    -----------
+    - Termination:
+
+    Config
+    ------
+    - `num_drones`: The number of UAVs in the platform.
+    - `arm_length`: The arm length of the overactuated platform, which determines the distance
+      between the center of the frame and the UAVs.
+    - `joint_damping`: The damping coefficient of the gimbal joints connecting each UAV to the
+      frame. This parameter affects the stability of the platform.
+
+    """
     def __init__(self, cfg, headless):
+        self.reward_effort_weight = cfg.task.reward_effort_weight
+        self.reward_action_smoothness_weight = cfg.task.reward_action_smoothness_weight
+        self.reward_distance_scale = cfg.task.reward_distance_scale
+        self.time_encoding = cfg.task.time_encoding
+        
+        self.num_drones = cfg.task.num_drones
+        self.arm_length = cfg.task.arm_length
+        self.joint_damping  = cfg.task.joint_damping
         super().__init__(cfg, headless)
-        self.reward_effort_weight = self.cfg.task.reward_effort_weight
-        self.reward_action_smoothness_weight = self.cfg.task.reward_action_smoothness_weight
-        self.reward_motion_smoothness_weight = self.cfg.task.reward_motion_smoothness_weight
-        self.reward_potential_weight = self.cfg.task.reward_potential_weight
-        self.reward_distance_scale = self.cfg.task.reward_distance_scale
-        self.time_encoding = self.cfg.task.time_encoding
 
         self.platform.initialize()
 
@@ -40,30 +75,6 @@ class PlatformHover(IsaacEnv):
         self.init_vels = torch.zeros_like(self.platform.get_velocities())
         self.init_joint_pos = self.platform.get_joint_positions(clone=True)
         self.init_joint_vel = torch.zeros_like(self.platform.get_joint_velocities())
-
-        drone_state_dim = self.drone.state_spec.shape.numel()
-        frame_state_dim = 25
-        if self.time_encoding:
-            self.time_encoding_dim = 4
-            frame_state_dim += self.time_encoding_dim
-            
-        observation_spec = CompositeSpec({
-            "state_self": UnboundedContinuousTensorSpec((1, drone_state_dim + self.drone.n)),
-            "state_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13)),
-            "state_frame": UnboundedContinuousTensorSpec((1, frame_state_dim)),
-        }).to(self.device)
-        state_spec = CompositeSpec({
-            "state_drones": UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim + self.drone.n)),
-            "state_frame": UnboundedContinuousTensorSpec((1, frame_state_dim)),
-        }).to(self.device)
-        self.agent_spec["drone"] = AgentSpec(
-            "drone",
-            self.drone.n,
-            observation_spec,
-            self.drone.action_spec.to(self.device),
-            UnboundedContinuousTensorSpec(1).to(self.device),
-            state_spec
-        )
 
         self.init_pos_dist = D.Uniform(
             torch.tensor([-3., -3., 1.5], device=self.device),
@@ -83,15 +94,6 @@ class PlatformHover(IsaacEnv):
         self.last_distance = torch.zeros(self.num_envs, 1, device=self.device)
 
         self.alpha = 0.8
-        stats_spec = CompositeSpec({
-            "pos_error": UnboundedContinuousTensorSpec(1),
-            "heading_alignment": UnboundedContinuousTensorSpec(1),
-            "effort": UnboundedContinuousTensorSpec(1),
-            "action_smoothness": UnboundedContinuousTensorSpec(1),
-            "motion_smoothness": UnboundedContinuousTensorSpec(1)
-        }).expand(self.num_envs).to(self.device)
-        self.observation_spec["stats"] = stats_spec
-        self.stats = stats_spec.zero()
 
     def _design_scene(self):
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
@@ -99,9 +101,9 @@ class PlatformHover(IsaacEnv):
         self.drone: MultirotorBase = drone_model(cfg=cfg)
 
         platform_cfg = PlatformCfg(
-            num_drones=self.cfg.task.num_drones,
-            arm_length=self.cfg.task.arm_length,
-            joint_damping=self.cfg.task.joint_damping
+            num_drones=self.num_drones,
+            arm_length=self.arm_length,
+            joint_damping=self.joint_damping
         )
         self.platform = OveractuatedPlatform(
             cfg=platform_cfg,
@@ -121,6 +123,56 @@ class PlatformHover(IsaacEnv):
 
         design_scene()
         return ["/World/defaultGroundPlane"]
+
+    def _set_specs(self):
+        drone_state_dim = self.drone.state_spec.shape.numel()
+        frame_state_dim = 25
+        if self.time_encoding:
+            self.time_encoding_dim = 4
+            frame_state_dim += self.time_encoding_dim
+            
+        observation_spec = CompositeSpec({
+            "state_self": UnboundedContinuousTensorSpec((1, drone_state_dim + self.drone.n)),
+            "state_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13)),
+            "state_frame": UnboundedContinuousTensorSpec((1, frame_state_dim)),
+        }).to(self.device)
+        state_spec = CompositeSpec({
+            "state_drones": UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim + self.drone.n)),
+            "state_frame": UnboundedContinuousTensorSpec((1, frame_state_dim)),
+        }).to(self.device)
+        self.observation_spec = CompositeSpec({
+            "agents": {
+                "observation": observation_spec.expand(self.drone.n),
+                "state": state_spec,
+            }
+        }).expand(self.num_envs).to(self.device)
+        self.action_spec = CompositeSpec({
+            "agents": {
+                "action": self.drone.action_spec.expand(self.drone.n),
+            }
+        }).expand(self.num_envs).to(self.device)
+        self.reward_spec = CompositeSpec({
+            "agents": {
+                "reward": UnboundedContinuousTensorSpec((self.drone.n, 1))
+            }
+        }).expand(self.num_envs).to(self.device)
+        self.agent_spec["drone"] = AgentSpec(
+            "drone", self.drone.n,
+            observation_key=("agents", "observation"),
+            action_key=("agents", "action"),
+            reward_key=("agents", "reward"),
+        )
+
+        stats_spec = CompositeSpec({
+            "return": UnboundedContinuousTensorSpec(self.drone.n),
+            "episode_len": UnboundedContinuousTensorSpec(1),
+            "pos_error": UnboundedContinuousTensorSpec(1),
+            "heading_alignment": UnboundedContinuousTensorSpec(1),
+            "effort": UnboundedContinuousTensorSpec(1),
+            "action_smoothness": UnboundedContinuousTensorSpec(1),
+        }).expand(self.num_envs).to(self.device)
+        self.observation_spec["stats"] = stats_spec
+        self.stats = stats_spec.zero()
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
@@ -161,7 +213,7 @@ class PlatformHover(IsaacEnv):
         self.last_distance[env_ids] = distance
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
-        actions = tensordict[("action", "drone.action")]
+        actions = tensordict[("agents", "action")]
         self.effort = self.drone.apply_action(actions)
 
     def _compute_state_and_obs(self):
@@ -210,22 +262,15 @@ class PlatformHover(IsaacEnv):
         state["state_drones"] = obs["state_self"].squeeze(2)    # [num_envs, drone.n, drone_state_dim]
         state["state_frame"] = platform_state                # [num_envs, 1, platform_state_dim]
         
-        pos_error = torch.norm(self.target_platform_rpos, dim=-1)
-        heading_alignment = torch.sum(self.platform.heading * self.target_heading.unsqueeze(1), dim=-1)
+        self.pos_error = torch.norm(self.target_platform_rpos, dim=-1)
+        self.heading_alignment = torch.sum(self.platform.heading * self.target_heading.unsqueeze(1), dim=-1)
         
-        self.stats["pos_error"].lerp_(pos_error, (1-self.alpha))
-        self.stats["heading_alignment"].lerp_(heading_alignment, (1-self.alpha))
-        self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference.mean(-1, True), (1-self.alpha))
-        self.motion_smoothness = (
-            self.platform.get_linear_smoothness() 
-            + self.platform.get_angular_smoothness()
-        )
-        self.stats["motion_smoothness"].lerp_(self.motion_smoothness, (1-self.alpha))
-
         return TensorDict(
             {
-                "drone.obs": obs,
-                "drone.state": state,
+                "agents": {
+                    "observation": obs,
+                    "state": state
+                },
                 "stats": self.stats
             },
             self.batch_size,
@@ -236,7 +281,7 @@ class PlatformHover(IsaacEnv):
 
         distance = torch.norm(self.target_platform_rpose, dim=-1)
         
-        reward = torch.zeros(self.num_envs, self.drone.n, 1, device=self.device)
+        reward = torch.zeros(self.num_envs, self.drone.n, device=self.device)
         # reward_pose = 1 / (1 + torch.square(distance * self.reward_distance_scale))
         reward_pose = torch.exp(- self.reward_distance_scale * distance)
         
@@ -248,20 +293,16 @@ class PlatformHover(IsaacEnv):
         
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort).mean(-1, keepdim=True)
         reward_action_smoothness = self.reward_action_smoothness_weight * torch.exp(-self.drone.throttle_difference).mean(-1, keepdim=True)
-        reward_motion_smoothness = self.reward_motion_smoothness_weight * (self.motion_smoothness / 1000)
 
-        reward_potential = self.reward_potential_weight * (self.last_distance - distance)
         self.last_distance[:] = distance
         assert reward_pose.shape == reward_up.shape == reward_action_smoothness.shape
 
         reward[:] = (
             reward_pose
             + reward_pose * (reward_up + reward_spin) 
-            + reward_potential
             + reward_effort
             + reward_action_smoothness
-            + reward_motion_smoothness
-        ).unsqueeze(1)
+        )
 
         done_misbehave = (self.drone_states[..., 2] < 0.2).any(-1, keepdim=True) | (distance > 5.0)
         done_hasnan = done_hasnan = torch.isnan(self.drone_states).any(-1)
@@ -272,11 +313,16 @@ class PlatformHover(IsaacEnv):
             | done_hasnan.any(-1, keepdim=True)
         )
 
-        self._tensordict["return"] += reward
+        self.stats["return"] += reward
+        self.stats["episode_len"][:] = self.progress_buf.unsqueeze(-1)
+        self.stats["pos_error"].lerp_(self.pos_error, (1-self.alpha))
+        self.stats["heading_alignment"].lerp_(self.heading_alignment, (1-self.alpha))
+        self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference.mean(-1, True), (1-self.alpha))
         return TensorDict(
             {
-                "reward": {"drone.reward": reward},
-                "return": self._tensordict["return"],
+                "agents": {
+                    "reward": reward.unsqueeze(1)
+                },
                 "done": done,
             },
             self.batch_size,

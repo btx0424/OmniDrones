@@ -1,5 +1,5 @@
 from collections import Callable, defaultdict
-from typing import Any, Dict, Optional, Sequence, Union
+from typing import Any, Dict, Optional, Sequence, Union, Tuple
 
 import torch
 from tensordict.tensordict import TensorDictBase, TensorDict
@@ -109,19 +109,19 @@ class LogOnEpisode(Transform):
 class FromDiscreteAction(Transform):
     def __init__(
         self,
-        action_key: Sequence[str] = None,
+        action_key: Tuple[str] = ("agents", "action"),
         nbins: Union[int, Sequence[int]] = None,
     ):
-        if action_key is None:
-            action_key = "action"
         if nbins is None:
             nbins = 2
         super().__init__([], in_keys_inv=[action_key])
+        if not isinstance(action_key, tuple):
+            action_key = (action_key,)
         self.nbins = nbins
         self.action_key = action_key
 
     def transform_input_spec(self, input_spec: CompositeSpec) -> CompositeSpec:
-        action_spec = input_spec[self.action_key]
+        action_spec = input_spec[("_action_spec", *self.action_key)]
         if isinstance(action_spec, BoundedTensorSpec):
             if isinstance(self.nbins, int):
                 nbins = [self.nbins] * action_spec.shape[-1]
@@ -140,9 +140,9 @@ class FromDiscreteAction(Transform):
             spec = DiscreteTensorSpec(
                 n, shape=[*action_spec.shape[:-1], 1], device=action_spec.device
             )
-            input_spec[self.action_key] = spec
         else:
             NotImplementedError("Only BoundedTensorSpec is supported.")
+        input_spec[("_action_spec", *self.action_key)] = spec
         return input_spec
 
     def _inv_apply_transform(self, action: torch.Tensor) -> torch.Tensor:
@@ -155,17 +155,19 @@ class FromDiscreteAction(Transform):
 class FromMultiDiscreteAction(Transform):
     def __init__(
         self,
-        action_key: Sequence[str] = None,
+        action_key: Tuple[str] = ("agents", "action"),
         nbins: Union[int, Sequence[int]] = 2,
     ):
         if action_key is None:
             action_key = "action"
         super().__init__([], in_keys_inv=[action_key])
+        if not isinstance(action_key, tuple):
+            action_key = (action_key,)
         self.nbins = nbins
         self.action_key = action_key
 
     def transform_input_spec(self, input_spec: CompositeSpec) -> CompositeSpec:
-        action_spec = input_spec[self.action_key]
+        action_spec = input_spec[("_action_spec", *self.action_key)]
         if isinstance(action_spec, BoundedTensorSpec):
             if isinstance(self.nbins, int):
                 nbins = [self.nbins] * action_spec.shape[-1]
@@ -181,9 +183,9 @@ class FromMultiDiscreteAction(Transform):
             self.nvec = spec.nvec.to(action_spec.device)
             self.minimum = action_spec.space.minimum
             self.maximum = action_spec.space.maximum
-            input_spec[self.action_key] = spec
         else:
             NotImplementedError("Only BoundedTensorSpec is supported.")
+        input_spec[("_action_spec", *self.action_key)] = spec
         return input_spec
 
     def _inv_apply_transform(self, action: torch.Tensor) -> torch.Tensor:
@@ -219,8 +221,10 @@ class DepthImageNorm(Transform):
 
 def flatten_composite(spec: CompositeSpec, key: str):
     composite_spec = spec[key]
+    if not isinstance(key, tuple):
+        key = (key,)
     if isinstance(composite_spec, CompositeSpec):
-        in_keys = [k for k in spec.keys(True, True) if k[0] == key]
+        in_keys = [k for k in spec.keys(True, True) if k[:len(key)] == key]
         return Compose(
             FlattenObservation(-2, -1, in_keys),
             CatTensors(in_keys, out_key=key)

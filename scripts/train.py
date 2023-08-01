@@ -3,9 +3,8 @@ import os
 import time
 
 import hydra
-from tensordict.tensordict import TensorDictBase
 import torch
-from torchrl.data.tensor_specs import TensorSpec
+import numpy as np
 import wandb
 from functorch import vmap
 from omegaconf import OmegaConf
@@ -19,7 +18,6 @@ from omni_drones.utils.torchrl.transforms import (
     FromDiscreteAction,
     flatten_composite,
     VelController,
-    History
 )
 from omni_drones.utils.wandb import init_wandb
 from omni_drones.learning import (
@@ -35,7 +33,6 @@ from omni_drones.learning import (
 )
 
 from setproctitle import setproctitle
-from tensordict import TensorDict
 from torchrl.envs.transforms import (
     TransformedEnv, 
     InitTracker, 
@@ -68,7 +65,6 @@ def main(cfg):
     print(OmegaConf.to_yaml(cfg))
 
     from omni_drones.envs.isaac_env import IsaacEnv
-    from omni_drones.sensors.camera import Camera, PinholeCameraCfg
     algos = {
         "mappo": MAPPOPolicy, 
         "happo": HAPPOPolicy,
@@ -83,7 +79,7 @@ def main(cfg):
 
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
     base_env = env_class(cfg, headless=cfg.headless)
-    
+
     def log(info):
         print(OmegaConf.to_yaml(info))
         run.log(info)
@@ -104,9 +100,9 @@ def main(cfg):
     # a CompositeSpec is by deafault processed by a entity-based encoder
     # flatten it to use a MLP encoder instead
     if cfg.task.get("flatten_obs", False):
-        transforms.append(flatten_composite(base_env.observation_spec, "drone.obs"))
+        transforms.append(flatten_composite(base_env.observation_spec, ("agents", "observation")))
     if cfg.task.get("flatten_state", False):
-        transforms.append(flatten_composite(base_env.observation_spec, "drone.state"))
+        transforms.append(flatten_composite(base_env.observation_spec, ("agents", "state")))
     if cfg.task.get("visual_obs", False):
         min_depth = cfg.task.camera.get("min_depth", 0.1)
         max_depth = cfg.task.camera.get("max_depth", 5)
@@ -120,11 +116,11 @@ def main(cfg):
     if action_transform is not None:
         if action_transform.startswith("multidiscrete"):
             nbins = int(action_transform.split(":")[1])
-            transform = FromMultiDiscreteAction(("action", "drone.action"), nbins=nbins)
+            transform = FromMultiDiscreteAction(nbins=nbins)
             transforms.append(transform)
         elif action_transform.startswith("discrete"):
             nbins = int(action_transform.split(":")[1])
-            transform = FromDiscreteAction(("action", "drone.action"), nbins=nbins)
+            transform = FromDiscreteAction(nbins=nbins)
             transforms.append(transform)
         elif action_transform == "controller":
             controller_cls = base_env.drone.DEFAULT_CONTROLLER
@@ -142,22 +138,6 @@ def main(cfg):
     env = TransformedEnv(base_env, Compose(*transforms)).train()
     env.set_seed(cfg.seed)
 
-    camera_cfg = PinholeCameraCfg(
-        sensor_tick=0,
-        resolution=(960, 720),
-        data_types=["rgb"],
-        usd_params=PinholeCameraCfg.UsdCameraCfg(
-            focal_length=24.0,
-            focus_distance=400.0,
-            horizontal_aperture=20.955,
-            clipping_range=(0.1, 1.0e5),
-        ),
-    )
-    
-    camera = Camera(camera_cfg)
-    camera.spawn(["/World/Camera"], translations=[(7.5, 7.5, 7.5)], targets=[(0, 0, 0.5)])
-    camera.initialize("/World/Camera")
-
     agent_spec: AgentSpec = env.agent_spec["drone"]
     policy = algos[cfg.algo.name.lower()](
         cfg.algo, agent_spec=agent_spec, device="cuda"
@@ -170,7 +150,7 @@ def main(cfg):
     save_interval = cfg.get("save_interval", -1)
 
     collector = SyncDataCollector(
-        env.train(),
+        env,
         policy=policy,
         frames_per_batch=frames_per_batch,
         total_frames=total_frames,
@@ -183,8 +163,8 @@ def main(cfg):
         frames = []
 
         def record_frame(*args, **kwargs):
-            frame = camera.get_images()["rgb"][0]
-            frames.append(frame.cpu())
+            frame = env.base_env.render(mode="rgb_array")
+            frames.append(frame)
 
         base_env.enable_render(True)
         env.eval()
@@ -201,7 +181,8 @@ def main(cfg):
         env.train()
 
         if len(frames):
-            video_array = torch.stack(frames)
+            # video_array = torch.stack(frames)
+            video_array = np.stack(frames).transpose(0, 3, 1, 2)
             info["recording"] = wandb.Video(
                 video_array, fps=0.5 / cfg.sim.dt, format="mp4"
             )
@@ -209,6 +190,7 @@ def main(cfg):
         return info
 
     pbar = tqdm(collector)
+    env.train()
     for i, data in enumerate(pbar):
         info = {"env_frames": collector._frames, "rollout_fps": collector._fps}
         info.update(policy.train_op(data))

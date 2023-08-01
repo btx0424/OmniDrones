@@ -38,8 +38,10 @@ class Track(IsaacEnv):
 
     Config
     ------
-    - reset_thres: 
-    - future_traj_steps:
+    - reset_thres: A threshold value that triggers termination when the payload deviates 
+      form the reference position beyond a certain limit.
+    - future_traj_steps: The number of future time steps provided in the `ref_payload_rpos`
+      observation. 
 
     """
     def __init__(self, cfg, headless):

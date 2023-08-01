@@ -7,9 +7,9 @@ To better work with the vectorized environments in Isaac Sim, which directly tak
 PyTorch Tensors in batches, we use `TorchRL <https://pytorch.org/rl/index.html>`_ 
 and `TensorDict <https://pytorch.org/rl/tensordict/>`_ to build an efficient and flexible interface for OmniDrones.
 
-.. note::
+.. seealso::
 
-    hello
+    https://pytorch.org/rl/tutorials/torchrl_envs.html
 
 Specification
 -------------
@@ -70,24 +70,8 @@ An environment's input/output specification is given by its ``observation_spec``
                     device=cuda,
                     dtype=torch.float32,
                     domain=continuous),
-                heading_alignment: UnboundedContinuousTensorSpec(
-                    shape=torch.Size([4096, 1]),
-                    space=None,
-                    device=cuda,
-                    dtype=torch.float32,
-                    domain=continuous),
-                uprightness: UnboundedContinuousTensorSpec(
-                    shape=torch.Size([4096, 1]),
-                    space=None,
-                    device=cuda,
-                    dtype=torch.float32,
-                    domain=continuous),
-                action_smoothness: UnboundedContinuousTensorSpec(
-                    shape=torch.Size([4096, 1]),
-                    space=None,
-                    device=cuda,
-                    dtype=torch.float32,
-                    domain=continuous), device=cuda, shape=torch.Size([4096])),
+                ...
+                ),
             info: CompositeSpec(
                 drone_state: UnboundedContinuousTensorSpec(
                     shape=torch.Size([4096, 1, 13]),
@@ -222,3 +206,68 @@ Data Collection
 
 Creating New Tasks
 ------------------
+
+
+
+Environment Transforms
+----------------------
+
+TorchRL's interface allows us to modularly transform an environment's input and output spaces using ``Transform`` s. 
+OmniDrones provides a set of ``Transform`` s for various purpose.
+
+.. seealso:: 
+
+    https://pytorch.org/rl/tutorials/torchrl_envs.html#transforming-envs
+
+For example, although most of the environments in OmniDrones feature continuous control tasks, discrete/multidiscrete 
+action spaces are sometimes more desirable:
+
+.. code:: python
+
+    from tensordict import TensorDictBase
+    from torchrl.envs.transforms import TransformedEnv
+
+    from omni_drones.envs.isaac_env import IsaacEnv
+    from omni_drones.utils.torchrl.transforms import (
+        FromMultiDiscreteAction, 
+        FromDiscreteAction,
+    )
+    
+    env_class = IsaacEnv.REGISTRY["Hover"]
+    base_env = env_class(cfg, headless=true)
+
+    env_discrete = TransformedEnv(
+        abenv, FromDiscreteAction(nbins=2)
+    )
+    env_multidiscrete = TransformedEnv(
+        env, FromMultiDiscreteAction(nbins=4)
+    )
+    print(base_env.action_spec)
+    print(env_discrete.action_spec)
+    print(env_multidiscrete.action_spec)
+
+output: 
+
+.. code:: console
+
+    BoundedTensorSpec(
+        shape=torch.Size([4096, 1, 6]),
+        space=ContinuousBox(
+            minimum=Tensor(shape=torch.Size([64, 1, 6]), device=cuda:0, dtype=torch.float32, contiguous=True),
+            maximum=Tensor(shape=torch.Size([64, 1, 6]), device=cuda:0, dtype=torch.float32, contiguous=True)),
+        device=cuda,
+        dtype=torch.float32,
+        domain=continuous)
+    DiscreteTensorSpec(
+        shape=torch.Size([4096, 1, 1]),
+        space=...,
+        device=cuda,
+        dtype=torch.int64,
+        domain=discrete)
+    MultiDiscreteTensorSpec(
+        shape=torch.Size([4096, 1, 6]),
+        space=BoxList(boxes=[DiscreteBox(n=4), DiscreteBox(n=4), DiscreteBox(n=4), DiscreteBox(n=4), DiscreteBox(n=4), DiscreteBox(n=4)]),
+        device=cuda,
+        dtype=torch.int64,
+        domain=discrete)
+

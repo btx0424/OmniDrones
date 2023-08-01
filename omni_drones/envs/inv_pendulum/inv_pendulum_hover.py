@@ -17,12 +17,39 @@ from .utils import create_pendulum
 
 
 class InvPendulumHover(IsaacEnv):
+    r"""
+    An intermidiate control task where a classic inverted pendulum is based on the UAV.
+    We refer the the ball at the end of pendulum as *payload*. The goal for the agent 
+    is to keep balance while maintaining its position around a target position.
+
+    Observation
+    -----------
+    - `drone_payload_rpos` (3): The position of the drone relative to the payload's position.
+    - `root_state` (): 
+    - `target_payload_rpos` (3): The position of the reference relative to the payload's position.
+    - `payload_vel` (3): The velocity of the payload.
+    - *time_encoding*: 
+
+    Reward
+    ------
+
+    Episode End
+    -----------
+    - Termination: 
+
+    Config
+    ------
+    - `bar_length`: The length of the pendulum's bar (or pole).
+
+    """
     def __init__(self, cfg, headless):
-        super().__init__(cfg, headless)
         self.reward_effort_weight = self.cfg.task.reward_effort_weight
         self.reward_action_smoothness_weight = self.cfg.task.reward_action_smoothness_weight
         self.reward_distance_scale = self.cfg.task.reward_distance_scale
         self.time_encoding = self.cfg.task.time_encoding
+
+        self.bar_length = 1.
+        super().__init__(cfg, headless)
 
         self.drone.initialize()
 
@@ -40,19 +67,6 @@ class InvPendulumHover(IsaacEnv):
         self.init_vels = torch.zeros_like(self.drone.get_velocities())
         self.init_joint_pos = self.drone.get_joint_positions(True)
         self.init_joint_vels = torch.zeros_like(self.drone.get_joint_velocities())
-
-        drone_state_dim = self.drone.state_spec.shape[-1]
-        if self.time_encoding:
-            self.time_encoding_dim = 4
-            drone_state_dim += self.time_encoding_dim
-        
-        self.agent_spec["drone"] = AgentSpec(
-            "drone",
-            1,
-            UnboundedContinuousTensorSpec(drone_state_dim + 12).to(self.device),
-            self.drone.action_spec.to(self.device),
-            UnboundedContinuousTensorSpec(1).to(self.device),
-        )
 
         self.init_pos_dist = D.Uniform(
             torch.tensor([-1.5, -1.5, 1.0], device=self.device),
@@ -75,18 +89,6 @@ class InvPendulumHover(IsaacEnv):
         self.payload_target_pos = torch.tensor([0., 0., 2.5], device=self.device)
         
         self.alpha = 0.8
-        stats_spec = CompositeSpec({
-            "pos_error": UnboundedContinuousTensorSpec(1),
-            "action_smoothness": UnboundedContinuousTensorSpec(1),
-            "motion_smoothness": UnboundedContinuousTensorSpec(1)
-        }).expand(self.num_envs).to(self.device)
-        info_spec = CompositeSpec({
-            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13)),
-        }).expand(self.num_envs).to(self.device)
-        self.observation_spec["stats"] = stats_spec
-        self.observation_spec["info"] = info_spec
-        self.stats = stats_spec.zero()
-        self.info = info_spec.zero()
 
     def _design_scene(self):
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
@@ -101,7 +103,7 @@ class InvPendulumHover(IsaacEnv):
         )
 
         self.drone.spawn(translations=[(0.0, 0.0, 2.)])
-        create_pendulum(f"/World/envs/env_0/{self.drone.name}_0", 1., 0.04)
+        create_pendulum(f"/World/envs/env_0/{self.drone.name}_0", self.bar_length, 0.04)
 
         sphere = objects.DynamicSphere(
             "/World/envs/env_0/target",
@@ -112,6 +114,46 @@ class InvPendulumHover(IsaacEnv):
         kit_utils.set_collision_properties(sphere.prim_path, collision_enabled=False)
         kit_utils.set_rigid_body_properties(sphere.prim_path, disable_gravity=True)
         return ["/World/defaultGroundPlane"]
+
+    def _set_specs(self):
+        observation_dim = self.drone.state_spec.shape[-1] + 12
+        if self.time_encoding:
+            self.time_encoding_dim = 4
+            observation_dim += self.time_encoding_dim
+        
+        self.observation_spec = CompositeSpec({
+            "agents": CompositeSpec({
+                "observation": UnboundedContinuousTensorSpec((1, observation_dim)) ,
+            })
+        }).expand(self.num_envs).to(self.device)
+        self.action_spec = CompositeSpec({
+            "agents": CompositeSpec({
+                "action": self.drone.action_spec.unsqueeze(0),
+            })
+        }).expand(self.num_envs).to(self.device)
+        self.reward_spec = CompositeSpec({
+            "agents": CompositeSpec({
+                "reward": UnboundedContinuousTensorSpec((1, 1))
+            })
+        }).expand(self.num_envs).to(self.device)
+        self.agent_spec["drone"] = AgentSpec(
+            "drone", 1,
+            observation_key=("agents", "observation"),
+            action_key=("agents", "action"),
+            reward_key=("agents", "reward"),
+        )
+        stats_spec = CompositeSpec({
+            "pos_error": UnboundedContinuousTensorSpec(1),
+            "action_smoothness": UnboundedContinuousTensorSpec(1),
+            "motion_smoothness": UnboundedContinuousTensorSpec(1)
+        }).expand(self.num_envs).to(self.device)
+        info_spec = CompositeSpec({
+            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13)),
+        }).expand(self.num_envs).to(self.device)
+        self.observation_spec["stats"] = stats_spec
+        self.observation_spec["info"] = info_spec
+        self.stats = stats_spec.zero()
+        self.info = info_spec.zero()
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
@@ -134,7 +176,7 @@ class InvPendulumHover(IsaacEnv):
         self.stats[env_ids] = 0.
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
-        actions = tensordict[("action", "drone.action")]
+        actions = tensordict[("agents", "action")]
         self.effort = self.drone.apply_action(actions)
 
     def _compute_state_and_obs(self):
@@ -170,7 +212,9 @@ class InvPendulumHover(IsaacEnv):
         self.stats["motion_smoothness"].lerp_(smoothness, (1-self.alpha))
 
         return TensorDict({
-            "drone.obs": obs,
+            "agents":{
+                "observation": obs,
+            },
             "stats": self.stats,
             "info": self.info,
         }, self.batch_size)
@@ -193,7 +237,7 @@ class InvPendulumHover(IsaacEnv):
             reward_bar_up + reward_pos
             + reward_bar_up * (reward_spin + reward_swing) 
             + reward_effort
-        ).unsqueeze(-1)
+        )
         
         done_misbehave = (self.drone.pos[..., 2] < 0.2) | (reward_bar_up < 0.2)
         done_hasnan = torch.isnan(self.drone_state).any(-1)
@@ -204,12 +248,14 @@ class InvPendulumHover(IsaacEnv):
             | done_hasnan
             | (self.pos_error > 3.3)
         )
+        self.stats["return"] += reward
+        self.stats["episode_len"][:] = self.progress_buf.unsqueeze(-1)
 
-        self._tensordict["return"] += reward
         return TensorDict(
             {
-                "reward": {"drone.reward": reward},
-                "return": self._tensordict["return"],
+                "agents": {
+                    "reward": reward.unsqueeze(-1)
+                },
                 "done": done,
             },
             self.batch_size,

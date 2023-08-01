@@ -23,6 +23,7 @@ master_doc = 'index'
 extensions = [
     'sphinx.ext.duration',
     'sphinx.ext.autodoc',
+    "sphinx.ext.autosummary",
     # 'myst_parser',
 ]
 

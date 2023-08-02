@@ -30,7 +30,7 @@ class RobotBase(abc.ABC):
     cfg_cls = RobotCfg
 
     _robots = {}
-    _envs_positions: torch.Tensor = None
+    _envs_positions: torch.Tensor
 
     REGISTRY: Dict[str, Type["RobotBase"]] = {}
 

@@ -212,8 +212,8 @@ Creating New Tasks
 Environment Transforms
 ----------------------
 
-TorchRL's interface allows us to modularly transform an environment's input and output spaces using ``Transform`` s. 
-OmniDrones provides a set of ``Transform`` s for various purpose.
+TorchRL's interface allows us to modularly transform an environment's input and output spaces using :py:class:`Transform` s. 
+OmniDrones provides a set of :py:class:`Transform` s for various purpose.
 
 .. seealso:: 
 

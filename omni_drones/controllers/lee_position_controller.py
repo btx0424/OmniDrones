@@ -7,6 +7,20 @@ import yaml
 import os.path as osp
 
 class LeePositionController(nn.Module):
+    """
+    Computes rotor commands for the given control target using the controller
+    described in https://arxiv.org/abs/1003.2005.
+
+    Inputs:
+        * root_state: tensor of shape (13,) containing position, rotation (in quaternion),
+        linear velocity, and angular velocity.
+        * control_target: tensor of shape (7,) contining target position, linear velocity,
+        and yaw angle.
+    
+    Outputs:
+        * cmd: tensor of shape (num_rotors,) containing the computed rotor commands.
+        * controller_state: empty dict.
+    """
     def __init__(
         self, 
         dt: float, 
@@ -56,8 +70,6 @@ class LeePositionController(nn.Module):
             torch.as_tensor(controller_params["angular_rate_gain"]).float() @ I[:3, :3].inverse()
         )
 
-        # print(A)
-        # print(self.mixer)
         self.requires_grad_(False)
 
     def forward(

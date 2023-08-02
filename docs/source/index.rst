@@ -19,7 +19,8 @@ Welcome to OmniDrones's documentation!
 
 .. toctree::
    :maxdepth: 1
-
+   
+   drones
    intro
    tasks
 

@@ -1,7 +1,8 @@
 import os
 
 from typing import Dict, Optional
-import functorch, torch
+import torch
+from functorch import vmap
 
 import hydra
 from omegaconf import OmegaConf
@@ -15,12 +16,10 @@ def main(cfg):
     simulation_app = init_simulation_app(cfg)
     print(OmegaConf.to_yaml(cfg))
 
-    import omni.isaac.core.utils.prims as prim_utils
-    import omni_drones.utils.kit as kit_utils
     import omni_drones.utils.scene as scene_utils
     from omni.isaac.core.simulation_context import SimulationContext
     from omni_drones.controllers import LeePositionController
-    from omni_drones.robots.drone import Crazyflie, Firefly, Hummingbird, MultirotorBase
+    from omni_drones.robots.drone import MultirotorBase
     from omni_drones.sensors.camera import Camera, PinholeCameraCfg
 
     sim = SimulationContext(
@@ -33,8 +32,9 @@ def main(cfg):
     )
     n = 4
 
-    drone_cfg = Firefly.cfg_cls()
-    drone = Firefly(cfg=drone_cfg)
+    drone_model = "Hummingbird"
+    drone_cls = MultirotorBase.REGISTRY[drone_model]
+    drone = drone_cls()
 
     translations = torch.zeros(n, 3)
     translations[:, 1] = torch.arange(n)
@@ -63,52 +63,61 @@ def main(cfg):
     camera.initialize(f"/World/envs/env_0/{drone.name}_*/base_link/Camera")
     drone.initialize()
 
-    init_poses = drone.get_world_poses(clone=True)
-    init_vels = drone.get_velocities(clone=True)
-    controller = drone.DEFAULT_CONTROLLER(
+    # let's fly a circular trajectory
+    radius = 1.5
+    omega = 1.
+    phase = torch.linspace(0, 2, n+1)[:n]
+    def ref_pos(t):
+        _t = phase * torch.pi + t * omega
+        pos = torch.stack([
+            torch.cos(_t) * radius,
+            torch.sin(_t) * radius,
+            torch.ones(n) * 1.5
+        ], dim=-1)
+        return pos
+    init_poses = ref_pos(0)
+    init_vels = torch.zeros(n, 7, device=sim.device)
+
+    controller = LeePositionController(
         dt=sim.get_physics_dt(), g=9.81, uav_params=drone.params
     ).to(sim.device)
+    controller_fun = vmap(controller)
 
-    controller_state = TensorDict({}, n, device=sim.device)
     control_target = torch.zeros(n, 7, device=sim.device)
-    # control_target[:, 0] = torch.arange(n, device=sim.device).flip(-1) * 0.5
-    control_target[:, 1] = torch.arange(n, device=sim.device)
-    control_target[:, 2] = 1.0 + torch.arange(n, device=sim.device) * 0.2
-    control_target[:, -1] = (torch.pi / 6) * torch.arange(n, device=sim.device)
-    action = drone.action_spec.zero((n,))
+
+    def reset():
+        drone._reset_idx(torch.tensor([0]))
+        drone.set_world_poses(*init_poses)
+        drone.set_velocities(init_vels)
+        # flush the buffer so that the next getter invocation returns up-to-date values
+        sim._physics_sim_view.flush() 
+    
+    reset()
+    drone_state = drone.get_state()[..., :13].squeeze(0)
 
     frames = []
     from tqdm import tqdm
-    t = tqdm(range(2000))
-    for i in t:
+    for i in tqdm(range(2000)):
         if sim.is_stopped() or len(frames) >= 1000:
             break
         if not sim.is_playing():
             continue
-        root_state = drone.get_state(env=False)[..., :13].squeeze(0)
-        action, controller_state = functorch.vmap(controller)(
-            root_state, control_target, controller_state
-        )
-        # action[:], controller_state = controller(
-        #     root_state[0], control_target[0], controller_state
-        # )
+        control_target[:, :3] = ref_pos(i % 1000)
+        action, _ = controller_fun(drone_state, control_target, {})
         drone.apply_action(action)
-        sim.step(i % 2 == 0)
+        sim.step(render=True)
 
         if i % 2 == 0 and len(frames) < 1000:
             frame = camera.get_images()
             frames.append(frame.cpu())
 
         if i % 1000 == 0:
-            drone.set_world_poses(*init_poses)
-            drone.set_velocities(init_vels)
-            controller_state.zero_()
-            sim.step()
+            reset()
+        drone_state = drone.get_state()[..., :13].squeeze(0)
         
     from torchvision.io import write_video
 
     for k, v in torch.stack(frames).cpu().items():
-        torch.save(v, f"{k}.pth")
         for i, vv in enumerate(v.unbind(1)):
             if vv.shape[-1] == 4:
                 write_video(f"{k}_{i}.mp4", vv[..., :3], fps=50)

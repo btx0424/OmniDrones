@@ -239,10 +239,10 @@ class MultirotorBase(RobotBase):
         self.throttle_difference[:] = torch.norm(self.throttle - last_throttle, dim=-1)
         return self.throttle.sum(-1)
 
-    def get_state(self, env=True, check_nan: bool=False):
+    def get_state(self, check_nan: bool=False):
         self.pos[:], self.rot[:] = self.get_world_poses(True)
-        if env:
-            self.pos[:] = self.pos[:] - RobotBase._envs_positions
+        if hasattr(self, "envs_positions"):
+            self.pos.sub_(self._envs_positions)
         vel = self.get_velocities(True)
         acc = self.acc.lerp((vel - self.vel) / self.dt, self.alpha)
         jerk = self.jerk.lerp((acc - self.acc) / self.dt, self.alpha)
@@ -324,7 +324,7 @@ class MultirotorBase(RobotBase):
             self.rotor_pos_offset[env_ids, ..., :2] = pos_offset
 
     def get_thrust_to_weight_ratio(self):
-        return self.KF.sum(-1) / (self.masses * 9.81)
+        return self.KF.sum(-1, keepdim=True) / (self.masses * 9.81)
 
     def get_linear_smoothness(self):
         return - (

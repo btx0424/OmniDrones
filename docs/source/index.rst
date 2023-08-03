@@ -9,21 +9,28 @@ Welcome to OmniDrones's documentation!
 .. image:: _static/overview.pdf
 
 .. toctree::
-   :maxdepth: 2
-   :caption: Contents:
-
-.. toctree::
+   :caption: Getting Started
 
    installation/workstation
    installation/container
 
 .. toctree::
+   :caption: Tutorials
    :maxdepth: 1
    
-   drones
-   intro
+   drone
+   environment
+   tips
+
+.. toctree::
+   :caption: Usage
+
    tasks
 
+.. toctree::
+   :caption: Misc.
+
+   roadmap
 
 Indices and tables
 ==================

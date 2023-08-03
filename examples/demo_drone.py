@@ -75,21 +75,26 @@ def main(cfg):
             torch.ones(n) * 1.5
         ], dim=-1)
         return pos
-    init_poses = ref_pos(0)
-    init_vels = torch.zeros(n, 7, device=sim.device)
+    init_poses = (
+        ref_pos(0).to(sim.device), 
+        torch.tensor([1., 0., 0.,0.], device=sim.device).repeat(n, 1)
+    )
+    init_vels = torch.zeros(n, 6, device=sim.device)
 
+    # create a position controller
+    # note: the controller is state-less (but holds its parameters)
     controller = LeePositionController(
         dt=sim.get_physics_dt(), g=9.81, uav_params=drone.params
     ).to(sim.device)
     controller_fun = vmap(controller)
-
     control_target = torch.zeros(n, 7, device=sim.device)
 
     def reset():
         drone._reset_idx(torch.tensor([0]))
         drone.set_world_poses(*init_poses)
         drone.set_velocities(init_vels)
-        # flush the buffer so that the next getter invocation returns up-to-date values
+        # flush the buffer so that the next getter invocation 
+        # returns up-to-date values
         sim._physics_sim_view.flush() 
     
     reset()
@@ -101,11 +106,12 @@ def main(cfg):
         if sim.is_stopped() or len(frames) >= 1000:
             break
         if not sim.is_playing():
+            sim.render(not cfg.headless)
             continue
-        control_target[:, :3] = ref_pos(i % 1000)
+        control_target[:, :3] = ref_pos((i % 1000)*cfg.sim.dt)
         action, _ = controller_fun(drone_state, control_target, {})
         drone.apply_action(action)
-        sim.step(render=True)
+        sim.step(not cfg.headless)
 
         if i % 2 == 0 and len(frames) < 1000:
             frame = camera.get_images()
@@ -116,14 +122,15 @@ def main(cfg):
         drone_state = drone.get_state()[..., :13].squeeze(0)
         
     from torchvision.io import write_video
+    video_arrays = torch.stack(frames)
 
-    for k, v in torch.stack(frames).cpu().items():
-        for i, vv in enumerate(v.unbind(1)):
-            if vv.shape[-1] == 4:
-                write_video(f"{k}_{i}.mp4", vv[..., :3], fps=50)
-            elif vv.shape[-1] == 1:
+    for image_type, arrays in video_arrays.items():
+        for drone_id, vv in enumerate(arrays.unbind(1)):
+            if image_type == "rgb":
+                write_video(f"rgb_{drone_id}.mp4", vv[..., :3], fps=1/cfg.sim.dt)
+            elif image_type == "distance_to_camera":
                 vv = -torch.nan_to_num(vv, 0).expand(*vv.shape[:-1], 3)
-                write_video(f"{k}_{i}.mp4", vv[..., :3], fps=50)
+                write_video(f"depth_{drone_id}.mp4", vv[..., :3], fps=1/cfg.sim.dt)
         
     simulation_app.close()
 

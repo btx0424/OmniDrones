@@ -4,8 +4,6 @@ from torchrl.data import BoundedTensorSpec, UnboundedContinuousTensorSpec
 
 from omni_drones.robots.drone import MultirotorBase
 from omni_drones.robots.robot import ASSET_PATH
-import omni.isaac.core.utils.torch as torch_utils
-from typing import Optional
 
 class Omav(MultirotorBase):
 

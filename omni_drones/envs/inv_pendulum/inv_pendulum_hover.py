@@ -29,7 +29,7 @@ class InvPendulumHover(IsaacEnv):
       containing its rotation (in quaternion), velocities (linear and angular), 
       heading and up vectors, and the current throttle.
     - `target_payload_rpos` (3): The position of the reference relative to the payload's position.
-    - `payload_vel` (3): The velocity of the payload.
+    - `payload_vel` (6): The linear and angular velocities of the payload.
     - *time_encoding*: 
 
     Reward 

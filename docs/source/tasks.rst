@@ -7,6 +7,7 @@ Reinforcement Learning Tasks
     omni_drones.envs.Track
     omni_drones.envs.PayloadTrack
     omni_drones.envs.InvPendulumHover
+    omni_drones.envs.InvPendulumFlyThrough
     omni_drones.envs.PlatformHover
     omni_drones.envs.TransportHover
 
@@ -20,5 +21,7 @@ Reinforcement Learning Tasks
 .. autoclass:: omni_drones.envs.PlatformHover
 
 .. autoclass:: omni_drones.envs.InvPendulumHover
+
+.. autoclass:: omni_drones.envs.InvPendulumFlyThrough
 
 .. autoclass:: omni_drones.envs.TransportHover

@@ -20,14 +20,35 @@ from omni.isaac.debug_draw import _debug_draw
 from .utils import attach_payload
 
 class PayloadHover(IsaacEnv):
+    r"""
+    An intermediate control task where a spherical payload is attached to the drone.
+    The goal for the agent is to hover the payload at a target position.
+
+    Observation
+    -----------
+    - `drone_payload_rpos` (3): 
+    - `ref_payload_rpos` (3): The reference positions of the
+      payload at multiple future time steps. This helps the agent anticipate the desired payload
+      trajectory.
+    - `root_state`: 
+    - *time_encoding*
+
+    Reward
+    ------
+
+    Episode End
+    -----------
+    - Termination: 
+
+
+    """
     def __init__(self, cfg, headless):
+        self.reward_effort_weight = cfg.task.reward_effort_weight
+        self.reward_action_smoothness_weight = cfg.task.reward_action_smoothness_weight
+        self.reward_distance_scale = cfg.task.reward_distance_scale
+        self.time_encoding = cfg.task.time_encoding
+        self.bar_length = cfg.task.bar_length
         super().__init__(cfg, headless)
-        self.reward_effort_weight = self.cfg.task.reward_effort_weight
-        self.reward_action_smoothness_weight = self.cfg.task.reward_action_smoothness_weight
-        self.reward_motion_smoothness_weight = self.cfg.task.reward_motion_smoothness_weight
-        self.reward_distance_scale = self.cfg.task.reward_distance_scale
-        self.time_encoding = self.cfg.task.time_encoding
-        self.bar_length = self.cfg.task.bar_length
 
         self.drone.initialize()
         randomization = self.cfg.task.get("randomization", None)
@@ -37,26 +58,12 @@ class PayloadHover(IsaacEnv):
 
         self.init_joint_pos = self.drone.get_joint_positions(True)
         self.init_joint_vels = torch.zeros_like(self.drone.get_joint_velocities())
-
-        drone_state_dim = self.drone.state_spec.shape[-1]
-        obs_dim = drone_state_dim + 9
-        if self.time_encoding:
-            self.time_encoding_dim = 4
-            obs_dim += self.time_encoding_dim
         
         self.payload = RigidPrimView(
             f"/World/envs/env_*/{self.drone.name}_*/payload",
             reset_xform_properties=False,
         )
         self.payload.initialize()
-
-        self.agent_spec["drone"] = AgentSpec(
-            "drone",
-            1,
-            UnboundedContinuousTensorSpec(obs_dim).to(self.device),
-            self.drone.action_spec.to(self.device),
-            UnboundedContinuousTensorSpec(1).to(self.device),
-        )
 
         self.init_pos_dist = D.Uniform(
             torch.tensor([-2.5, -2.5, 1.5], device=self.device),
@@ -86,21 +93,6 @@ class PayloadHover(IsaacEnv):
 
         self.alpha = 0.8
 
-        info_spec  = CompositeSpec({
-            "payload_mass": UnboundedContinuousTensorSpec(1),
-            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13)),
-        }).expand(self.num_envs).to(self.device)
-        stats_spec = CompositeSpec({
-            "pos_error": UnboundedContinuousTensorSpec(1),
-            "action_smoothness": UnboundedContinuousTensorSpec(1),
-            "motion_smoothness": UnboundedContinuousTensorSpec(1)
-        }).expand(self.num_envs).to(self.device)
-        info_spec.update(self.drone.info_spec.to(self.device))
-        self.observation_spec["info"] = info_spec
-        self.observation_spec["stats"] = stats_spec
-        self.info = info_spec.zero()
-        self.stats = stats_spec.zero()
-
         self.draw = _debug_draw.acquire_debug_draw_interface()
 
     def _design_scene(self):
@@ -119,6 +111,51 @@ class PayloadHover(IsaacEnv):
         attach_payload(f"/World/envs/env_0/{self.drone.name}_0", self.cfg.task.bar_length)
         return ["/World/defaultGroundPlane"]
 
+    def _set_specs(self):
+        drone_state_dim = self.drone.state_spec.shape[-1]
+        obs_dim = drone_state_dim + 9
+        if self.time_encoding:
+            self.time_encoding_dim = 4
+            obs_dim += self.time_encoding_dim
+
+        self.observation_spec = CompositeSpec({
+            "agents": {
+                "observation": UnboundedContinuousTensorSpec((1, obs_dim))
+            }
+        }).expand(self.num_envs).to(self.device)
+        self.action_spec = CompositeSpec({
+            "agents": {
+                "action": self.drone.action_spec.unsqueeze(0),
+            }
+        }).expand(self.num_envs).to(self.device)
+        self.reward_spec = CompositeSpec({
+            "agents": {
+                "reward": UnboundedContinuousTensorSpec((1, 1))
+            }
+        }).expand(self.num_envs).to(self.device)
+        self.agent_spec["drone"] = AgentSpec(
+            "drone", 1,
+            observation_key=("agents", "observation"),
+            action_key=("agents", "action"),
+            reward_key=("agents", "reward"),
+        )
+        info_spec  = CompositeSpec({
+            "payload_mass": UnboundedContinuousTensorSpec(1),
+            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13)),
+        }).expand(self.num_envs).to(self.device)
+        stats_spec = CompositeSpec({
+            "return": UnboundedContinuousTensorSpec(1),
+            "episode_len": UnboundedContinuousTensorSpec(1),
+            "pos_error": UnboundedContinuousTensorSpec(1),
+            "action_smoothness": UnboundedContinuousTensorSpec(1),
+            "motion_smoothness": UnboundedContinuousTensorSpec(1)
+        }).expand(self.num_envs).to(self.device)
+        info_spec.update(self.drone.info_spec.to(self.device))
+        self.observation_spec["info"] = info_spec
+        self.observation_spec["stats"] = stats_spec
+        self.info = info_spec.zero()
+        self.stats = stats_spec.zero()
+    
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
 
@@ -143,7 +180,7 @@ class PayloadHover(IsaacEnv):
         self.info.update_at_(self.drone.info[env_ids], env_ids)
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
-        actions = tensordict[("action", "drone.action")]
+        actions = tensordict[("agents", "action")]
         self.effort = self.drone.apply_action(actions)
         self._push_payload()
     
@@ -187,7 +224,9 @@ class PayloadHover(IsaacEnv):
         self.stats["motion_smoothness"].lerp_(self.smoothness, (1-self.alpha))
 
         return TensorDict({
-            "drone.obs": obs,
+            "agents": {
+                "observation": obs,
+            },
             "stats": self.stats,
             "info": self.info
         }, self.batch_size)
@@ -203,7 +242,6 @@ class PayloadHover(IsaacEnv):
         # effort
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort)
         reward_action_smoothness = self.reward_action_smoothness_weight * torch.exp(-self.drone.throttle_difference)
-        reward_motion_smoothness = self.reward_motion_smoothness_weight * (self.smoothness / 1000)
 
         # spin reward
         spin = torch.square(self.drone.vel[..., -1])
@@ -214,20 +252,22 @@ class PayloadHover(IsaacEnv):
             + reward_pose * (reward_up + reward_spin) 
             + reward_effort
             + reward_action_smoothness
-            + reward_motion_smoothness
         )
-        self._tensordict["return"] += reward.unsqueeze(-1)
 
         done = (
             (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
             | (self.drone.pos[..., 2] < 0.2)
             | (self.payload_pos[..., 2] < 0.2).unsqueeze(-1)
         ) 
-        
+
+        self.stats["return"] += reward.unsqueeze(-1)
+        self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
+
         return TensorDict(
             {
-                "reward": {"drone.reward": reward.unsqueeze(-1)},
-                "return": self._tensordict["return"],
+                "agents": {
+                    "reward": reward.unsqueeze(-1)
+                },
                 "done": done,
             },
             self.batch_size,

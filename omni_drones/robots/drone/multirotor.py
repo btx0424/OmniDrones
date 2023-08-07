@@ -241,7 +241,7 @@ class MultirotorBase(RobotBase):
 
     def get_state(self, check_nan: bool=False):
         self.pos[:], self.rot[:] = self.get_world_poses(True)
-        if hasattr(self, "envs_positions"):
+        if hasattr(self, "_envs_positions"):
             self.pos.sub_(self._envs_positions)
         vel = self.get_velocities(True)
         acc = self.acc.lerp((vel - self.vel) / self.dt, self.alpha)

@@ -24,16 +24,25 @@ from ..utils import lemniscate, scale_time
 
 
 class PlatformTrack(IsaacEnv):
+    r"""
+    A cooperative control task where a group of `k` UAVs are connected together by a rigid frame 
+    to form an overactuated platform. Each individual UAV, attached by a 2-DoF passive gimbal 
+    joint, acts as a thrust generator.
+    The goal for the agents is to collectively control the platform to track a given reference 
+    trajectory.
+
+
+    """
     def __init__(self, cfg, headless):
+        self.reset_thres = cfg.task.reset_thres
+        self.reward_effort_weight = cfg.task.reward_effort_weight
+        self.reward_action_smoothness_weight = cfg.task.reward_action_smoothness_weight
+        self.reward_potential_weight = cfg.task.reward_potential_weight
+        self.reward_distance_scale = cfg.task.reward_distance_scale
+        self.time_encoding = cfg.task.time_encoding
+        self.future_traj_steps = int(cfg.task.future_traj_steps)
+
         super().__init__(cfg, headless)
-        self.reset_thres = self.cfg.task.reset_thres
-        self.reward_effort_weight = self.cfg.task.reward_effort_weight
-        self.reward_action_smoothness_weight = self.cfg.task.reward_action_smoothness_weight
-        self.reward_motion_smoothness_weight = self.cfg.task.reward_motion_smoothness_weight
-        self.reward_potential_weight = self.cfg.task.reward_potential_weight
-        self.reward_distance_scale = self.cfg.task.reward_distance_scale
-        self.time_encoding = self.cfg.task.time_encoding
-        self.future_traj_steps = int(self.cfg.task.future_traj_steps)
 
         self.platform.initialize()
         self.target_vis = RigidPrimView(
@@ -43,30 +52,6 @@ class PlatformTrack(IsaacEnv):
         self.target_vis.initialize()
         
         self.init_vels = torch.zeros_like(self.platform.get_velocities())
-
-        drone_state_dim = self.drone.state_spec.shape.numel()
-        frame_state_dim = 22 + (self.future_traj_steps-1) * 3
-        if self.time_encoding:
-            self.time_encoding_dim = 4
-            frame_state_dim += self.time_encoding_dim
-            
-        observation_spec = CompositeSpec({
-            "obs_self": UnboundedContinuousTensorSpec((1, drone_state_dim + self.drone.n)),
-            "obs_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13)),
-            "obs_frame": UnboundedContinuousTensorSpec((1, frame_state_dim)),
-        }).to(self.device)
-        state_spec = CompositeSpec({
-            "drones": UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim + self.drone.n)),
-            "frame": UnboundedContinuousTensorSpec((1, frame_state_dim)),
-        }).to(self.device)
-        self.agent_spec["drone"] = AgentSpec(
-            "drone",
-            self.drone.n,
-            observation_spec,
-            self.drone.action_spec.to(self.device),
-            UnboundedContinuousTensorSpec(1).to(self.device),
-            state_spec
-        )
 
         self.init_rpy_dist = D.Uniform(
             torch.tensor([-.2, -.2, 0.], device=self.device) * torch.pi,
@@ -103,15 +88,6 @@ class PlatformTrack(IsaacEnv):
         self.up_target = torch.zeros(self.num_envs, 3, device=self.device)
 
         self.alpha = 0.8
-        stats_spec = CompositeSpec({
-            "pos_error": UnboundedContinuousTensorSpec(1),
-            "heading_alignment": UnboundedContinuousTensorSpec(1),
-            "effort": UnboundedContinuousTensorSpec(1),
-            "action_smoothness": UnboundedContinuousTensorSpec(1),
-            "motion_smoothness": UnboundedContinuousTensorSpec(1)
-        }).expand(self.num_envs).to(self.device)
-        self.observation_spec["stats"] = stats_spec
-        self.stats = stats_spec.zero()
 
         self.draw = _debug_draw.acquire_debug_draw_interface()
 
@@ -145,6 +121,56 @@ class PlatformTrack(IsaacEnv):
         kit_utils.set_collision_properties(sphere.prim_path, collision_enabled=False)
         kit_utils.set_rigid_body_properties(sphere.prim_path, disable_gravity=True)
         return ["/World/defaultGroundPlane"]
+
+    def _set_specs(self):
+        drone_state_dim = self.drone.state_spec.shape.numel()
+        frame_state_dim = 22 + (self.future_traj_steps-1) * 3
+        if self.time_encoding:
+            self.time_encoding_dim = 4
+            frame_state_dim += self.time_encoding_dim
+            
+        observation_spec = CompositeSpec({
+            "obs_self": UnboundedContinuousTensorSpec((1, drone_state_dim + self.drone.n)),
+            "obs_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13)),
+            "obs_frame": UnboundedContinuousTensorSpec((1, frame_state_dim)),
+        }).to(self.device)
+        state_spec = CompositeSpec({
+            "drones": UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim + self.drone.n)),
+            "frame": UnboundedContinuousTensorSpec((1, frame_state_dim)),
+        }).to(self.device)
+        self.observation_spec = CompositeSpec({
+            "agents": {
+                "observation": observation_spec.expand(self.drone.n),
+                "state": state_spec,
+            }
+        }).expand(self.num_envs).to(self.device)
+        self.action_spec = CompositeSpec({
+            "agents": {
+                "action": self.drone.action_spec.expand(self.drone.n),
+            }
+        }).expand(self.num_envs).to(self.device)
+        self.reward_spec = CompositeSpec({
+            "agents": {
+                "reward": UnboundedContinuousTensorSpec((self.drone.n, 1))
+            }
+        }).expand(self.num_envs).to(self.device)
+        self.agent_spec["drone"] = AgentSpec(
+            "drone", self.drone.n,
+            observation_key=("agents", "observation"),
+            action_key=("agents", "action"),
+            reward_key=("agents", "reward"),
+            state_key=("agents", "state")
+        )
+        stats_spec = CompositeSpec({
+            "return": UnboundedContinuousTensorSpec(self.drone.n),
+            "episode_len": UnboundedContinuousTensorSpec(1),
+            "pos_error": UnboundedContinuousTensorSpec(1),
+            "heading_alignment": UnboundedContinuousTensorSpec(1),
+            "effort": UnboundedContinuousTensorSpec(1),
+            "action_smoothness": UnboundedContinuousTensorSpec(1),
+        }).expand(self.num_envs).to(self.device)
+        self.observation_spec["stats"] = stats_spec
+        self.stats = stats_spec.zero()
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.traj_c[env_ids] = self.traj_c_dist.sample(env_ids.shape)
@@ -186,7 +212,7 @@ class PlatformTrack(IsaacEnv):
             self.draw.draw_lines(point_list_0, point_list_1, colors, sizes)
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
-        actions = tensordict[("action", "drone.action")]
+        actions = tensordict[("agents", "action")]
         self.effort = self.drone.apply_action(actions)
 
     def _compute_state_and_obs(self):
@@ -233,22 +259,19 @@ class PlatformTrack(IsaacEnv):
         self.stats["pos_error"].lerp_(self.target_distance, (1-self.alpha))
         self.stats["heading_alignment"].lerp_(self.heading_alignment, (1-self.alpha))
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference.mean(-1, True), (1-self.alpha))
-        self.motion_smoothness = (
-            self.platform.get_linear_smoothness() 
-            + self.platform.get_angular_smoothness()
-        )
-        self.stats["motion_smoothness"].lerp_(self.motion_smoothness, (1-self.alpha))
 
         return TensorDict({
-            "drone.obs": obs,
-            "drone.state": state,
+            "agents": {
+                "observation": obs,
+                "state": state,
+            },
             "stats": self.stats
         }, self.batch_size)
 
     def _compute_reward_and_done(self):
         platform_vels = self.platform.get_velocities()
         
-        reward = torch.zeros(self.num_envs, self.drone.n, 1, device=self.device)
+        reward = torch.zeros(self.num_envs, self.drone.n, device=self.device)
         # reward_pose = 1 / (1 + torch.square(distance * self.reward_distance_scale))
         reward_pose = torch.exp(- self.reward_distance_scale * self.target_distance)
         
@@ -267,7 +290,7 @@ class PlatformTrack(IsaacEnv):
             + reward_pose * (reward_up + reward_spin) 
             + reward_effort
             + reward_action_smoothness
-        ).unsqueeze(1)
+        )
 
         done_misbehave = (self.drone_states[..., 2] < 0.2).any(-1, keepdim=True)
         done_hasnan = done_hasnan = torch.isnan(self.drone_states).any(-1)
@@ -279,11 +302,12 @@ class PlatformTrack(IsaacEnv):
             | (self.target_distance > self.reset_thres)
         )
 
-        self._tensordict["return"] += reward
+        self.stats["return"].add_(reward)
+        self.stats["episode_len"][:] = self.progress_buf.unsqueeze(-1)
+
         return TensorDict(
             {
-                "reward": {"drone.reward": reward},
-                "return": self._tensordict["return"],
+                "agents": {"reward": reward.unsqueeze(1)},
                 "done": done,
             },
             self.batch_size,

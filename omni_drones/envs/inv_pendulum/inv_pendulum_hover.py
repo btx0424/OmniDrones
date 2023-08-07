@@ -156,6 +156,8 @@ class InvPendulumHover(IsaacEnv):
             reward_key=("agents", "reward"),
         )
         stats_spec = CompositeSpec({
+            "return": UnboundedContinuousTensorSpec(1),
+            "episode_len": UnboundedContinuousTensorSpec(1),
             "pos_error": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(1),
             "motion_smoothness": UnboundedContinuousTensorSpec(1)

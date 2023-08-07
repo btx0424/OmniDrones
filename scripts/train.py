@@ -28,7 +28,6 @@ from omni_drones.learning import (
     SACPolicy,
     TD3Policy,
     MATD3Policy,
-    DreamerPolicy,
     TDMPCPolicy
 )
 
@@ -73,7 +72,6 @@ def main(cfg):
         "sac": SACPolicy,
         "td3": TD3Policy,
         "matd3": MATD3Policy,
-        "dreamer": DreamerPolicy,
         "tdmpc": TDMPCPolicy
     }
 
@@ -218,7 +216,7 @@ def main(cfg):
     
     logging.info(f"Final Eval at {collector._frames} steps.")
     info = {"env_frames": collector._frames}
-    # info.update(evaluate())
+    info.update(evaluate())
     run.log(info)
 
     if hasattr(policy, "state_dict"):

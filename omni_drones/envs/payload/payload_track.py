@@ -44,21 +44,20 @@ class PayloadTrack(IsaacEnv):
 
     Config
     ------
-    - reset_thres: A threshold value that triggers termination when the payload deviates 
+    - `reset_thres` (float): A threshold value that triggers termination when the payload deviates 
       form the reference position beyond a certain limit.
-    - future_traj_steps: The number of future time steps provided in the `ref_payload_rpos`
+    - `future_traj_steps` (int): The number of future time steps provided in the `ref_payload_rpos`
       observation. 
 
     """
     def __init__(self, cfg, headless):
-        self.reset_thres = self.cfg.task.reset_thres
-        self.reward_effort_weight = self.cfg.task.reward_effort_weight
-        self.reward_action_smoothness_weight = self.cfg.task.reward_action_smoothness_weight
-        self.reward_motion_smoothness_weight = self.cfg.task.reward_motion_smoothness_weight
-        self.reward_distance_scale = self.cfg.task.reward_distance_scale
-        self.time_encoding = self.cfg.task.time_encoding
-        self.future_traj_steps = int(self.cfg.task.future_traj_steps)
-        self.bar_length = self.cfg.task.bar_length
+        self.reset_thres = cfg.task.reset_thres
+        self.reward_effort_weight = cfg.task.reward_effort_weight
+        self.reward_action_smoothness_weight = cfg.task.reward_action_smoothness_weight
+        self.reward_distance_scale = cfg.task.reward_distance_scale
+        self.time_encoding = cfg.task.time_encoding
+        self.future_traj_steps = int(cfg.task.future_traj_steps)
+        self.bar_length = cfg.task.bar_length
         assert self.future_traj_steps > 0
 
         super().__init__(cfg, headless)
@@ -244,11 +243,6 @@ class PayloadTrack(IsaacEnv):
         obs = torch.cat(obs, dim=-1)
 
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
-        self.smoothness = (
-            self.drone.get_linear_smoothness() 
-            + self.drone.get_angular_smoothness()
-        )
-        self.stats["motion_smoothness"].lerp_(self.smoothness, (1-self.alpha))
 
         return TensorDict({
             "agents": {
@@ -271,7 +265,6 @@ class PayloadTrack(IsaacEnv):
         # effort
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort)
         reward_action_smoothness = self.reward_action_smoothness_weight * torch.exp(-self.drone.throttle_difference)
-        reward_motion_smoothness = self.reward_motion_smoothness_weight * (self.smoothness / 1000)
 
         # spin reward
         spin = torch.square(self.drone.vel[..., -1])
@@ -282,7 +275,6 @@ class PayloadTrack(IsaacEnv):
             + reward_pos * (reward_up + reward_spin) 
             + reward_effort
             + reward_action_smoothness
-            + reward_motion_smoothness
         )
         self.stats["tracking_error"].add_(pos_rror)
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))

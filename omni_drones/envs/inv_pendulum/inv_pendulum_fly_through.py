@@ -65,14 +65,14 @@ class InvPendulumFlyThrough(IsaacEnv):
 
     """
     def __init__(self, cfg, headless):
+        self.reward_effort_weight = cfg.task.reward_effort_weight
+        self.reward_action_smoothness_weight = cfg.task.reward_action_smoothness_weight
+        self.reward_distance_scale = cfg.task.reward_distance_scale
+        self.reset_on_collision = cfg.task.reset_on_collision
+        self.time_encoding = cfg.task.time_encoding
+        self.obstacle_spacing = cfg.task.obstacle_spacing
+
         super().__init__(cfg, headless)
-        self.reward_effort_weight = self.cfg.task.reward_effort_weight
-        self.reward_action_smoothness_weight = self.cfg.task.reward_action_smoothness_weight
-        self.reward_distance_scale = self.cfg.task.reward_distance_scale
-        self.reward_distance_scale = self.cfg.task.reward_distance_scale
-        self.reset_on_collision = self.cfg.task.reset_on_collision
-        self.time_encoding = self.cfg.task.time_encoding
-        self.obstacle_spacing = self.cfg.task.obstacle_spacing
 
         self.drone.initialize()
 
@@ -97,19 +97,6 @@ class InvPendulumFlyThrough(IsaacEnv):
         self.init_joint_vels = torch.zeros_like(self.drone.get_joint_velocities())
         self.obstacle_pos = self.get_env_poses(self.obstacles.get_world_poses())[0]
 
-        drone_state_dim = self.drone.state_spec.shape[-1]
-        if self.time_encoding:
-            self.time_encoding_dim = 4
-            drone_state_dim += self.time_encoding_dim
-        
-        self.agent_spec["drone"] = AgentSpec(
-            "drone",
-            1,
-            UnboundedContinuousTensorSpec(drone_state_dim + 12 + 4).to(self.device),
-            self.drone.action_spec.to(self.device),
-            UnboundedContinuousTensorSpec(1).to(self.device),
-        )
-
         self.init_pos_dist = D.Uniform(
             torch.tensor([-2.2, 0, 1.0], device=self.device),
             torch.tensor([-1.0, 0, 2.0], device=self.device)
@@ -133,14 +120,6 @@ class InvPendulumFlyThrough(IsaacEnv):
         )
 
         self.alpha = 0.8
-        stats_spec = CompositeSpec({
-            "pos_error": UnboundedContinuousTensorSpec(1),
-            "collision": UnboundedContinuousTensorSpec(1),
-            "success": BinaryDiscreteTensorSpec(1, dtype=bool),
-            "action_smoothness": UnboundedContinuousTensorSpec(1),
-        }).expand(self.num_envs).to(self.device)
-        self.observation_spec["stats"] = stats_spec
-        self.stats = stats_spec.zero()
 
         self.draw = _debug_draw.acquire_debug_draw_interface()
         self.payload_traj_vis = []
@@ -189,6 +168,45 @@ class InvPendulumFlyThrough(IsaacEnv):
         kit_utils.set_rigid_body_properties(sphere.prim_path, disable_gravity=True)
         return ["/World/defaultGroundPlane"]
 
+    def _set_specs(self):
+        observation_dim = self.drone.state_spec.shape[-1] + 12 + 4
+        if self.time_encoding:
+            self.time_encoding_dim = 4
+            observation_dim += self.time_encoding_dim
+        
+        self.observation_spec = CompositeSpec({
+            "agents": CompositeSpec({
+                "observation": UnboundedContinuousTensorSpec((1, observation_dim)) ,
+            })
+        }).expand(self.num_envs).to(self.device)
+        self.action_spec = CompositeSpec({
+            "agents": CompositeSpec({
+                "action": self.drone.action_spec.unsqueeze(0),
+            })
+        }).expand(self.num_envs).to(self.device)
+        self.reward_spec = CompositeSpec({
+            "agents": CompositeSpec({
+                "reward": UnboundedContinuousTensorSpec((1, 1))
+            })
+        }).expand(self.num_envs).to(self.device)
+
+        self.agent_spec["drone"] = AgentSpec(
+            "drone", 1,
+            observation_key=("agents", "observation"),
+            action_key=("agents", "action"),
+            reward_key=("agents", "reward"),
+        )
+        stats_spec = CompositeSpec({
+            "return": UnboundedContinuousTensorSpec(1),
+            "episode_len": UnboundedContinuousTensorSpec(1),
+            "pos_error": UnboundedContinuousTensorSpec(1),
+            "collision": UnboundedContinuousTensorSpec(1),
+            "success": BinaryDiscreteTensorSpec(1, dtype=bool),
+            "action_smoothness": UnboundedContinuousTensorSpec(1),
+        }).expand(self.num_envs).to(self.device)
+        self.observation_spec["stats"] = stats_spec
+        self.stats = stats_spec.zero()
+
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
         
@@ -225,7 +243,7 @@ class InvPendulumFlyThrough(IsaacEnv):
             self.draw.clear_lines()
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
-        actions = tensordict[("action", "drone.action")]
+        actions = tensordict[("agents", "action")]
         self.effort = self.drone.apply_action(actions)
 
     def _compute_state_and_obs(self):
@@ -244,7 +262,7 @@ class InvPendulumFlyThrough(IsaacEnv):
             self.drone_state,
             self.target_payload_rpos, # 3
             self.payload_vels.unsqueeze(1), # 6
-            obstacle_drone_rpos.flatten(start_dim=-2).unsqueeze(1), 
+            obstacle_drone_rpos.flatten(start_dim=-2).unsqueeze(1), # 4
         ]
         if self.time_encoding:
             t = (self.progress_buf / self.max_episode_length).unsqueeze(-1)
@@ -271,7 +289,9 @@ class InvPendulumFlyThrough(IsaacEnv):
             self.payload_traj_vis.append(payload_pos)
         
         return TensorDict({
-            "drone.obs": obs,
+            "agents": {
+                "observation": obs,
+            },
             "stats": self.stats
         }, self.batch_size)
 
@@ -325,11 +345,14 @@ class InvPendulumFlyThrough(IsaacEnv):
             done |= collision
 
         self.stats["success"].bitwise_or_(self.pos_error < 0.2)
-        self._tensordict["return"] += reward.unsqueeze(-1)
+        self.stats["return"].add_(reward)
+        self.stats["episode_len"][:] = self.progress_buf.unsqueeze(-1)
+        
         return TensorDict(
             {
-                "reward": {"drone.reward": reward.unsqueeze(-1)},
-                "return": self._tensordict["return"],
+                "agents": {
+                    "reward": reward.unsqueeze(-1)
+                },
                 "done": done,
             },
             self.batch_size,

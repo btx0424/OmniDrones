@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from tensordict import TensorDict
 
-from .utils import normalize, quaternion_to_euler, quaternion_to_rotation_matrix
+from omni_drones.utils.torch import normalize, quaternion_to_euler, quaternion_to_rotation_matrix
 
 
 class DSLPIDController(nn.Module):

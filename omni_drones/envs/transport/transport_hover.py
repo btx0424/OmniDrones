@@ -22,24 +22,26 @@ from .utils import TransportationGroup, TransportationCfg
 class TransportHover(IsaacEnv):
     r"""
     A cooperative control task where a group of UAVs carry a box-shaped payload connected via
-    rigid links. The goal for the agents is to make the payload hover at a reference pose (position and attitude).
+    rigid links. The goal for the agents is to make the payload hover at a reference pose 
+    (position and attitude).
 
     Observation
     -----------
-    The observation is a `CompositeSpec` containing the following items:
+    The observation space is specified a py:class:`CompositeSpec` containing the following items:
 
-    - ``state_self`` (1, \*): The state of each UAV observed by itself, containing its kinematic
-      information with the position being relative to the payload.
-    - ``state_others`` (k-1, \*): The observed states of other agents.
-    - ``state_payload`` (1, \*): The state of the frame.
-
+    - ``obs_self`` (1, \*): The state of each UAV observed by itself, containing its kinematic
+      information with the position being relative to the payload. It also includes a one-hot 
+      vector indicating each drone's identity.
+    - ``obs_others`` (k-1, \*): The observed states of other agents.
+    - ``obs_payload`` (1, \*): The state of the frame.
 
     Reward
     ------
-
-    Episode End
-    -----------
-    - Termination: 
+    - `seperation`: A factor that penalizes all agents when the minimum seperation is too small.
+    - `pos`: Reward for hovering at the reference position, computed as :math:`\exp(-a * \text{pos_error})`.
+    - `up`: Reward for keeping the payload upright.
+    - `swing`: Reward for avoid large swinging of the payload.
+    - `joint_limit`: Reward for kepping the joint states in a reasonalble range to avoid glitchy behaviors.
 
     Config
     ------
@@ -128,16 +130,16 @@ class TransportHover(IsaacEnv):
         return ["/World/defaultGroundPlane"]
 
     def _set_specs(self):
-        drone_state_dim = self.drone.state_spec.shape[-1]
+        drone_state_dim = self.drone.state_spec.shape[-1] + self.drone.n
         payload_state_dim = 22
         if self.time_encoding:
             self.time_encoding_dim = 4
             payload_state_dim += self.time_encoding_dim
         
         observation_spec = CompositeSpec({
-            "state_self": UnboundedContinuousTensorSpec((1, drone_state_dim)).to(self.device),
-            "state_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13+1)).to(self.device),
-            "state_payload": UnboundedContinuousTensorSpec((1, payload_state_dim)).to(self.device)
+            "obs_self": UnboundedContinuousTensorSpec((1, drone_state_dim)).to(self.device),
+            "obs_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13+1)).to(self.device),
+            "obs_payload": UnboundedContinuousTensorSpec((1, payload_state_dim)).to(self.device)
         })
 
         state_spec = CompositeSpec(
@@ -224,10 +226,11 @@ class TransportHover(IsaacEnv):
 
     def _compute_state_and_obs(self):
         self.drone_states = self.drone.get_state()
+        self.group.get_state()
+        payload_vels = self.payload.get_velocities()
         drone_pos = self.drone_states[..., :3]
 
         self.payload_pos, self.payload_rot = self.get_env_poses(self.payload.get_world_poses())
-        payload_vels = self.payload.get_velocities()
         self.payload_heading: torch.Tensor = torch_utils.quat_axis(self.payload_rot, axis=0)
         self.payload_up: torch.Tensor = torch_utils.quat_axis(self.payload_rot, axis=2)
         
@@ -236,13 +239,11 @@ class TransportHover(IsaacEnv):
         self.drone_pdist = torch.norm(self.drone_rpos, dim=-1, keepdim=True)
         payload_drone_rpos = self.payload_pos.unsqueeze(1) - drone_pos
 
-        payload_target_rpos = self.payload_target_pos - self.payload_pos
         self.target_payload_rpose = torch.cat([
-            payload_target_rpos,
+            self.payload_target_pos - self.payload_pos,
             self.payload_target_heading - self.payload_heading
         ], dim=-1)
         
-        self.group.get_state()
         payload_state = [
             self.target_payload_rpose,
             self.payload_rot,  # 4
@@ -256,17 +257,18 @@ class TransportHover(IsaacEnv):
         payload_state = torch.cat(payload_state, dim=-1).unsqueeze(1)
 
         obs = TensorDict({}, [self.num_envs, self.drone.n])
-        obs["state_self"] = torch.cat(
-            [-payload_drone_rpos, self.drone_states[..., 3:]], dim=-1
+        identity = torch.eye(self.drone.n, device=self.device).expand(self.num_envs, -1, -1)
+        obs["obs_self"] = torch.cat(
+            [-payload_drone_rpos, self.drone_states[..., 3:], identity], dim=-1
         ).unsqueeze(2) # [..., 1, state_dim]
-        obs["state_others"] = torch.cat(
+        obs["obs_others"] = torch.cat(
             [self.drone_rpos, self.drone_pdist, vmap(others)(self.drone_states[..., 3:13])], dim=-1
         ) # [..., n-1, state_dim + 1]
-        obs["state_payload"] = payload_state.expand(-1, self.drone.n, -1).unsqueeze(2) # [..., 1, 22]
+        obs["obs_payload"] = payload_state.expand(-1, self.drone.n, -1).unsqueeze(2) # [..., 1, 22]
 
         state = TensorDict({}, self.num_envs)
         state["payload"] = payload_state # [..., 1, 22]
-        state["drones"] = obs["state_self"].squeeze(2) # [..., n, state_dim]
+        state["drones"] = obs["obs_self"].squeeze(2) # [..., n, state_dim]
 
         self.pos_error = torch.norm(payload_target_rpos, dim=-1, keepdim=True)
         self.heading_alignment = torch.sum(
@@ -293,7 +295,6 @@ class TransportHover(IsaacEnv):
         separation = self.drone_pdist.min(dim=-2).values.min(dim=-2).values
 
         reward = torch.zeros(self.num_envs, self.drone.n, 1, device=self.device)
-        # reward_pose = 1 / (1 + torch.square(distance * self.reward_distance_scale))
         reward_pose = torch.exp(-distance * self.reward_distance_scale)
 
         up = self.payload_up[:, 2]

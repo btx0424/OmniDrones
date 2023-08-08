@@ -22,15 +22,15 @@ class Track(IsaacEnv):
 
     Observation
     -----------
-    - rpos (3 * future_traj_steps): 
-    - root_state (16 + num_rotors): The basic information of the drone (except its position), 
+    - `rpos` (3 * future_traj_steps): 
+    - `root_state` (16 + num_rotors): The basic information of the drone (except its position), 
       containing its rotation (in quaternion), velocities (linear and angular), 
       heading and up vectors, and the current throttle.
     - *time_encoding*: 
 
     Reward
     ------
-
+    - `pos`: Reward for tracking the trajectory, computed as :math:`\exp(-a * \text{pos_error})`.
 
     Episode End
     -----------
@@ -38,10 +38,10 @@ class Track(IsaacEnv):
 
     Config
     ------
-    - reset_thres: A threshold value that triggers termination when the payload deviates 
+    - `reset_thres` (float, defalut=0.5): A threshold value that triggers termination when the payload deviates 
       form the reference position beyond a certain limit.
-    - future_traj_steps: The number of future time steps provided in the `ref_payload_rpos`
-      observation. 
+    - `future_traj_steps` (int, default=4): The number of future time steps to observe the 
+      reference positions along the trajectory. 
 
     """
     def __init__(self, cfg, headless):

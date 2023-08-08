@@ -237,37 +237,60 @@ class VelController(Transform):
     def __init__(
         self,
         controller,
-        action_key: str,
+        action_key: str = ("agents", "action"),
     ):
-        super().__init__([], in_keys_inv=[("info", "drone_state"), "controller_state"])
+        super().__init__([], in_keys_inv=[("info", "drone_state")])
         self.controller = controller
         self.action_key = action_key
     
     def transform_input_spec(self, input_spec: TensorSpec) -> TensorSpec:
-        action_spec = input_spec[self.action_key]
+        action_spec = input_spec[("_action_spec", *self.action_key)]
         spec = UnboundedContinuousTensorSpec(action_spec.shape[:-1]+(4,), device=action_spec.device)
-        input_spec[self.action_key] = spec
+        input_spec[("_action_spec", *self.action_key)] = spec
         return input_spec
-    
-    def reset(self, tensordict: TensorDictBase) -> TensorDictBase:
-        shape = tensordict[("info", "drone_state")].shape
-        tensordict.set("controller_state", TensorDict({}, shape[:-1]))
-        return tensordict
     
     def _inv_call(self, tensordict: TensorDictBase) -> TensorDictBase:
         drone_state = tensordict[("info", "drone_state")][..., :13]
-        controller_state = tensordict["controller_state"]
-        target_vel, target_yaw = tensordict[("action", "drone.action")].split([3, 1], -1)
+        action = tensordict[self.action_key]
+        target_vel, target_yaw = action.split([3, 1], -1)
         control_target = torch.cat([
             drone_state[..., :3],
-            target_vel,
+            target_vel * 1.6,
             target_yaw * torch.pi,
         ], dim=-1)
-        cmds, controller_state = self.controller(drone_state, control_target, controller_state)
+        cmds = self.controller(drone_state, control_target)
         torch.nan_to_num_(cmds, 0.)
-        tensordict.set(("action", "drone.action"), cmds)
-        tensordict.set("controller_state", controller_state)
+        tensordict.set(self.action_key, cmds)
         return tensordict
+
+
+class AttitudeController(Transform):
+    def __init__(
+        self,
+        controller,
+        action_key: str = ("agents", "action"),
+    ):
+        super().__init__([], in_keys_inv=[("info", "drone_state")])
+        self.controller = controller
+        self.action_key = action_key
+    
+    def transform_input_spec(self, input_spec: TensorSpec) -> TensorSpec:
+        action_spec = input_spec[("_action_spec", *self.action_key)]
+        spec = UnboundedContinuousTensorSpec(action_spec.shape[:-1]+(4,), device=action_spec.device)
+        input_spec[("_action_spec", *self.action_key)] = spec
+        return input_spec
+    
+    def _inv_call(self, tensordict: TensorDictBase) -> TensorDictBase:
+        drone_state = tensordict[("info", "drone_state")][..., :13]
+        action = tensordict[self.action_key]
+        control_target = action.clone()
+        control_target[..., :3] *= torch.pi
+        control_target[..., 3] = (control_target[..., 3].clamp(-1., 1.)+ 1.)
+        cmds = self.controller(drone_state, control_target)
+        torch.nan_to_num_(cmds, 0.)
+        tensordict.set(self.action_key, cmds)
+        return tensordict
+
 
 
 from collections import defaultdict

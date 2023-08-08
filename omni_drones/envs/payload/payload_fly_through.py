@@ -43,10 +43,10 @@ class PayloadFlyThrough(IsaacEnv):
 
     Config
     ------
-    - `obstacle_spacing` (Tuple[float, float]): A range from which the vertical spacing between the 
-      obstacles is sampled. Defaults to [0.85, 0.85].
-    - `reset_on_collision` (bool): Whether to reset the environment when the payload collides with an 
-      obstacle. Defaults to false.
+    - `obstacle_spacing` (Tuple[float, float], default=[0.85, 0.85]): A range from which the vertical spacing between the 
+      obstacles is sampled.
+    - `reset_on_collision` (bool, default=False): Whether to reset the environment when the payload collides with an 
+      obstacle. 
     """
     def __init__(self, cfg, headless):
         self.reward_effort_weight = cfg.task.reward_effort_weight

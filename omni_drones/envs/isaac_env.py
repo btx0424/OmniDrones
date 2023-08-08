@@ -41,8 +41,8 @@ class IsaacEnv(EnvBase):
         self.max_episode_length = self.cfg.env.max_episode_length
         self.min_episode_length = self.cfg.env.min_episode_length
 
-        # torch.backends.cudnn.benchmark = True
-        # torch.backends.cudnn.deterministic = False
+        torch.backends.cudnn.benchmark = True
+        torch.backends.cudnn.deterministic = False
 
         # check that simulation is running
         if stage_utils.get_current_stage() is None:

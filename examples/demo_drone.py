@@ -21,6 +21,7 @@ def main(cfg):
     from omni_drones.controllers import LeePositionController
     from omni_drones.robots.drone import MultirotorBase
     from omni_drones.sensors.camera import Camera, PinholeCameraCfg
+    import dataclasses
 
     sim = SimulationContext(
         stage_units_in_meters=1.0,
@@ -47,20 +48,22 @@ def main(cfg):
         sensor_tick=0,
         resolution=(320, 240),
         data_types=["rgb", "distance_to_camera"],
-        usd_params=PinholeCameraCfg.UsdCameraCfg(
-            focal_length=24.0,
-            focus_distance=400.0,
-            horizontal_aperture=20.955,
-            clipping_range=(0.1, 1.0e5),
-        ),
     )
-    camera = Camera(camera_cfg)
-    camera.spawn(
-        [f"/World/envs/env_0/{drone.name}_{i}/base_link/Camera" for i in range(n)],
+    camera_sensor = Camera(camera_cfg)
+    camera_sensor.spawn([
+        f"/World/envs/env_0/{drone.name}_{i}/base_link/Camera" 
+        for i in range(n)
+    ])
+    camera_vis = Camera(dataclasses.replace(camera_cfg, resolution=(960, 720)))
+    camera_vis.spawn(
+        "/World/Camera", 
+        translations=[(3., 0., 2.)],
+        targets=[(0., 0., 0.5)]
     )
 
     sim.reset()
-    camera.initialize(f"/World/envs/env_0/{drone.name}_*/base_link/Camera")
+    camera_sensor.initialize(f"/World/envs/env_0/{drone.name}_*/base_link/Camera")
+    camera_vis.initialize("/World/Camera")
     drone.initialize()
 
     # let's fly a circular trajectory
@@ -83,10 +86,9 @@ def main(cfg):
 
     # create a position controller
     # note: the controller is state-less (but holds its parameters)
-    controller = LeePositionController(
-        dt=sim.get_physics_dt(), g=9.81, uav_params=drone.params
-    ).to(sim.device)
-    controller_fun = vmap(controller)
+    controller = LeePositionController(g=9.81, uav_params=drone.params).to(sim.device)
+    # controller_fun = vmap(controller)
+    controller_fun = controller
     control_target = torch.zeros(n, 7, device=sim.device)
 
     def reset():
@@ -100,7 +102,8 @@ def main(cfg):
     reset()
     drone_state = drone.get_state()[..., :13].squeeze(0)
 
-    frames = []
+    frames_sensor = []
+    frames_vis = []
     from tqdm import tqdm
     for i in tqdm(range(2000)):
         if sim.is_stopped() or len(frames) >= 1000:
@@ -109,9 +112,9 @@ def main(cfg):
             sim.render(not cfg.headless)
             continue
         control_target[:, :3] = ref_pos((i % 1000)*cfg.sim.dt)
-        action, _ = controller_fun(drone_state, control_target, {})
+        action = controller_fun(drone_state, control_target)
         drone.apply_action(action)
-        sim.step(not cfg.headless)
+        sim.step(render=True)
 
         if i % 2 == 0 and len(frames) < 1000:
             frame = camera.get_images()
@@ -120,18 +123,22 @@ def main(cfg):
         if i % 1000 == 0:
             reset()
         drone_state = drone.get_state()[..., :13].squeeze(0)
-        
-    from torchvision.io import write_video
-    video_arrays = torch.stack(frames)
 
-    for image_type, arrays in video_arrays.items():
-        for drone_id, vv in enumerate(arrays.unbind(1)):
+    from torchvision.io import write_video
+
+    for image_type, arrays in torch.stack(frames_sensor).items():
+        for drone_id, arrays_drone in enumerate(arrays.unbind(1)):
             if image_type == "rgb":
-                write_video(f"rgb_{drone_id}.mp4", vv[..., :3], fps=1/cfg.sim.dt)
+                arrays_drone = arrays_drone.permute(0, 2, 3, 1)[..., :3]
+                write_video(f"rgb_{drone_id}.mp4", arrays_drone, fps=1/cfg.sim.dt)
             elif image_type == "distance_to_camera":
-                vv = -torch.nan_to_num(vv, 0).expand(*vv.shape[:-1], 3)
-                write_video(f"depth_{drone_id}.mp4", vv[..., :3], fps=1/cfg.sim.dt)
-        
+                arrays_drone = -torch.nan_to_num(arrays_drone, 0).permute(0, 2, 3, 1)
+                arrays_drone = arrays_drone.expand(*arrays_drone.shape[:-1], 3)
+                write_video(f"depth_{drone_id}.mp4", arrays_drone, fps=1/cfg.sim.dt)
+
+    for image_type, arrays in torch.stack(frames_vis).items():
+        print(arrays.shape)
+
     simulation_app.close()
 
 

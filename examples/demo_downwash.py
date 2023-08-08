@@ -70,10 +70,9 @@ def main(cfg):
     camera.initialize("/World/Camera")
 
     controller = drone.DEFAULT_CONTROLLER(
-        dt=sim.get_physics_dt(), g=9.81, uav_params=drone.params
+        g=9.81, uav_params=drone.params
     ).to(sim.device)
 
-    controller_state = TensorDict({}, n, device=sim.device)
     control_target = torch.zeros(n, 7, device=sim.device)
     control_target[:, 0] = 0
     control_target[:, 1] = translations[:, 1]
@@ -89,13 +88,11 @@ def main(cfg):
             break
         if not sim.is_playing():
             continue
-        root_state = drone.get_state(env=False)[..., :13].squeeze(0)
+        root_state = drone.get_state()[..., :13].squeeze(0)
         distance = torch.norm(root_state[-1, :2] - control_target[-1, :2])
         if distance < 0.05:
             control_target[-1, 1] = -control_target[-1, 1]
-        action, controller_state = vmap(controller)(
-            root_state, control_target, controller_state
-        )
+        action = vmap(controller)(root_state, control_target)
         drone.apply_action(action)
         sim.step(i % 2 == 0)
 

@@ -151,3 +151,35 @@ def quat_axis(q: torch.Tensor, axis: int=0):
     basis_vec[:, axis] = 1
     return quat_rotate(q, basis_vec)
 
+
+def axis_angle_to_quaternion(angle: torch.Tensor, axis: torch.Tensor):
+    angle = angle.unsqueeze(-1)
+    axis = axis / torch.norm(axis, dim=-1, keepdim=True)
+    return torch.cat([torch.cos(angle / 2), torch.sin(angle / 2) * axis], dim=-1)
+
+
+def axis_angle_to_matrix(angle, axis):
+    return quaternion_to_rotation_matrix(axis_angle_to_quaternion(angle, axis))
+
+
+def quat_mul(a: torch.Tensor, b: torch.Tensor):
+    assert a.shape == b.shape
+    shape = a.shape
+    a = a.reshape(-1, 4)
+    b = b.reshape(-1, 4)
+
+    w1, x1, y1, z1 = a[:, 0], a[:, 1], a[:, 2], a[:, 3]
+    w2, x2, y2, z2 = b[:, 0], b[:, 1], b[:, 2], b[:, 3]
+    ww = (z1 + x1) * (x2 + y2)
+    yy = (w1 - y1) * (w2 + z2)
+    zz = (w1 + y1) * (w2 - z2)
+    xx = ww + yy + zz
+    qq = 0.5 * (xx + (z1 - x1) * (x2 - y2))
+    w = qq - ww + (z1 - y1) * (y2 - z2)
+    x = qq - xx + (x1 + w1) * (x2 + w2)
+    y = qq - yy + (w1 - x1) * (y2 + z2)
+    z = qq - zz + (z1 + y1) * (w2 - x2)
+
+    quat = torch.stack([w, x, y, z], dim=-1).view(shape)
+
+    return quat

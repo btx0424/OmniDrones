@@ -20,17 +20,49 @@ from ..utils import lemniscate, scale_time
 
 
 class TransportTrack(IsaacEnv):
+    r"""
+    A cooperative control task where a group of UAVs carry a box-shaped payload connected via
+    rigid links. The goal for the agents is to collectively transport the payload to track a 
+    reference trajectory.
+
+    Observation
+    -----------
+    The observation space is specified by a :py:class:`CompositeSpec` containing the following items:
+
+    - `obs_self` (1, \*): The state of each UAV observed by itself, containing its kinematic
+      information with the position being relative to the payload. It also includes a one-hot 
+      vector indicating each drone's identity.
+    - `obs_others` (k-1, \*): The observed states of other agents.
+    - `obs_payload` (1, \*): The state of the frame, cotaining its position (relative to the
+      reference), rotation (in quaternions and direction vectors), and velocities.
+    
+    Reward
+    ------
+    - `seperation`: A factor that penalizes all agents when the minimum seperation is too small.
+    - `pos`: Reward for tracking the trajectory, computed as :math:`\exp(-a * \text{pos_error})`.
+    - `up`: Reward for keeping the payload upright.
+    - `swing`: Reward for avoid large swinging of the payload.
+    - `joint_limit`: Reward for kepping the joint states in a reasonalble range to avoid glitchy behaviors.
+
+    Config
+    ------
+    - `reset_thres` (float, default=0.7): A threshold value that triggers termination when the payload deviates 
+      form the reference position beyond a certain limit.
+    - `future_traj_steps` (int, default=4): The number of future time steps to observe the 
+      reference positions along the trajectory. 
+
+    """
     def __init__(self, cfg, headless):
+        self.reset_thres = cfg.task.reset_thres
+        self.reward_effort_weight = cfg.task.reward_effort_weight
+        self.reward_spin_weight = cfg.task.reward_spin_weight
+        self.reward_swing_weight = cfg.task.reward_swing_weight
+        self.reward_action_smoothness_weight = cfg.task.reward_action_smoothness_weight
+        self.reward_distance_scale = cfg.task.reward_distance_scale
+        self.time_encoding = cfg.task.time_encoding
+        self.future_traj_steps = int(cfg.task.future_traj_steps)
+        self.safe_distance = cfg.task.safe_distance
         super().__init__(cfg, headless)
-        self.reset_thres = self.cfg.task.reset_thres
-        self.reward_effort_weight = self.cfg.task.reward_effort_weight
-        self.reward_spin_weight = self.cfg.task.reward_spin_weight
-        self.reward_swing_weight = self.cfg.task.reward_swing_weight
-        self.reward_action_smoothness_weight = self.cfg.task.reward_action_smoothness_weight
-        self.reward_distance_scale = self.cfg.task.reward_distance_scale
-        self.time_encoding = self.cfg.task.time_encoding
-        self.future_traj_steps = int(self.cfg.task.future_traj_steps)
-        self.safe_distance = self.cfg.task.safe_distance
 
         self.group.initialize()
         self.payload = self.group.payload_view
@@ -38,32 +70,6 @@ class TransportTrack(IsaacEnv):
         self.init_velocities = torch.zeros_like(self.group.get_velocities())
         self.init_joint_pos = self.group.get_joint_positions(clone=True)
         self.init_joint_vel = torch.zeros_like(self.group.get_joint_velocities())
-
-        drone_state_dim = self.drone.state_spec.shape[-1]
-        payload_state_dim = 19 + (self.future_traj_steps-1) * 3
-        if self.time_encoding:
-            self.time_encoding_dim = 4
-            payload_state_dim += self.time_encoding_dim
-        
-        observation_spec = CompositeSpec({
-            "obs_self": UnboundedContinuousTensorSpec((1, drone_state_dim)),
-            "obs_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13+1)),
-            "state_payload": UnboundedContinuousTensorSpec((1, payload_state_dim)),
-        }).to(self.device)
-
-        state_spec = CompositeSpec(
-            drones=UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim)),
-            payload=UnboundedContinuousTensorSpec((1, payload_state_dim))
-        ).to(self.device)
-
-        self.agent_spec["drone"] = AgentSpec(
-            "drone",
-            self.drone.n,
-            observation_spec,
-            self.drone.action_spec.to(self.device),
-            UnboundedContinuousTensorSpec(1).to(self.device),
-            state_spec=state_spec
-        )
 
         self.payload_target_rpy_dist = D.Uniform(
             torch.tensor([0., 0., 0.], device=self.device) * torch.pi,
@@ -103,20 +109,6 @@ class TransportTrack(IsaacEnv):
         self.traj_w = torch.ones(self.num_envs, device=self.device)
 
         self.alpha = 0.8
-        
-        info_spec = CompositeSpec({
-            "payload_mass": UnboundedContinuousTensorSpec(1),
-        }).expand(self.num_envs).to(self.device)
-        stats_spec = CompositeSpec({
-            "payload_pos_error": UnboundedContinuousTensorSpec(1),
-            "heading_alignment": UnboundedContinuousTensorSpec(1),
-            "uprightness": UnboundedContinuousTensorSpec(1),
-            "action_smoothness": UnboundedContinuousTensorSpec(self.drone.n),
-        }).expand(self.num_envs).to(self.device)
-        self.observation_spec["info"] = info_spec
-        self.observation_spec["stats"] = stats_spec
-        self.info = info_spec.zero()
-        self.stats = stats_spec.zero()
 
         self.draw = _debug_draw.acquire_debug_draw_interface()
 
@@ -131,6 +123,63 @@ class TransportTrack(IsaacEnv):
 
         self.group.spawn(translations=[(0, 0, 2.0)], enable_collision=False)
         return ["/World/defaultGroundPlane"]
+
+    def _set_specs(self):
+        drone_state_dim = self.drone.state_spec.shape[-1] + self.drone.n
+        payload_state_dim = 19 + (self.future_traj_steps-1) * 3
+        if self.time_encoding:
+            self.time_encoding_dim = 4
+            payload_state_dim += self.time_encoding_dim
+        
+        observation_spec = CompositeSpec({
+            "obs_self": UnboundedContinuousTensorSpec((1, drone_state_dim)),
+            "obs_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13+1)),
+            "obs_payload": UnboundedContinuousTensorSpec((1, payload_state_dim)),
+        }).to(self.device)
+
+        state_spec = CompositeSpec(
+            drones=UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim)),
+            payload=UnboundedContinuousTensorSpec((1, payload_state_dim))
+        ).to(self.device)
+
+        self.observation_spec = CompositeSpec({
+            "agents": {
+                "observation": observation_spec.expand(self.drone.n),
+                "state": state_spec,
+            }
+        }).expand(self.num_envs).to(self.device)
+        self.action_spec = CompositeSpec({
+            "agents": {
+                "action": self.drone.action_spec.expand(self.drone.n),
+            }
+        }).expand(self.num_envs).to(self.device)
+        self.reward_spec = CompositeSpec({
+            "agents": {
+                "reward": UnboundedContinuousTensorSpec((self.drone.n, 1))
+            }
+        }).expand(self.num_envs).to(self.device)
+        self.agent_spec["drone"] = AgentSpec(
+            "drone", self.drone.n,
+            observation_key=("agents", "observation"),
+            action_key=("agents", "action"),
+            reward_key=("agents", "reward"),
+        )
+        
+        info_spec = CompositeSpec({
+            "payload_mass": UnboundedContinuousTensorSpec(1),
+        }).expand(self.num_envs).to(self.device)
+        stats_spec = CompositeSpec({
+            "return": UnboundedContinuousTensorSpec(self.drone.n),
+            "episode_len": UnboundedContinuousTensorSpec(1),
+            "pos_error": UnboundedContinuousTensorSpec(1),
+            # "heading_alignment": UnboundedContinuousTensorSpec(1),
+            "uprightness": UnboundedContinuousTensorSpec(1),
+            "action_smoothness": UnboundedContinuousTensorSpec(self.drone.n),
+        }).expand(self.num_envs).to(self.device)
+        self.observation_spec["info"] = info_spec
+        self.observation_spec["stats"] = stats_spec
+        self.info = info_spec.zero()
+        self.stats = stats_spec.zero()
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.traj_c[env_ids] = self.traj_c_dist.sample(env_ids.shape)
@@ -170,7 +219,7 @@ class TransportTrack(IsaacEnv):
             self.draw.draw_lines(point_list_0, point_list_1, colors, sizes)
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
-        actions = tensordict[("action", "drone.action")]
+        actions = tensordict[("agents", "action")]
         self.effort = self.drone.apply_action(actions)
 
     def _compute_state_and_obs(self):
@@ -204,26 +253,29 @@ class TransportTrack(IsaacEnv):
         payload_state = torch.cat(payload_state, dim=-1).unsqueeze(1)
 
         obs = TensorDict({}, [self.num_envs, self.drone.n])
+        identity = torch.eye(self.drone.n, device=self.device).expand(self.num_envs, -1, -1)
         obs["obs_self"] = torch.cat(
-            [-payload_drone_rpos, self.drone_states[..., 3:]], dim=-1
+            [-payload_drone_rpos, self.drone_states[..., 3:], identity], dim=-1
         ).unsqueeze(2) # [..., 1, state_dim]
         obs["obs_others"] = torch.cat(
             [self.drone_rpos, self.drone_pdist, vmap(others)(self.drone_states[..., 3:13])], dim=-1
         ) # [..., n-1, state_dim + 1]
-        obs["state_payload"] = payload_state.expand(-1, self.drone.n, -1).unsqueeze(2) # [..., 1, 22]
+        obs["obs_payload"] = payload_state.expand(-1, self.drone.n, -1).unsqueeze(2) # [..., 1, 22]
 
         state = TensorDict({}, self.num_envs)
         state["payload"] = payload_state # [..., 1, 22]
         state["drones"] = obs["obs_self"].squeeze(2) # [..., n, state_dim]
 
-        self.stats["payload_pos_error"].lerp_(self.target_distance, (1-self.alpha))
+        self.stats["pos_error"].lerp_(self.target_distance, (1-self.alpha))
         # self.stats["heading_alignment"].lerp_(heading_alignment, (1-self.alpha))
         self.stats["uprightness"].lerp_(self.payload_up[:, 2].unsqueeze(-1), (1-self.alpha))
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
         
         return TensorDict({
-            "drone.obs": obs, 
-            "drone.state": state,
+            "agents": {
+                "observation": obs, 
+                "state": state,
+            },
             "info": self.info,
             "stats": self.stats
         }, self.num_envs)
@@ -238,8 +290,8 @@ class TransportTrack(IsaacEnv):
         separation = self.drone_pdist.min(dim=-2).values.min(dim=-2).values
 
         reward = torch.zeros(self.num_envs, self.drone.n, 1, device=self.device)
-        # reward_pose = 1 / (1 + torch.square(distance * self.reward_distance_scale))
-        reward_pose = torch.exp(-self.target_distance * self.reward_distance_scale)
+        # reward_pos = 1 / (1 + torch.square(distance * self.reward_distance_scale))
+        reward_pos = torch.exp(-self.target_distance * self.reward_distance_scale)
 
         up = self.payload_up[:, 2]
         reward_up = torch.square((up + 1) / 2).unsqueeze(-1)
@@ -258,8 +310,8 @@ class TransportTrack(IsaacEnv):
         
         reward[:] = (
             reward_separation * (
-                reward_pose 
-                + reward_pose * (reward_up + reward_spin + reward_swing) 
+                reward_pos 
+                + reward_pos * (reward_up + reward_spin + reward_swing) 
                 + reward_joint_limit
                 + reward_action_smoothness.mean(1, True)
                 + reward_effort
@@ -276,11 +328,14 @@ class TransportTrack(IsaacEnv):
             | (self.target_distance > self.reset_thres)
         )
 
-        self._tensordict["return"] += reward
+        self.stats["return"].add_(reward.mean(1))
+        self.stats["episode_len"][:] = self.progress_buf.unsqueeze(-1)
+
         return TensorDict(
             {
-                "reward": {"drone.reward": reward},
-                "return": self._tensordict["return"],
+                "agents": {
+                    "reward": reward
+                },
                 "done": done,
             },
             self.batch_size,

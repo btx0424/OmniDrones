@@ -45,17 +45,17 @@ class Track(IsaacEnv):
 
     """
     def __init__(self, cfg, headless):
-        super().__init__(cfg, headless)
-        self.reset_thres = self.cfg.task.reset_thres
-        self.reward_effort_weight = self.cfg.task.reward_effort_weight
-        self.reward_action_smoothness_weight = self.cfg.task.reward_action_smoothness_weight
-        self.reward_motion_smoothness_weight = self.cfg.task.reward_motion_smoothness_weight
-        self.reward_distance_scale = self.cfg.task.reward_distance_scale
-        self.time_encoding = self.cfg.task.time_encoding
-        self.future_traj_steps = int(self.cfg.task.future_traj_steps)
+        self.reset_thres = cfg.task.reset_thres
+        self.reward_effort_weight = cfg.task.reward_effort_weight
+        self.reward_action_smoothness_weight = cfg.task.reward_action_smoothness_weight
+        self.reward_distance_scale = cfg.task.reward_distance_scale
+        self.time_encoding = cfg.task.time_encoding
+        self.future_traj_steps = int(cfg.task.future_traj_steps)
         assert self.future_traj_steps > 0
-        self.intrinsics = self.cfg.task.intrinsics
-        self.wind = self.cfg.task.wind
+        self.intrinsics = cfg.task.intrinsics
+        self.wind = cfg.task.wind
+
+        super().__init__(cfg, headless)
 
         self.drone.initialize()
         randomization = self.cfg.task.get("randomization", None)
@@ -76,23 +76,6 @@ class Track(IsaacEnv):
                 self.wind_intensity_high = 2
             self.wind_w = torch.zeros(self.num_envs, 3, 8, device=self.device)
             self.wind_i = torch.zeros(self.num_envs, 1, device=self.device)
-
-
-        drone_state_dim = self.drone.state_spec.shape[-1]
-        obs_dim = drone_state_dim + 3 * (self.future_traj_steps-1)
-        if self.time_encoding:
-            self.time_encoding_dim = 4
-            obs_dim += self.time_encoding_dim
-        if self.intrinsics:
-            obs_dim += sum(spec.shape[-1] for name, spec in self.drone.info_spec.items())
-        
-        self.agent_spec["drone"] = AgentSpec(
-            "drone",
-            1,
-            UnboundedContinuousTensorSpec(obs_dim).to(self.device),
-            self.drone.action_spec.to(self.device),
-            UnboundedContinuousTensorSpec(1).to(self.device),
-        )
         
         self.init_rpy_dist = D.Uniform(
             torch.tensor([-.2, -.2, 0.], device=self.device) * torch.pi,
@@ -125,18 +108,6 @@ class Track(IsaacEnv):
         self.target_pos = torch.zeros(self.num_envs, self.future_traj_steps, 3, device=self.device)
 
         self.alpha = 0.8
-        stats_spec = CompositeSpec({
-            "tracking_error": UnboundedContinuousTensorSpec(1),
-            "tracking_error_ema": UnboundedContinuousTensorSpec(1),
-            "action_smoothness": UnboundedContinuousTensorSpec(1),
-            "motion_smoothness": UnboundedContinuousTensorSpec(1)
-        }).expand(self.num_envs).to(self.device)
-        info_spec = self.drone.info_spec.to(self.device)
-        self.observation_spec["info"] = info_spec
-        self.observation_spec["stats"] = stats_spec
-        # self.info = self.drone.info
-        self.info = info_spec.zero()
-        self.stats = stats_spec.zero()
 
         self.draw = _debug_draw.acquire_debug_draw_interface()
 
@@ -153,6 +124,52 @@ class Track(IsaacEnv):
         )
         self.drone.spawn(translations=[(0.0, 0.0, 1.5)])
         return ["/World/defaultGroundPlane"]
+    
+    def _set_specs(self):
+        drone_state_dim = self.drone.state_spec.shape[-1]
+        obs_dim = drone_state_dim + 3 * (self.future_traj_steps-1)
+        if self.time_encoding:
+            self.time_encoding_dim = 4
+            obs_dim += self.time_encoding_dim
+        if self.intrinsics:
+            obs_dim += sum(spec.shape[-1] for name, spec in self.drone.info_spec.items())
+        
+        self.observation_spec = CompositeSpec({
+            "agents": {
+                "observation": UnboundedContinuousTensorSpec((1, obs_dim))
+            }
+        }).expand(self.num_envs).to(self.device)
+        self.action_spec = CompositeSpec({
+            "agents": {
+                "action": self.drone.action_spec.unsqueeze(0),
+            }
+        }).expand(self.num_envs).to(self.device)
+        self.reward_spec = CompositeSpec({
+            "agents": {
+                "reward": UnboundedContinuousTensorSpec((1, 1))
+            }
+        }).expand(self.num_envs).to(self.device)
+        self.agent_spec["drone"] = AgentSpec(
+            "drone", 1,
+            observation_key=("agents", "observation"),
+            action_key=("agents", "action"),
+            reward_key=("agents", "reward"),
+        )
+        stats_spec = CompositeSpec({
+            "return": UnboundedContinuousTensorSpec(1),
+            "episode_len": UnboundedContinuousTensorSpec(1),
+            "tracking_error": UnboundedContinuousTensorSpec(1),
+            "tracking_error_ema": UnboundedContinuousTensorSpec(1),
+            "action_smoothness": UnboundedContinuousTensorSpec(1),
+        }).expand(self.num_envs).to(self.device)
+        # info_spec = CompositeSpec({
+        #     "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13)),
+        # }).expand(self.num_envs).to(self.device)
+        # info_spec = self.drone.info_spec.to(self.device)
+        # self.observation_spec["info"] = info_spec
+        self.observation_spec["stats"] = stats_spec
+        self.info = info_spec.zero()
+        self.stats = stats_spec.zero()
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
@@ -173,7 +190,7 @@ class Track(IsaacEnv):
 
         self.stats[env_ids] = 0.
 
-        self.info[env_ids] = self.drone.info[env_ids]
+        # self.info[env_ids] = self.drone.info[env_ids]
 
         if self._should_render(0) and (env_ids == self.central_env_idx).any() :
             # visualize the trajectory
@@ -192,7 +209,7 @@ class Track(IsaacEnv):
             self.wind_w[env_ids] = torch.randn(*env_ids.shape, 3, 8, device=self.device)
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
-        actions = tensordict[("action", "drone.action")]
+        actions = tensordict[("agents", "action")]
         self.effort = self.drone.apply_action(actions)
 
         if self.wind:
@@ -221,23 +238,14 @@ class Track(IsaacEnv):
         obs = torch.cat(obs, dim=-1)
 
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
-        self.smoothness = (
-            self.drone.get_linear_smoothness() 
-            + self.drone.get_angular_smoothness()
-        )
-        self.stats["motion_smoothness"].lerp_(self.smoothness, (1-self.alpha))
 
-        if hasattr(self, "info"):
-            return TensorDict({
-                "drone.obs": obs,
-                "stats": self.stats,
-                "info": self.info
-            }, self.batch_size)
-        else:
-            return TensorDict({
-                "drone.obs": obs,
-                "stats": self.stats
-            }, self.batch_size)
+        return TensorDict({
+            "agents": {
+                "observation": obs,
+            },
+            "stats": self.stats,  
+            "info": self.info
+        }, self.batch_size)
 
     def _compute_reward_and_done(self):
         # pos reward
@@ -254,7 +262,6 @@ class Track(IsaacEnv):
         # effort
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort)
         reward_action_smoothness = self.reward_action_smoothness_weight * torch.exp(-self.drone.throttle_difference)
-        reward_motion_smoothness = self.reward_motion_smoothness_weight * (self.smoothness / 1000)
 
         # spin reward
         spin = torch.square(self.drone.vel[..., -1])
@@ -265,9 +272,7 @@ class Track(IsaacEnv):
             + reward_pose * (reward_up + reward_spin) 
             + reward_effort
             + reward_action_smoothness
-            + reward_motion_smoothness
         )
-        self._tensordict["return"] += reward.unsqueeze(-1)
 
         done = (
             (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
@@ -279,11 +284,14 @@ class Track(IsaacEnv):
         self.stats["tracking_error"].div_(
             torch.where(done, ep_len, torch.ones_like(ep_len))
         )
-        
+        self.stats["return"] += reward
+        self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
+
         return TensorDict(
             {
-                "reward": {"drone.reward": reward.unsqueeze(-1)},
-                "return": self._tensordict["return"],
+                "agents": {
+                    "reward": reward.unsqueeze(-1)
+                },
                 "done": done,
             },
             self.batch_size,

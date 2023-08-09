@@ -17,6 +17,7 @@ from torchrl.data import (
     UnboundedContinuousTensorSpec, CompositeSpec, DiscreteTensorSpec
 )
 from pxr import UsdShade
+from omni.isaac.debug_draw import _debug_draw
 
 
 class PingPongMultiV0(IsaacEnv):
@@ -40,20 +41,26 @@ class PingPongMultiV0(IsaacEnv):
         self.ball.initialize()
 
         self.ball_mass_dist = D.Uniform(
-            torch.tensor([0.01], device=self.device),
+            torch.tensor([0.04], device=self.device),
             torch.tensor([0.05], device=self.device)
         ) 
+        self.init_ball_offset_dist = D.Uniform(
+            torch.tensor([-0.3, -0.3, 1.6], device=self.device),
+            torch.tensor([0.3, 0.3, 2.0], device=self.device)
+        )
         self.init_drone_pos_dist = D.Uniform(
-            torch.tensor([[-1.5, -1, 1.5], [0.5, -1, 1.5]], device=self.device),
-            torch.tensor([[-0.5, 1 ,1.7], [1.5, 1, 1.7]], device=self.device)
+            torch.tensor([[0.5, -2.0, 1.5], [0.5, 0.5, 1.5]], device=self.device),
+            torch.tensor([[-.5, -0.5, 1.7], [-.5, 2.0, 1.7]], device=self.device)
         )
         self.init_drone_rpy_dist = D.Uniform(
             torch.tensor([-.1, -.1, 0.], device=self.device) * torch.pi,
             torch.tensor([0.1, 0.1, 2.], device=self.device) * torch.pi
         )
 
-        self.turn = torch.zeros(self.num_envs, 2, device=self.device)
+        self.turn = torch.zeros(self.num_envs, 2, dtype=bool, device=self.device)
+        self.last_ball_vel = torch.zeros(self.num_envs, 1, 3, device=self.device)
         self.alpha = 0.8
+        self.draw = _debug_draw.acquire_debug_draw_interface()
 
     def _design_scene(self):
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
@@ -77,7 +84,7 @@ class PingPongMultiV0(IsaacEnv):
             dynamic_friction=1.0,
             restitution=0.0,
         )
-        drone_prims = self.drone.spawn(translations=[(0.0, 0.0, 2.), (0.0, 0.0, 1.)])
+        drone_prims = self.drone.spawn(translations=[(0.0, -1., 2.), (0.0, 1., 1.)])
 
         material = UsdShade.Material(material.prim)
         for drone_prim in drone_prims:
@@ -89,26 +96,46 @@ class PingPongMultiV0(IsaacEnv):
 
     def _set_specs(self):
         drone_state_dim = self.drone.state_spec.shape[-1]
-        observation_dim = drone_state_dim + 1 + 3 + 3
+        observation_dim = (
+            drone_state_dim 
+            + 3 + 3 # ball's position and linear velocity
+            + 3 + 6 # other's position and linear and angular velocity
+            + 1 # turn
+        )
+        state_dim = (
+            drone_state_dim * 2
+            + 6 + 3 # relative ball pos, ball vel
+            + 6 # relative drone pos, 
+            + 2 # turn
+        )
 
         if self.cfg.task.time_encoding:
             self.time_encoding_dim = 4
             observation_dim += self.time_encoding_dim
+            state_dim += self.time_encoding_dim
 
         self.observation_spec = CompositeSpec({
-            "drone.obs": UnboundedContinuousTensorSpec((2, observation_dim)) ,
+            "agents": {
+                "observation": UnboundedContinuousTensorSpec((2, observation_dim)),
+                "state": UnboundedContinuousTensorSpec(state_dim)
+            }
         }).expand(self.num_envs).to(self.device)
         self.action_spec = CompositeSpec({
-            "drone.action": self.drone.action_spec,
-        }).expand(self.num_envs, 2).to(self.device)
+            "agents": {
+                "action": torch.stack([self.drone.action_spec]*self.drone.n, dim=0),
+            }
+        }).expand(self.num_envs).to(self.device)
         self.reward_spec = CompositeSpec({
-            "drone.reward": UnboundedContinuousTensorSpec((2, 1))
+            "agents": {
+                "reward": UnboundedContinuousTensorSpec((2, 1))
+            }
         }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", 2,
-            observation_key="drone.obs",
-            action_key="drone.action",
-            reward_key="drone.reward",
+            observation_key=("agents", "observation"),
+            action_key=("agents", "action"),
+            reward_key=("agents", "reward"),
+            state_key=("agents", "state")
         )
 
         stats_spec = CompositeSpec({
@@ -136,31 +163,34 @@ class PingPongMultiV0(IsaacEnv):
         )
         self.drone.set_velocities(torch.zeros(len(env_ids), 2, 6, device=self.device), env_ids)
 
-        # ball_pos = self.init_ball_pos_dist.sample((*env_ids.shape, 1))
-        # torch.multinomial([0.5, 0.5], 1)
-        turn = torch.tensor([1, -1], device=self.device) \
-            * torch.randn(len(env_ids), 1, device=self.device).sign()
+        turn = (
+            torch.tensor([True, False], device=self.device)
+            ^ (torch.randn(len(env_ids), 1, device=self.device) >= 0)
+        )
         self.turn[env_ids] = turn
-        
-        ball_pos = drone_pos[turn == 1] + torch.tensor([0., 0., 1.6], device=self.device)
+        ball_pos_offset = self.init_ball_offset_dist.sample(env_ids.shape)
+        ball_pos = drone_pos[turn] + ball_pos_offset
         ball_rot = torch.tensor([1., 0., 0., 0.], device=self.device).repeat(len(env_ids), 1)
         self.ball.set_world_poses(
             ball_pos + self.envs_positions[env_ids], ball_rot, env_ids
         )
         self.ball.set_velocities(torch.zeros(len(env_ids), 6, device=self.device), env_ids)
         self.ball.set_masses(self.ball_mass_dist.sample(env_ids.shape), env_ids)
+        self.last_ball_vel[env_ids] = 0.
         self.stats[env_ids] = 0.
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
-        actions = tensordict[("action", "drone.action")]
+        actions = tensordict[("agents", "action")]
         self.effort = self.drone.apply_action(actions)
 
     def _compute_state_and_obs(self):
         self.root_state = self.drone.get_state()
-        # pos, quat(4), vel, omega
         self.info["drone_state"][:] = self.root_state[..., :13]
         self.ball_pos, ball_rot = self.get_env_poses(self.ball.get_world_poses())
-        self.ball_vel = self.ball.get_velocities()
+        self.ball_vel = self.ball.get_velocities()[..., :3]
+        normalized_ball_vel = self.ball_vel / self.ball_vel.norm(dim=-1, keepdim=True).clip(1e-7)
+        self.hit = (self.last_ball_vel * normalized_ball_vel).sum(dim=-1) < -0.1
+        self.last_ball_vel[:] = normalized_ball_vel
 
         # relative position and heading
         self.rpos_ball =  self.ball_pos - self.drone.pos
@@ -171,39 +201,71 @@ class PingPongMultiV0(IsaacEnv):
             self.drone.pos[..., 1, :] - self.drone.pos[..., 0, :],
         ], dim=1)
         obs = [
-            self.rpos_ball, # [E, A, 3] 
             self.root_state, # [E, A, *]
-            self.ball_vel[..., :3].expand(-1, 2, 3), # [E, 1, 3] -> [E, A, 3] ,
+            self.rpos_drone,
+            self.drone.vel[:, [1, 0]],
+            self.rpos_ball, # [E, A, 3] 
+            self.ball_vel.expand(-1, 2, 3), # [E, 1, 3] -> [E, A, 3] ,
             self.turn.unsqueeze(-1),
+        ]
+        state = [
+            self.root_state.flatten(-2),
+            self.rpos_drone.flatten(-2),
+            self.rpos_ball.flatten(-2),
+            self.ball_vel.flatten(-2)
         ]
         
         if self.time_encoding:
             t = (self.progress_buf / self.max_episode_length).reshape(-1, 1, 1)
             obs.append(t.expand(-1, 2, self.time_encoding_dim))
+            state.append(t.squeeze(1))
         obs = torch.cat(obs, dim=-1)
+        state = torch.cat(state, dim=-1)
+
+        if self._should_render(0):
+            central_env_pos = self.envs_positions[self.central_env_idx]
+            drone_pos = self.drone.pos[self.central_env_idx]
+            ball_pos = self.ball_pos[self.central_env_idx]
+            turn = self.turn[self.central_env_idx]
+            point_list_0 = (drone_pos[turn] + central_env_pos).tolist()
+            point_list_1 = (ball_pos + central_env_pos).tolist()
+            colors = [(1., 1., 0.5, .7)]
+            sizes = [1.2]
+            self.draw.clear_lines()
+            self.draw.draw_lines(point_list_0, point_list_1, colors, sizes)
 
         return TensorDict({
-            "drone.obs": obs,
+            "agents": {
+                "observation": obs,
+            },
             "stats": self.stats,
             "info": self.info
         }, self.batch_size)
 
     def _compute_reward_and_done(self):
         
-        score = self.ball.get_net_contact_forces().any(-1)
-        self.turn.mul_(torch.where(score, -1, 1))
+        hit = self.ball.get_net_contact_forces().any(-1)
+        which_drone = self.rpos_ball.norm(dim=-1).argmin(dim=1, keepdim=True)
+        switch_turn = hit & torch.take_along_dim(self.turn, which_drone, dim=1)
+        self.turn.bitwise_xor_(torch.where(switch_turn, True, False))
 
-        reward_pos = (self.turn==1).float() / (1 + torch.norm(self.rpos_ball[..., :2], dim=-1))
-        reward_height = self.ball_pos[..., 2] - self.drone.pos[..., 2].max(dim=1, keepdim=True)[0].clip(1.)
-        # reward_score = score * 3.
-        reward = torch.sum(reward_pos + 0.8 * reward_height, dim=1, keepdim=True).expand(-1, 2)
+        safety_cost = (1. - self.rpos_drone[..., 0, :].norm(dim=-1, keepdim=True)).clip(0.)
+        reward_pos = self.turn.float() / (1 + torch.norm(self.rpos_ball[..., :2], dim=-1))
+        reward_height = 0.8 * (
+            self.ball_pos[..., 2] - self.drone.pos[..., 2].max(dim=1, keepdim=True)[0].clip(1.5)
+        ).clip(0.3)
+        reward_score = switch_turn.float() * 50.
+        reward = torch.sum(
+            reward_pos + reward_height + reward_score - safety_cost, 
+            dim=1, keepdim=True
+        ).expand(-1, 2)
 
         misbehave = (
             (self.drone.pos[..., 2] < 0.3).any(-1, keepdim=True)
             | (self.ball_pos[..., 2] < 0.2)
-            | (self.ball_pos[..., 2] > 4.)
+            | (self.ball_pos[..., 2] > 5.)
             | (self.ball_pos[..., 0].abs() > 2)
-            | (self.ball_pos[..., 1].abs() > 1.5)
+            | (self.ball_pos[..., 1].abs() > 2)
         ) # [E, 1]
         
         done = (
@@ -211,13 +273,15 @@ class PingPongMultiV0(IsaacEnv):
             | misbehave
         )
 
-        # self.stats["score"].add_(score)
         self.stats["return"].add_(reward[..., [0]])
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
+        self.stats["score"].add_(switch_turn.float())
 
         return TensorDict(
             {
-                "reward": {"drone.reward": reward.unsqueeze(-1)},
+                "agents": {
+                    "reward": reward.unsqueeze(-1)
+                },
                 "done": done,
             },
             self.batch_size,

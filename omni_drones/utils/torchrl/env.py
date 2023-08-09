@@ -33,11 +33,8 @@ class AgentSpec:
     @property
     def state_spec(self) -> TensorSpec:
         if self.state_key is None:
-            if isinstance(self._env.state_spec, CompositeSpec):
-                if len(self._env.state_spec) == 0:
-                    return None
-            return self._env.state_spec
-        return self._env.state_spec[self.state_key]
+            raise ValueError()
+        return self._env.observation_spec[self.state_key]
     
     @property
     def reward_spec(self) -> TensorSpec:

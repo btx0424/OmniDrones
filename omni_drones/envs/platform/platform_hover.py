@@ -313,7 +313,7 @@ class PlatformHover(IsaacEnv):
             | done_hasnan.any(-1, keepdim=True)
         )
 
-        self.stats["return"] += reward
+        self.stats["return"].add_(reward)
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(-1)
         self.stats["pos_error"].lerp_(self.pos_error, (1-self.alpha))
         self.stats["heading_alignment"].lerp_(self.heading_alignment, (1-self.alpha))

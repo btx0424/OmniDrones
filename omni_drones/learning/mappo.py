@@ -134,7 +134,7 @@ class MAPPOPolicy(object):
 
         assert self.cfg.critic_input in ("state", "obs")
         if self.cfg.critic_input == "state" and self.agent_spec.state_spec is not None:
-            self.critic_in_keys = [f"{self.agent_spec.name}.state"]
+            self.critic_in_keys = ["state"]
             self.critic_out_keys = ["state_value"]
             if cfg.get("rnn", None):
                 self.critic_in_keys.extend([

@@ -497,11 +497,25 @@ class RigidPrimView(_RigidPrimView):
         clone: bool = True
     ) -> torch.Tensor:
         indices = self._resolve_env_indices(env_indices)
-        return (
-            super()
-            .get_masses(indices, clone)
-            .reshape(-1, *self.shape[1:], 1)
-        )
+        if not omni.timeline.get_timeline_interface().is_stopped() and self._physics_view is not None:
+            current_values = self._backend_utils.move_data(self._physics_view.get_masses(), self._device)
+            masses = current_values[indices]
+            if clone:
+                masses = self._backend_utils.clone_tensor(masses, device=self._device)
+        else:
+            masses = self._backend_utils.create_zeros_tensor([indices.shape[0]], dtype="float32", device=self._device)
+            write_idx = 0
+            for i in indices:
+                if self._mass_apis[i.tolist()] is None:
+                    if self._prims[i.tolist()].HasAPI(UsdPhysics.MassAPI):
+                        self._mass_apis[i.tolist()] = UsdPhysics.MassAPI(self._prims[i.tolist()])
+                    else:
+                        self._mass_apis[i.tolist()] = UsdPhysics.MassAPI.Apply(self._prims[i.tolist()])
+                masses[write_idx] = self._backend_utils.create_tensor_from_list(
+                    self._mass_apis[i.tolist()].GetMassAttr().Get(), dtype="float32", device=self._device
+                )
+                write_idx += 1
+        return masses.reshape(-1, *self.shape[1:], 1)
     
     def set_masses(
         self, 
@@ -509,7 +523,23 @@ class RigidPrimView(_RigidPrimView):
         env_indices: Optional[torch.Tensor] = None
     ) -> None:
         indices = self._resolve_env_indices(env_indices)
-        return super().set_masses(masses.reshape(-1), indices)
+        indices = self._backend_utils.resolve_indices(indices, self.count, "cpu")
+        if not omni.timeline.get_timeline_interface().is_stopped() and self._physics_view is not None:
+            data = self._backend_utils.clone_tensor(self._physics_view.get_masses(), device="cpu")
+            data[indices] = self._backend_utils.move_data(masses, device="cpu")
+            self._physics_view.set_masses(data, indices)
+        else:
+            indices = self._backend_utils.resolve_indices(indices, self.count, self._device)
+            read_idx = 0
+            for i in indices:
+                if self._mass_apis[i.tolist()] is None:
+                    if self._prims[i.tolist()].HasAPI(UsdPhysics.MassAPI):
+                        self._mass_apis[i.tolist()] = UsdPhysics.MassAPI(self._prims[i.tolist()])
+                    else:
+                        self._mass_apis[i.tolist()] = UsdPhysics.MassAPI.Apply(self._prims[i.tolist()])
+                self._mass_apis[i.tolist()].GetMassAttr().Set(masses[read_idx].tolist())
+                read_idx += 1
+            return
 
     def get_coms(
         self, 

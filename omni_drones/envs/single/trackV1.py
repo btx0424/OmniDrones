@@ -146,10 +146,13 @@ class TrackV1(IsaacEnv):
             "heading_alignment": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
+        info_spec = CompositeSpec({
+            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13)),
+        }).expand(self.num_envs).to(self.device)
         # info_spec = self.drone.info_spec.to(self.device)
-        # self.observation_spec["info"] = info_spec
+        self.observation_spec["info"] = info_spec
         self.observation_spec["stats"] = stats_spec
-        # self.info = info_spec.zero()
+        self.info = info_spec.zero()
         self.stats = stats_spec.zero()
         
 
@@ -199,6 +202,7 @@ class TrackV1(IsaacEnv):
 
     def _compute_state_and_obs(self):
         self.root_state = self.drone.get_state()
+        self.info["drone_state"][:] = self.root_state[..., :13]
 
         self.ref_pos[:] = self._compute_traj(self.future_traj_steps, step_size=5)
         self.ref_heading[:] = normalize(self.ref_pos[:, 1, :2] - self.ref_pos[:, 0, :2])
@@ -221,7 +225,8 @@ class TrackV1(IsaacEnv):
             "agents": {
                 "observation": obs,
             },
-            "stats": self.stats
+            "stats": self.stats,
+            "info": self.info
         }, self.batch_size)
 
     def _compute_reward_and_done(self):

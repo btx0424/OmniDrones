@@ -72,7 +72,7 @@ class LogOnEpisode(Transform):
     def _step(self, tensordict: TensorDictBase) -> TensorDictBase:
         _reset = tensordict.get(("next", "done"), None)
         if _reset is None:
-            _reset = torch.ones(
+            _reset = torch.zeros(
                 tensordict.batch_size, dtype=torch.bool, device=tensordict.device
             )
         if _reset.any():

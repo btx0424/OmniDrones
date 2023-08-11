@@ -411,12 +411,7 @@ def make_dataset_naive(
 
 from .modules.distributions import (
     DiagGaussian,
-    IndependentNormalModule,
     MultiCategoricalModule,
-)
-
-from .utils.network import (
-    SplitEmbedding,
 )
 
 from .modules.rnn import GRU
@@ -539,45 +534,3 @@ class Critic(nn.Module):
         return values, rnn_state
 
 
-INDEX_TYPE = Union[int, slice, torch.LongTensor, List[int]]
-
-
-class CentralizedCritic(nn.Module):
-    """Critic for centralized training.
-
-    Args:
-        entity_ids: indices of the entities that are considered as agents.
-
-    """
-
-    def __init__(
-        self,
-        cfg,
-        entity_ids: INDEX_TYPE,
-        state_spec: CompositeSpec,
-        reward_spec: TensorSpec,
-        embed_dim=128,
-        nhead=1,
-        num_layers=1,
-    ):
-        super().__init__()
-        self.entity_ids = entity_ids
-        self.embed = SplitEmbedding(state_spec, embed_dim=embed_dim)
-        self.encoder = nn.TransformerEncoder(
-            encoder_layer=nn.TransformerEncoderLayer(
-                d_model=embed_dim,
-                nhead=nhead,
-                dim_feedforward=embed_dim,
-                dropout=0.0,
-                batch_first=True,
-            ),
-            num_layers=num_layers,
-        )
-        self.output_shape = reward_spec.shape
-        self.v_out = nn.Linear(embed_dim, self.output_shape.shape.numel())
-
-    def forward(self, x: torch.Tensor):
-        x = self.embed(x)
-        x = self.encoder(x)
-        values = self.v_out(x[..., self.entity_ids, :]).unflatten(-1, self.output_shape)
-        return values

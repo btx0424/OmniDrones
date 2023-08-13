@@ -28,13 +28,7 @@ def main(cfg):
 
     def policy(tensordict: TensorDict):
         state = tensordict[("info", "drone_state")]
-        controller_state = tensordict.get(
-            "controller_state", TensorDict({}, state.shape[:2])
-        )
-        relative_state = state[..., :13].clone()
-        target_pos, quat, linvel, angvel = torch.split(
-            relative_state, [3, 4, 3, 3], dim=-1
-        )
+        state = state[..., :13].clone()
         control_target = torch.cat(
             [
                 target_pos,
@@ -43,12 +37,8 @@ def main(cfg):
             ],
             dim=-1,
         )
-        relative_state[..., :3] = 0.0
-        cmds, controller_state = vmap(vmap(controller))(
-            relative_state, control_target, controller_state
-        )
+        cmds = vmap(controller)(relative_state, control_target)
         tensordict[("agents", "action")] = cmds
-        tensordict["controller_state"] = controller_state
         return tensordict
 
     env.rollout(

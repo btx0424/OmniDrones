@@ -25,7 +25,7 @@ gate_scale: 1.0
 reset_on_collision: true
 safe_distance: 0.3
 
-flatten_obs: true
+ravel_obs: true
 flatten_state: true
 
 action_transform: null

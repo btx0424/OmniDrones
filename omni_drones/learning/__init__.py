@@ -1,5 +1,5 @@
 from .mappo import MAPPOPolicy
-from .ppo import PPOPolicy
+from .ppo import PPOPolicy, PPOAdaptivePolicy
 # from .test_single import Policy
 # from .mappo_formation import PPOFormation as Policy
 from ._ppo import PPOPolicy as Policy

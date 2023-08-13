@@ -192,3 +192,35 @@ class AttitudeController(nn.Module):
         cmd = self.mixer @ angular_acc_thrust
         cmd = (cmd / self.max_thrusts) * 2 - 1
         return cmd
+
+
+class RateController(nn.Module):
+
+    def __init__(self, uav_params) -> None:
+        super().__init__()
+        rotor_config = uav_params["rotor_configuration"]
+        inertia = uav_params["inertia"]
+        force_constants = torch.as_tensor(rotor_config["force_constants"])
+        max_rot_vel = torch.as_tensor(rotor_config["max_rotation_velocities"])
+
+        self.mass = nn.Parameter(torch.tensor(uav_params["mass"]))
+        self.g = nn.Parameter(torch.tensor(g))
+        self.max_thrusts = nn.Parameter(max_rot_vel.square() * force_constants)
+        I = torch.diag_embed(
+            torch.tensor([inertia["xx"], inertia["yy"], inertia["zz"], 1])
+        )
+
+        self.mixer = nn.Parameter(compute_parameters(rotor_config, I))
+        self.gain_attitude = nn.Parameter(
+            torch.tensor([3., 3., 0.035]) @ I[:3, :3].inverse()
+        )
+        self.gain_angular_rate = nn.Parameter(
+            torch.tensor([0.52, 0.52, 0.025]) @ I[:3, :3].inverse()
+        )
+
+    
+    def forward(self, root_state: torch.Tensor, control_target: torch.Tensor):
+
+
+
+        return cmd

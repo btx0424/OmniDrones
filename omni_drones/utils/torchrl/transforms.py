@@ -219,14 +219,31 @@ class DepthImageNorm(Transform):
         return obs
 
 
-def flatten_composite(spec: CompositeSpec, key: str):
+def ravel_composite(
+    spec: CompositeSpec, key: str, start_dim: int=-2, end_dim: int=-1
+):
+    r"""
+    
+    Examples:
+    >>> obs_spec = CompositeSpec({
+    ...     "obs_self": UnboundedContinuousTensorSpec((1, 19)),
+    ...     "obs_others": UnboundedContinuousTensorSpec((3, 13)),
+    ... })
+    >>> spec = CompositeSpec({
+            "agents": {
+                "observation": obs_spec
+            }
+    ... })
+    >>> t = ravel_composite(spec, ("agents", "observation"))
+
+    """
     composite_spec = spec[key]
     if not isinstance(key, tuple):
         key = (key,)
     if isinstance(composite_spec, CompositeSpec):
         in_keys = [k for k in spec.keys(True, True) if k[:len(key)] == key]
         return Compose(
-            FlattenObservation(-2, -1, in_keys),
+            FlattenObservation(start_dim, end_dim, in_keys),
             CatTensors(in_keys, out_key=key)
         )
     else:
@@ -292,133 +309,64 @@ class AttitudeController(Transform):
         return tensordict
 
 
-
 from collections import defaultdict
 class History(Transform):
     def __init__(
         self,
         in_keys: Sequence[str],
         out_keys: Sequence[str]=None,
-        steps: int = 5,
+        steps: int = 32,
     ):
+        if out_keys is None:
+            out_keys = [
+                f"{key}_h" if isinstance(key, str) else key[:-1] + (f"{key[-1]}_h",)
+                for key in in_keys
+            ]
         super().__init__(in_keys=in_keys, out_keys=out_keys)
         self.steps = steps
     
     def transform_observation_spec(self, observation_spec: TensorSpec) -> TensorSpec:
-        history_dict = {}
         for in_key, out_key in zip(self.in_keys, self.out_keys):
             is_tuple = isinstance(in_key, tuple)
             if in_key in observation_spec.keys(include_nested=is_tuple):
                 spec = observation_spec[in_key]
                 spec = spec.unsqueeze(spec.ndim-1).expand(*spec.shape[:-1], self.steps, spec.shape[-1])
                 observation_spec[out_key] = spec
-            elif in_key in self.parent.input_spec.keys(include_nested=is_tuple):
-                spec = self.parent.input_spec[in_key]
-                spec = spec.unsqueeze(spec.ndim-1).expand(*spec.shape[:-1], self.steps, spec.shape[-1])
-                observation_spec[out_key] = spec
-            history_dict[out_key] = list(spec.zero().unbind(-2))
-        self.history_dict = history_dict
-        self.arange = torch.arange(self.steps, device=observation_spec.device).flip(0)
         return observation_spec
-    
-    def _inv_call(self, tensordict: TensorDictBase) -> TensorDictBase:
+
+    def _call(self, tensordict: TensorDictBase) -> TensorDictBase:
         for in_key, out_key in zip(self.in_keys, self.out_keys):
-            is_tuple = isinstance(in_key, tuple)
-            if in_key in tensordict.keys(include_nested=is_tuple):
+            item = tensordict.get(in_key)
+            item_history = tensordict.get(out_key)
+            item_history[..., :-1, :] = item_history[..., 1:, :]
+            item_history[..., -1, :] = item
+        return tensordict
+
+    def _step(self, tensordict: TensorDictBase) -> TensorDictBase:
+        for in_key, out_key in zip(self.in_keys, self.out_keys):
+            item = tensordict.get(in_key)
+            item_history = tensordict.get(out_key).clone()
+            item_history[..., :-1, :] = item_history[..., 1:, :]
+            item_history[..., -1, :] = item
+            tensordict.set(("next", out_key), item_history)
+        return tensordict
+
+    def reset(self, tensordict: TensorDictBase) -> TensorDictBase:
+        _reset = tensordict.get("_reset", None)
+        if _reset is None:
+            _reset = torch.ones(tensordict.batch_size, dtype=bool, device=tensordict.device)
+        for in_key, out_key in zip(self.in_keys, self.out_keys):
+            if out_key not in tensordict.keys(True, True):
                 item = tensordict.get(in_key)
-                history = self.history_dict[out_key]
-                history.append(item)
-                history.pop(0)
-        return tensordict
-    
-    def _call(self, tensordict: TensorDictBase) -> TensorDictBase:
-        step_count = tensordict.get("step_count")
-        history_mask = (self.arange < step_count).float()
-        for in_key, out_key in zip(self.in_keys, self.out_keys):
-            if out_key in self.history_dict:
-                observation = torch.stack(self.history_dict[out_key], dim=-2)
-                mask_shape = (-1,) + (1,) * (observation.ndim-3) + (self.steps, 1)
-                observation = observation * history_mask.reshape(mask_shape)
-                tensordict.set(
-                    out_key,
-                    observation,
+                item_history = (
+                    item.unsqueeze(item.ndim-1)
+                    .expand(*item.shape[:-1], self.steps, item.shape[-1])
+                    .clone()
+                    .zero_()
                 )
+                tensordict.set(out_key, item_history)
+            else:
+                item_history = tensordict.get(out_key)
+                item_history[_reset] = 0.
         return tensordict
 
-
-import torch.nn as nn
-import torch.nn.functional as F
-
-def make_mlp(units):
-    layers = []
-    for i, u in enumerate(units):
-        layers.append(nn.LazyLinear(u))
-        if i < len(units)-1:
-            layers.append(nn.ELU())
-    return nn.Sequential(*layers)
-
-class AdaptationModule(nn.Module):
-    def __init__(self, cfg) -> None:
-        super().__init__()
-    
-    def forward(self, adapt_obs):
-
-        return x
-
-class Adaptation(Transform):
-
-    def __init__(
-        self, 
-        obs_key: str,
-        extrinsic_key: str,
-        adapt_obs_key: str,
-        encoder_units: Sequence[int],
-        adapt_cfg,
-        embed_dim: int=8,
-    ):
-        super().__init__([obs_key, extrinsic_key, adapt_obs_key], [obs_key])
-        self.obs_key = obs_key
-        self.extrinsic_key = extrinsic_key
-        self.adapt_obs_key = adapt_obs_key
-        self.initialized = False
-        
-        self.embed_dim = embed_dim
-        self.encoder = make_mlp(list(encoder_units) + [embed_dim])
-        self.adapt_module = AdaptationModule(adapt_cfg)
-    
-    def transform_observation_spec(self, observation_spec: TensorSpec) -> TensorSpec:
-        obs_spec = observation_spec[self.obs_key]
-        if isinstance(obs_spec, CompositeSpec):
-            raise TypeError
-        spec = UnboundedContinuousTensorSpec(
-            shape=[*obs_spec.shape[:-1], obs_spec.shape[-1]+self.embed_dim],
-            device=obs_spec.device
-        )
-        observation_spec[self.obs_key] = spec
-        return observation_spec
-    
-    def _call(self, tensordict: TensorDictBase) -> TensorDictBase:
-        if self.training:
-            extrinsics = tensordict.get(self.extrinsic_key)
-            obs = tensordict.get(self.obs_key)
-            embed = self.encoder(extrinsics)
-            tensordict.set(self.obs_key, torch.cat([obs, embed], dim=-1))
-        else:
-            raise
-        return tensordict
-    
-    def _inv_call(self, tensordict: TensorDictBase) -> TensorDictBase:
-        obs = tensordict.get(self.obs_key)
-        tensordict.set(self.obs_key, obs[..., :-self.embed_dim])
-        return tensordict
-    
-    forward = _call
-        
-    def train_adapt_module(self, tensordict):
-
-        extrinsics = tensordict.get(self.extrinsic_key)
-        adapt_obs = tensordict.get(self.adapt_obs_key)
-        with torch.no_grad():
-            embed = self.encoder(extrinsics)
-        embed_pred = self.adapt_module(adapt_obs)
-        loss = F.mse_loss(embed_pred, embed)

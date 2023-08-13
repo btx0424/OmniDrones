@@ -1,4 +1,4 @@
-name: Rearrange
+name: FormationDodge
 
 defaults:
   # see https://hydra.cc/docs/advanced/overriding_packages/
@@ -7,17 +7,17 @@ defaults:
   # - /base/randomization_base@_here_
 
 env: 
-  num_envs: 256
+  num_envs: 1024
+  max_episode_length: 600
 
 drone_model: Hummingbird
 force_sensor: false
-size: 3
+time_encoding: true
 
-reward_distance_scale: 1.2
-safe_distance: 0.3
-reward_share_ratio: 0.3
+safe_distance: 0.4
+formation: tetragon
 
-ravel_obs: true
-flatten_state: true
+ravel_obs: false
+flatten_state: false
 
 action_transform: null

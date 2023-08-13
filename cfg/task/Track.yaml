@@ -4,7 +4,6 @@ defaults:
   # see https://hydra.cc/docs/advanced/overriding_packages/
   - /base/env_base@_here_
   - /base/sim_base@_here_
-  - /base/randomization_base@_here_
 
 env:
   max_episode_length: 600
@@ -14,33 +13,6 @@ force_sensor: false
 time_encoding: true
 intrinsics: false
 wind: false
-
-# randomization:
-#   wind:
-#     train:
-#       intensity: [0,5]
-#       direction: [0,0]
-    # eval:
-    #   intensity: [5,10]
-    #   direction: [0,0]
-  # drone:
-  #   train:
-  #     mass_scale: [0.7, 1.3]
-  #     inertia_scale: [[0.8, 0.8, 0.8], [1.6, 1.6, 1.6]]
-  #     # com_scale: [0.1, 0.1, 0.06]
-  #     KF_scale: [0.8, 1.6]
-  #     KM_scale: [0.8, 1.6]
-  #     drag_coef_scale: [0.2, 1.6]
-  #     rotor_pos_offset_scale: 0.1
-  #   eval:
-  #     mass_scale: [0.6, 1.25]
-  #     inertia_scale: [[0.6, 0.6, 0.6], [2.0, 2.0, 2.0]]
-  #     # com_scale: [0.1, 0.1, 0.06]
-  #     KF_scale: [0.75, 1.25]
-  #     KM_scale: [0.75, 1.25]
-  #     drag_coef_scale: [0.2, 2.]
-  #     rotor_pos_offset_scale: 0.1
-
 
 reset_thres: 0.5
 future_traj_steps: 4

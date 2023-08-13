@@ -522,8 +522,8 @@ class RigidPrimView(_RigidPrimView):
         masses: torch.Tensor, 
         env_indices: Optional[torch.Tensor] = None
     ) -> None:
-        indices = self._resolve_env_indices(env_indices)
-        indices = self._backend_utils.resolve_indices(indices, self.count, "cpu")
+        indices = self._resolve_env_indices(env_indices).cpu()
+        masses = masses.reshape(-1, 1)
         if not omni.timeline.get_timeline_interface().is_stopped() and self._physics_view is not None:
             data = self._backend_utils.clone_tensor(self._physics_view.get_masses(), device="cpu")
             data[indices] = self._backend_utils.move_data(masses, device="cpu")

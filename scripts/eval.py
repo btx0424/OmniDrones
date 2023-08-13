@@ -17,7 +17,7 @@ from omni_drones.utils.torchrl.transforms import (
     LogOnEpisode, 
     FromMultiDiscreteAction, 
     FromDiscreteAction,
-    flatten_composite,
+    ravel_composite,
     VelController,
     History
 )
@@ -103,8 +103,8 @@ def main(cfg):
 
     # a CompositeSpec is by deafault processed by a entity-based encoder
     # flatten it to use a MLP encoder instead
-    if cfg.task.get("flatten_obs", False):
-        transforms.append(flatten_composite(base_env.observation_spec, "drone.obs"))
+    if cfg.task.get("ravel_obs", False):
+        transforms.append(ravel_composite(base_env.observation_spec, "drone.obs"))
     if cfg.task.get("flatten_state", False):
         transforms.append(flatten_composite(base_env.observation_spec, "drone.state"))
     if cfg.task.get("visual_obs", False):

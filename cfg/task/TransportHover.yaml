@@ -23,7 +23,7 @@ reward_action_smoothness_weight: 0.0
 reward_distance_scale: 1.2
 safe_distance: 0.5
 
-flatten_obs: true
+ravel_obs: true
 flatten_state: true
 
 action_transform: null

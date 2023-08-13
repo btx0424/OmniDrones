@@ -3,6 +3,7 @@ from .platform import PlatformHover, PlatformFlyThrough
 from .inv_pendulum import InvPendulumHover, InvPendulumFlyThrough
 from .transport import TransportHover, TransportFlyThrough, TransportTrack
 from .formation import Formation
+from .formation_dodging import FormationDodge
 from .spread import Spread
 from .forest import Forest
 from .payload import PayloadTrack, PayloadFlyThrough

@@ -12,13 +12,13 @@ from omegaconf import OmegaConf
 from omni_drones import CONFIG_PATH, init_simulation_app
 from omni_drones.utils.torchrl import SyncDataCollector, AgentSpec
 from omni_drones.utils.torchrl.transforms import (
-    DepthImageNorm,
     LogOnEpisode, 
     FromMultiDiscreteAction, 
     FromDiscreteAction,
-    flatten_composite,
+    ravel_composite,
     VelController,
     AttitudeController,
+    History
 )
 from omni_drones.utils.wandb import init_wandb
 from omni_drones.learning import (
@@ -29,7 +29,10 @@ from omni_drones.learning import (
     SACPolicy,
     TD3Policy,
     MATD3Policy,
-    TDMPCPolicy
+    TDMPCPolicy,
+    Policy,
+    PPOPolicy,
+    PPOAdaptivePolicy
 )
 
 from setproctitle import setproctitle
@@ -37,8 +40,6 @@ from torchrl.envs.transforms import (
     TransformedEnv, 
     InitTracker, 
     Compose,
-    CatTensors,
-    StepCounter,
 )
 
 from tqdm import tqdm
@@ -66,6 +67,8 @@ def main(cfg):
 
     from omni_drones.envs.isaac_env import IsaacEnv
     algos = {
+        "ppo": PPOPolicy,
+        "ppo_adaptive": PPOAdaptivePolicy,
         "mappo": MAPPOPolicy, 
         "happo": HAPPOPolicy,
         "qmix": QMIXPolicy,
@@ -73,7 +76,8 @@ def main(cfg):
         "sac": SACPolicy,
         "td3": TD3Policy,
         "matd3": MATD3Policy,
-        "tdmpc": TDMPCPolicy
+        "tdmpc": TDMPCPolicy,
+        "test": Policy
     }
 
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
@@ -99,16 +103,14 @@ def main(cfg):
     # a CompositeSpec is by deafault processed by a entity-based encoder
     # flatten it to use a MLP encoder instead
     if cfg.task.get("flatten_obs", False):
-        transforms.append(flatten_composite(base_env.observation_spec, ("agents", "observation")))
+        transforms.append(ravel_composite(base_env.observation_spec, ("agents", "observation")))
     if cfg.task.get("flatten_state", False):
-        transforms.append(flatten_composite(base_env.observation_spec, ("agents", "state")))
-    if cfg.task.get("visual_obs", False):
-        min_depth = cfg.task.camera.get("min_depth", 0.1)
-        max_depth = cfg.task.camera.get("max_depth", 5)
-        transforms.append(
-            DepthImageNorm([("drone.obs", "distance_to_camera")], 
-                            min_range=min_depth, max_range=max_depth)
-        )
+        transforms.append(ravel_composite(base_env.observation_spec, "state"))
+    if cfg.task.get("flatten_intrinsics", True):
+        transforms.append(ravel_composite(base_env.observation_spec, ("agents", "intrinsics"), start_dim=-1))
+
+    if cfg.task.get("history", False):
+        transforms.append(History([("agents", "observation")]))
     
     # optionally discretize the action space or use a controller
     action_transform: str = cfg.task.get("action_transform", None)
@@ -190,7 +192,7 @@ def main(cfg):
     env.train()
     for i, data in enumerate(pbar):
         info = {"env_frames": collector._frames, "rollout_fps": collector._fps}
-        info.update(policy.train_op(data))
+        info.update(policy.train_op(data.to_tensordict()))
 
         if eval_interval > 0 and i % eval_interval == 0:
             logging.info(f"Eval at {collector._frames} steps.")

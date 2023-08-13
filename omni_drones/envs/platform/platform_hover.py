@@ -32,10 +32,10 @@ class PlatformHover(IsaacEnv):
     -----------
     The observation is a `CompositeSpec` containing the following items:
 
-    - ``state_self`` (1, \*): The state of each UAV observed by itself, containing its kinematic
+    - ``obs_self`` (1, \*): The state of each UAV observed by itself, containing its kinematic
       information with the position being relative to the frame center, and an one-hot
       identity indicating the UAV's index.
-    - ``state_others`` (k-1, \*): The observed states of other agents.
+    - ``obs_others`` (k-1, \*): The observed states of other agents.
     - ``state_frame`` (1, \*): The state of the frame.
 
     Reward
@@ -132,8 +132,8 @@ class PlatformHover(IsaacEnv):
             frame_state_dim += self.time_encoding_dim
             
         observation_spec = CompositeSpec({
-            "state_self": UnboundedContinuousTensorSpec((1, drone_state_dim + self.drone.n)),
-            "state_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13)),
+            "obs_self": UnboundedContinuousTensorSpec((1, drone_state_dim + self.drone.n)),
+            "obs_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13)),
             "state_frame": UnboundedContinuousTensorSpec((1, frame_state_dim)),
         }).to(self.device)
         state_spec = CompositeSpec({
@@ -250,16 +250,16 @@ class PlatformHover(IsaacEnv):
         identity = torch.eye(self.drone.n, device=self.device).expand(self.num_envs, -1, -1)
 
         obs = TensorDict({}, [self.num_envs, self.drone.n])
-        obs["state_self"] = torch.cat(
+        obs["obs_self"] = torch.cat(
             [-platform_drone_rpos, self.drone_states[..., 3:], identity], dim=-1
         ).unsqueeze(2)
-        obs["state_others"] = torch.cat(
+        obs["obs_others"] = torch.cat(
             [self.drone_rpos, vmap(others)(self.drone_states[..., 3:13])], dim=-1
         )
         obs["state_frame"] = platform_state.unsqueeze(1).expand(-1, self.drone.n, 1, -1)
 
         state = TensorDict({}, [self.num_envs])
-        state["state_drones"] = obs["state_self"].squeeze(2)    # [num_envs, drone.n, drone_state_dim]
+        state["state_drones"] = obs["obs_self"].squeeze(2)    # [num_envs, drone.n, drone_state_dim]
         state["state_frame"] = platform_state                # [num_envs, 1, platform_state_dim]
         
         self.pos_error = torch.norm(self.target_platform_rpos, dim=-1)

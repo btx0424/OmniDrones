@@ -19,7 +19,7 @@ joint_damping: 0.001
 obstacle_spacing: 1.
 reset_on_collision: false
 
-flatten_obs: true
+ravel_obs: true
 flatten_state: true
 
 action_transform: null

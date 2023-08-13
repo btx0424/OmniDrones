@@ -4,15 +4,28 @@ import torch.nn.functional as F
 import torch.distributions as D
 
 from torchrl.data import CompositeSpec
-from torchrl.envs.transforms import CatTensors, ExcludeTransform
 from torchrl.modules import ProbabilisticActor
 from tensordict import TensorDict
 from tensordict.nn import TensorDictModule
-from tensordict.nn.probabilistic import interaction_type
 
-from .utils.gae import compute_gae
-from .utils.valuenorm import ValueNorm1
-from .modules.distributions import IndependentNormal
+from hydra.core.config_store import ConfigStore
+from dataclasses import dataclass
+
+from ..utils.gae import compute_gae
+from ..utils.valuenorm import ValueNorm1
+from ..modules.distributions import IndependentNormal
+
+@dataclass
+class PPOConfig:
+    name: str = "ppo"
+    train_every: int = 64
+    ppo_epochs: int = 4
+    num_minibatches: int = 16
+
+    tcn: bool = False
+
+cs = ConfigStore.instance()
+cs.store("ppo", node=PPOConfig, group="algo")
 
 
 def make_mlp(num_units):
@@ -27,10 +40,7 @@ def make_mlp(num_units):
 class Actor(nn.Module):
     def __init__(self, action_dim: int) -> None:
         super().__init__()
-        self.actor_mean = nn.Sequential(
-            make_mlp([256, 256, 128]), 
-            nn.LazyLinear(action_dim)
-        )
+        self.actor_mean = nn.LazyLinear(action_dim)
         self.actor_std = nn.Parameter(torch.zeros(action_dim))
     
     def forward(self, features: torch.Tensor):
@@ -39,21 +49,31 @@ class Actor(nn.Module):
         return loc, scale
 
 
-class Critic(nn.Module):
+class TConv(nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.layers = nn.Sequential(
-            make_mlp([256, 256, 128]), 
-            nn.LazyLinear(1)
+        self.projection = nn.LazyLinear(64)
+        self.tconv = nn.Sequential(
+            nn.Conv1d(64, 64, kernel_size=5, stride=2), nn.ELU(),
+            nn.Conv1d(64, 64, kernel_size=5, stride=2), nn.ELU(),
         )
+        self.mlp = make_mlp([256, 128])
     
     def forward(self, features: torch.Tensor):
-        values = self.layers(features)
-        return values
+        batch_shape = features.shape[:-2]
+        features = features.flatten(0, -3) # [*, T, D]
+        features = self.projection(features)
+        features_t = features[..., -1, :]
+        # features_conv = self.tconv(features.transpose(-2, -1))
+        # features = torch.cat([features_t, features_conv.flatten(1)], dim=1)
+        features = self.mlp(features_t)
+        return features.unflatten(0, batch_shape)
 
 
 class PPOPolicy:
-    def __init__(self, cfg, agent_spec, device):
+
+    def __init__(self, cfg: PPOConfig, agent_spec, device):
+        self.cfg = cfg
         self.device = device
         self.agent_spec = agent_spec
 
@@ -62,19 +82,23 @@ class PPOPolicy:
         self.critic_loss_fn = nn.HuberLoss(delta=10)
         self.action_dim = self.agent_spec.action_spec.shape[-1]
 
-        fake_input = CompositeSpec({
-            "agents": {
-                "observation": agent_spec.observation_spec
-            }
-        }).zero()
-        actor = Actor(self.agent_spec.action_spec.shape[-1])
-        critic = Critic()
+        # fake_input = CompositeSpec({
+        #     "agents": {
+        #         "observation": agent_spec.observation_spec
+        #     }
+        # }).zero()
+        
+        if self.cfg.tcn:
+            actor = nn.Sequential(TConv(), Actor(self.action_dim))
+            critic = nn.Sequential(TConv(), nn.LazyLinear(1))
+            in_keys = [("agents", "observation_h")]
+        else:
+            actor = nn.Sequential(make_mlp([256, 256, 128]), Actor(self.action_dim))
+            critic = nn.Sequential(make_mlp([256, 256, 128]), nn.LazyLinear(1))
+            in_keys = [("agents", "observation")]
+        
         self.actor: ProbabilisticActor = ProbabilisticActor(
-            module=TensorDictModule(
-                actor,
-                in_keys=[("agents", "observation")],
-                out_keys=["loc", "scale"]
-            ),
+            module=TensorDictModule(actor, in_keys, out_keys=["loc", "scale"]),
             in_keys=["loc", "scale"],
             out_keys=[("agents", "action")],
             distribution_class=IndependentNormal,
@@ -82,20 +106,20 @@ class PPOPolicy:
         ).to(self.device)
         self.critic = TensorDictModule(
             module=critic,
-            in_keys=[("agents", "observation")],
+            in_keys=in_keys,
             out_keys=["state_value"]
         ).to(self.device)
 
-        self.actor(fake_input)
-        self.critic(fake_input)
+        # self.actor(fake_input)
+        # self.critic(fake_input)
         
-        def init_(module):
-            if isinstance(module, nn.Linear):
-                # nn.init.orthogonal_(module.weight, 0.01)
-                nn.init.constant_(module.bias, 0.)
+        # def init_(module):
+        #     if isinstance(module, nn.Linear):
+        #         # nn.init.orthogonal_(module.weight, 0.01)
+        #         nn.init.constant_(module.bias, 0.)
         
-        self.actor.apply(init_)
-        self.critic.apply(init_)
+        # self.actor.apply(init_)
+        # self.critic.apply(init_)
 
         self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=5e-4)
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=5e-4)
@@ -167,6 +191,8 @@ class PPOPolicy:
         self.actor_opt.zero_grad()
         self.critic_opt.zero_grad()
         loss.backward()
+        actor_grad_norm = nn.utils.clip_grad.clip_grad_norm_(self.actor.parameters(), 5)
+        critic_grad_norm = nn.utils.clip_grad.clip_grad_norm_(self.critic.parameters(), 5)
         self.actor_opt.step()
         self.critic_opt.step()
         explained_var = 1 - F.mse_loss(values, b_returns) / b_returns.var()
@@ -174,7 +200,8 @@ class PPOPolicy:
             "policy_loss": policy_loss,
             "value_loss": value_loss,
             "entropy": entropy,
-            # "grad_norm": grad_norm,
+            "actor_grad_norm": actor_grad_norm,
+            "critic_grad_norm": critic_grad_norm,
             "explained_var": explained_var
         }, [])
 

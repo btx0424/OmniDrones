@@ -25,7 +25,7 @@ reward_distance_scale: 1.2
 arm_length: 0.85
 joint_damping: 0.002
 
-flatten_obs: true
+ravel_obs: true
 flatten_state: true
 
 action_transform: null

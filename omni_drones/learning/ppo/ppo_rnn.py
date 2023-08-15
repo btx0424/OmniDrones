@@ -1,0 +1,321 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.distributions as D
+
+from torchrl.data import CompositeSpec
+from torchrl.modules import ProbabilisticActor
+from tensordict import TensorDict
+from tensordict.nn import TensorDictModule, TensorDictSequential
+
+from hydra.core.config_store import ConfigStore
+from dataclasses import dataclass, replace
+from functools import partial
+from typing import Union
+
+from ..utils.gae import compute_gae
+from ..utils.valuenorm import ValueNorm1
+from ..modules.distributions import IndependentNormal
+
+
+def make_mlp(num_units):
+    layers = []
+    for n in num_units:
+        layers.append(nn.LazyLinear(n))
+        layers.append(nn.LeakyReLU())
+        layers.append(nn.LayerNorm(n))
+    return nn.Sequential(*layers)
+
+
+class Actor(nn.Module):
+    def __init__(self, action_dim: int) -> None:
+        super().__init__()
+        self.actor_mean = nn.LazyLinear(action_dim)
+        self.actor_std = nn.Parameter(torch.zeros(action_dim))
+    
+    def forward(self, features: torch.Tensor):
+        loc = self.actor_mean(features)
+        scale = torch.exp(self.actor_std).expand_as(loc)
+        return loc, scale
+
+
+class LSTM(nn.Module):
+    def __init__(self, input_size, hidden_size, skip_conn) -> None:
+        super().__init__()
+        self.lstm = nn.LSTMCell(input_size, hidden_size)
+        self.ln = nn.LayerNorm(hidden_size)
+        self.skip_conn = skip_conn
+    
+    def forward(self, x: torch.Tensor, is_init: torch.Tensor, hx: torch.Tensor, cx: torch.Tensor):
+        T = x.shape[1]
+        if hx is None:
+            hx = torch.zeros(*x.shape[:-1], self.lstm.hidden_size, device=x.device)
+        if cx is None:
+            cx = torch.zeros(*x.shape[:-1], self.lstm.hidden_size, device=x.device)
+        hx, cx = hx[:, 0], cx[:, 0]
+        output = []
+        for i in range(T):
+            hx, cx = self._forward(x[:, i], is_init[:, i], hx, cx)
+            output.append(hx)
+        output = torch.stack(output, dim=1)
+        output = self.ln(output)
+        if self.skip_conn == "add":
+            output = x + output
+        elif self.skip_conn == "cat":
+            output = torch.cat([x, output], dim=-1)
+        return (
+            output, 
+            hx.unsqueeze(1).expand(-1, T, *hx.shape[1:]), 
+            cx.unsqueeze(1).expand(-1, T, *cx.shape[1:])
+        )
+
+    def _forward(self, x: torch.Tensor, is_init: torch.Tensor, hx: torch.Tensor, cx: torch.Tensor):
+        batch_shape = x.shape[:-1]
+        reset = 1 -is_init.reshape(is_init.shape + (1,)*(hx.ndim-is_init.ndim)).float()
+        hx = hx * reset
+        cx = cx * reset
+        x = x.reshape(-1, self.lstm.input_size)
+        hx = hx.reshape(-1, self.lstm.hidden_size)
+        cx = cx.reshape(-1, self.lstm.hidden_size)
+        hx, cx = self.lstm(x, (hx, cx))
+        hx = hx.reshape(*batch_shape, -1)
+        cx = cx.reshape(*batch_shape, -1)
+        return hx, cx
+
+
+class GRU(nn.Module):
+    def __init__(self, input_size, hidden_size, skip_conn) -> None:
+        super().__init__()
+        self.gru = nn.GRUCell(input_size, hidden_size)
+        self.skip_conn = skip_conn
+        self.ln = nn.LayerNorm(hidden_size)
+
+    def forward(self, x: torch.Tensor, is_init: torch.Tensor, hx: torch.Tensor):
+        T = x.shape[1]
+        if is_init is None:
+            is_init = torch.ones(*x.shape[:-1], 1, device=x.device) 
+        if hx is None:
+            hx = torch.zeros(*x.shape[:-1], self.gru.hidden_size, device=x.device)
+        hx = hx[:, 0]
+        output = []
+        for i in range(T):
+            hx = self._forward(x[:, i], is_init[:, i], hx)
+            output.append(hx)
+        output = torch.stack(output, dim=1)
+        output = self.ln(output)
+        if self.skip_conn == "add":
+            output = x + output
+        elif self.skip_conn == "cat":
+            output = torch.cat([x, output], dim=-1)
+        return output, hx.unsqueeze(1).expand(-1, T, *hx.shape[1:])
+
+    def _forward(self, x: torch.Tensor, is_init: torch.Tensor, hx: torch.Tensor):
+        batch_shape = x.shape[:-1]
+        reset = 1 - is_init.reshape(is_init.shape + (1,)*(hx.ndim-is_init.ndim)).float()
+        hx = hx * reset
+        x = x.reshape(-1, x.shape[-1])
+        hx = hx.reshape(-1, hx.shape[-1])
+        hx = self.gru(x, hx)
+        hx = hx.reshape(*batch_shape, -1)
+        return hx
+
+
+@dataclass
+class PPOConfig:
+    name: str = "ppo_rnn"
+    train_every: int = 64
+    ppo_epochs: int = 4
+    num_minibatches: int = 16
+    seq_len: int = 16
+
+    rnn: str = "gru"
+    skip_conn: Union[str, None] = None
+    hidden_size: int = 128
+
+
+cs = ConfigStore.instance()
+cs.store("ppo_gru", node=PPOConfig, group="algo")
+cs.store("ppo_lstm", node=replace(PPOConfig(), rnn="lstm"), group="algo")
+
+
+class PPORNNPolicy:
+
+    def __init__(self, cfg: PPOConfig, agent_spec, device):
+        self.cfg = cfg
+        self.device = device
+        self.agent_spec = agent_spec
+        
+        self.entropy_coef = 0.001
+        self.clip_param = 0.1
+        self.critic_loss_fn = nn.HuberLoss(delta=10)
+        self.action_dim = self.agent_spec.action_spec.shape[-1]
+
+        fake_input = CompositeSpec({
+            "agents": {
+                "observation": agent_spec.observation_spec
+            }
+        }, shape=(agent_spec.observation_spec.shape[0],)).zero()
+        
+        if self.cfg.rnn.lower() == "gru":
+            actor = TensorDictSequential(
+                TensorDictModule(make_mlp([256, 256]), [("agents", "observation")], ["feature"]),
+                TensorDictModule(
+                    GRU(256, self.cfg.hidden_size, self.cfg.skip_conn), 
+                    ["feature", "is_init", "actor_hx"], 
+                    ["feature", ("next", "actor_hx")]),
+                TensorDictModule(Actor(self.action_dim), ["feature"], ["loc", "scale"])
+            ).to(self.device)
+            self.critic = TensorDictSequential(
+                TensorDictModule(make_mlp([256, 256]), [("agents", "observation")], ["feature"]),
+                TensorDictModule(
+                    GRU(256, self.cfg.hidden_size, self.cfg.skip_conn), 
+                    ["feature", "is_init", "critic_hx"], 
+                    ["feature", ("next", "critic_hx")]),
+                TensorDictModule(nn.LazyLinear(1), ["feature"], ["state_value"])
+            ).to(self.device)
+        elif self.cfg.rnn.lower() == "lstm":
+            actor = TensorDictSequential(
+                TensorDictModule(make_mlp([256, 256]), [("agents", "observation")], ["feature"]),
+                TensorDictModule(
+                    LSTM(128, self.cfg.hidden_size, self.cfg.skip_conn), 
+                    ["feature", "is_init", "actor_hx", "actor_cx"], 
+                    ["feature", ("next", "actor_hx"), ("next", "actor_cx")]),
+                TensorDictModule(Actor(self.action_dim), ["feature"], ["loc", "scale"])
+            ).to(self.device)
+            self.critic = TensorDictSequential(
+                TensorDictModule(make_mlp([256, 256]), [("agents", "observation")], ["feature"]),
+                TensorDictModule(
+                    LSTM(128, self.cfg.hidden_size, self.cfg.skip_conn), 
+                    ["feature", "is_init", "critic_hx", "critic_cx"], 
+                    ["feature", ("next", "critic_hx"), ("next", "critic_cx")]),
+                TensorDictModule(nn.LazyLinear(1), ["feature"], ["state_value"])
+            ).to(self.device)
+        else:
+            raise NotImplementedError(self.cfg.rnn)
+            
+        self.actor: ProbabilisticActor = ProbabilisticActor(
+            module=actor,
+            in_keys=["loc", "scale"],
+            out_keys=[("agents", "action")],
+            distribution_class=IndependentNormal,
+            return_log_prob=True
+        ).to(self.device)
+
+        self.actor(fake_input.unsqueeze(1))
+        self.critic(fake_input.unsqueeze(1))
+        
+        def init_(module):
+            if isinstance(module, nn.Linear):
+                nn.init.orthogonal_(module.weight, 0.01)
+                nn.init.constant_(module.bias, 0.)
+            elif isinstance(module, (nn.GRUCell, nn.LSTMCell)):
+                nn.init.orthogonal_(module.weight_hh)
+        
+        self.actor.apply(init_)
+        self.critic.apply(init_)
+
+        self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=5e-4)
+        self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=5e-4)
+        self.value_norm = ValueNorm1(self.agent_spec.reward_spec.shape[-2:]).to(self.device)
+    
+    def __call__(self, tensordict: TensorDict):
+        tensordict = tensordict.unsqueeze(1) # dummy time dimension
+        tensordict = self.actor(tensordict)
+        tensordict = self.critic(tensordict)
+        tensordict = tensordict.squeeze(1)
+        tensordict = tensordict.exclude("loc", "scale", "feature", inplace=True)
+        return tensordict
+
+    def train_op(self, tensordict: TensorDict):
+        next_tensordict = tensordict["next"][:, [-1]]
+        with torch.no_grad():
+            next_values = self.critic(next_tensordict)["state_value"].squeeze(1)
+        rewards = tensordict[("next", "agents", "reward")]
+        dones = (
+            tensordict[("next", "done")]
+            .expand(-1, -1, self.agent_spec.n)
+            .unsqueeze(-1)
+        )
+        values = tensordict["state_value"]
+        values = self.value_norm.denormalize(values)
+        next_values = self.value_norm.denormalize(next_values)
+
+        adv, ret = compute_gae(rewards, dones, values, next_values)
+        adv_mean = adv.mean()
+        adv_std = adv.std()
+        adv = (adv - adv_mean) / adv_std.clip(1e-7)
+        self.value_norm.update(ret)
+        ret = self.value_norm.normalize(ret)
+
+        tensordict.set("adv", adv)
+        tensordict.set("ret", ret)
+
+        infos = []
+        for epoch in range(self.cfg.ppo_epochs):
+            batch = make_batch(tensordict, self.cfg.num_minibatches, self.cfg.seq_len)
+            for minibatch in batch:
+                infos.append(self._update(minibatch))
+        
+        infos: TensorDict = torch.stack(infos).to_tensordict()
+        infos = infos.apply(torch.mean, batch_size=[])
+        return {k: v.item() for k, v in infos.items()}
+
+    def _update(self, tensordict: TensorDict):
+        dist = self.actor.get_dist(tensordict)
+        log_probs = dist.log_prob(tensordict[("agents", "action")])
+        entropy = dist.entropy()
+
+        adv = tensordict["adv"]
+        ratio = torch.exp(log_probs - tensordict["sample_log_prob"]).unsqueeze(-1)
+        surr1 = adv * ratio
+        surr2 = adv * ratio.clamp(1.-self.clip_param, 1.+self.clip_param)
+        policy_loss = - torch.mean(torch.min(surr1, surr2)) * self.action_dim
+        entropy_loss = - self.entropy_coef * torch.mean(entropy)
+
+        b_values = tensordict["state_value"]
+        b_returns = tensordict["ret"]
+        values = self.critic(tensordict)["state_value"]
+        values_clipped = b_values + (values - b_values).clamp(
+            -self.clip_param, self.clip_param
+        )
+        value_loss_clipped = self.critic_loss_fn(b_returns, values_clipped)
+        value_loss_original = self.critic_loss_fn(b_returns, values)
+        value_loss = torch.max(value_loss_original, value_loss_clipped)
+
+        loss = policy_loss + entropy_loss + value_loss
+        self.actor_opt.zero_grad()
+        self.critic_opt.zero_grad()
+        loss.backward()
+        actor_grad_norm = nn.utils.clip_grad.clip_grad_norm_(self.actor.parameters(), 5)
+        critic_grad_norm = nn.utils.clip_grad.clip_grad_norm_(self.critic.parameters(), 5)
+        self.actor_opt.step()
+        self.critic_opt.step()
+        explained_var = 1 - F.mse_loss(values, b_returns) / b_returns.var()
+        return TensorDict({
+            "policy_loss": policy_loss,
+            "value_loss": value_loss,
+            "entropy": entropy,
+            "actor_grad_norm": actor_grad_norm,
+            "critic_grad_norm": critic_grad_norm,
+            "explained_var": explained_var
+        }, [])
+
+
+def make_batch(tensordict: TensorDict, num_minibatches: int, seq_len: int=-1):
+    if seq_len > 1:
+        N, T = tensordict.shape
+        T = (T // seq_len) * seq_len
+        perm = torch.randperm(
+            (N // num_minibatches) * num_minibatches,
+            device=tensordict.device,
+        ).reshape(num_minibatches, -1)
+        for indices in perm:
+            yield tensordict[indices]
+    else:
+        tensordict = tensordict.reshape(-1)
+        perm = torch.randperm(
+            (tensordict.shape[0] // num_minibatches) * num_minibatches,
+            device=tensordict.device,
+        ).reshape(num_minibatches, -1)
+        for indices in perm:
+            yield tensordict[indices]

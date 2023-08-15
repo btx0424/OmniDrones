@@ -57,7 +57,7 @@ class TConv(nn.Module):
             nn.Conv1d(64, 64, kernel_size=5, stride=2), nn.ELU(),
             nn.Conv1d(64, 64, kernel_size=5, stride=2), nn.ELU(),
         )
-        self.mlp = make_mlp([256, 128])
+        self.mlp = make_mlp([256, 256])
     
     def forward(self, features: torch.Tensor):
         batch_shape = features.shape[:-2]

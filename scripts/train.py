@@ -32,7 +32,7 @@ from omni_drones.learning import (
     TDMPCPolicy,
     Policy,
     PPOPolicy,
-    PPOAdaptivePolicy
+    PPOAdaptivePolicy, PPORNNPolicy
 )
 
 from setproctitle import setproctitle
@@ -69,6 +69,7 @@ def main(cfg):
     algos = {
         "ppo": PPOPolicy,
         "ppo_adaptive": PPOAdaptivePolicy,
+        "ppo_rnn": PPORNNPolicy,
         "mappo": MAPPOPolicy, 
         "happo": HAPPOPolicy,
         "qmix": QMIXPolicy,

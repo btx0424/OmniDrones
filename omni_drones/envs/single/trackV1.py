@@ -50,18 +50,18 @@ def attach_payload(parent_path):
     payload_prim = objects.DynamicCuboid(
         prim_path=parent_path + "/payload",
         scale=torch.tensor([0.1, 0.1, .15]),
-        mass=0.001
+        mass=0.0001
     ).prim
 
-    parent_prim = prim_utils.get_prim_at_path(parent_path)
+    parent_prim = prim_utils.get_prim_at_path(parent_path + "/base_link")
     stage = prim_utils.get_current_stage()
     joint = script_utils.createJoint(stage, "Prismatic", payload_prim, parent_prim)
-    UsdPhysics.DriveAPI.Apply(joint, "rotY")
-    joint.GetAttribute("physics:lowerLimit").Set(-0.1)
-    joint.GetAttribute("physics:upperLimit").Set(0.1)
+    UsdPhysics.DriveAPI.Apply(joint, "linear")
+    joint.GetAttribute("physics:lowerLimit").Set(-0.15)
+    joint.GetAttribute("physics:upperLimit").Set(0.15)
     joint.GetAttribute("physics:axis").Set("Z")
-    joint.GetAttribute("drive:physics:damping").Set()
-    joint.GetAttribute("drive:physics:stiffness").Set()
+    joint.GetAttribute("drive:linear:physics:damping").Set(10.)
+    joint.GetAttribute("drive:linear:physics:stiffness").Set(10000.)
 
     
 class TrackV1(IsaacEnv):
@@ -83,9 +83,18 @@ class TrackV1(IsaacEnv):
         self.drone.initialize()
         randomization = self.cfg.task.get("randomization", None)
         if randomization is not None:
-            if "drone" in self.cfg.task.randomization:
-                self.drone.setup_randomization(self.cfg.task.randomization["drone"])
-        
+            if "drone" in randomization:
+                self.drone.setup_randomization(randomization["drone"])
+            if "payload" in randomization:
+                self.payload_z_dist = D.Uniform(
+                    torch.tensor([-0.1], device=self.device),
+                    torch.tensor([0.1], device=self.device)
+                )
+                self.payload_mass_dist = D.Uniform(
+                    torch.tensor([0.01], device=self.device),
+                    torch.tensor([0.5], device=self.device)
+                )
+            
         self.traj_rpy_dist = D.Uniform(
             torch.tensor([0., 0., 0.], device=self.device) * torch.pi,
             torch.tensor([0., 0., 2.], device=self.device) * torch.pi
@@ -130,7 +139,7 @@ class TrackV1(IsaacEnv):
             restitution=0.0,
         )
         drone_prim = self.drone.spawn(translations=[(0.0, 0.0, 1.5)])[0]
-        # attach_payload(drone_prim.GetPath().pathString + "/base_link")
+        attach_payload(drone_prim.GetPath().pathString)
         return ["/World/defaultGroundPlane"]
 
     def _set_specs(self):
@@ -208,6 +217,13 @@ class TrackV1(IsaacEnv):
             pos_0 + self.envs_positions[env_ids], rot, env_ids
         )
         self.drone.set_velocities(vel, env_ids)
+        # TODO@btx0424: workout a better way 
+        payload_z = self.payload_z_dist.sample(env_ids.shape)
+        joint_indices = torch.tensor([self.drone._view._dof_indices["PrismaticJoint"]], device=self.device)
+        self.drone._view.set_joint_positions(
+            payload_z, env_indices=env_ids, joint_indices=joint_indices)
+        self.drone._view.set_joint_position_targets(
+            payload_z, env_indices=env_ids, joint_indices=joint_indices)
 
         self.stats[env_ids] = 0.
         self.last_action[env_ids] =  0.

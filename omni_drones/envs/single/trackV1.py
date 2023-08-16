@@ -9,6 +9,7 @@ import torch.distributions as D
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.robots.drone import MultirotorBase
+from omni_drones.views import RigidPrimView
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec
 from omni.isaac.debug_draw import _debug_draw
@@ -77,23 +78,30 @@ class TrackV1(IsaacEnv):
         self.time_encoding = cfg.task.time_encoding
         self.future_traj_steps = max(int(cfg.task.future_traj_steps), 2)
         self.wind = cfg.task.wind
+        self.randomization = cfg.task.get("randomization", {})
+        self.has_payload = "payload" in self.randomization.keys()
 
         super().__init__(cfg, headless)
         
         self.drone.initialize()
-        randomization = self.cfg.task.get("randomization", None)
-        if randomization is not None:
-            if "drone" in randomization:
-                self.drone.setup_randomization(randomization["drone"])
-            if "payload" in randomization:
-                self.payload_z_dist = D.Uniform(
-                    torch.tensor([-0.1], device=self.device),
-                    torch.tensor([0.1], device=self.device)
-                )
-                self.payload_mass_dist = D.Uniform(
-                    torch.tensor([0.01], device=self.device),
-                    torch.tensor([0.5], device=self.device)
-                )
+        if "drone" in self.randomization:
+            self.drone.setup_randomization(self.randomization["drone"])
+        if "payload" in self.randomization:
+            payload_cfg = self.randomization["payload"]
+            self.payload_z_dist = D.Uniform(
+                torch.tensor([payload_cfg["z"][0]], device=self.device),
+                torch.tensor([payload_cfg["z"][1]], device=self.device)
+            )
+            self.payload_mass_dist = D.Uniform(
+                torch.tensor([payload_cfg["mass"][0]], device=self.device),
+                torch.tensor([payload_cfg["mass"][1]], device=self.device)
+            )
+            self.payload = RigidPrimView(
+                f"/World/envs/env_*/{self.drone.name}_*/payload",
+                reset_xform_properties=False,
+                shape=(-1, self.drone.n)
+            )
+            self.payload.initialize()
             
         self.traj_rpy_dist = D.Uniform(
             torch.tensor([0., 0., 0.], device=self.device) * torch.pi,
@@ -139,7 +147,8 @@ class TrackV1(IsaacEnv):
             restitution=0.0,
         )
         drone_prim = self.drone.spawn(translations=[(0.0, 0.0, 1.5)])[0]
-        attach_payload(drone_prim.GetPath().pathString)
+        if self.has_payload:
+            attach_payload(drone_prim.GetPath().pathString)
         return ["/World/defaultGroundPlane"]
 
     def _set_specs(self):
@@ -199,8 +208,10 @@ class TrackV1(IsaacEnv):
         self.traj_c[env_ids] = self.traj_c_dist.sample(env_ids.shape)
         self.traj_rot[env_ids] = euler_to_quaternion(self.traj_rpy_dist.sample(env_ids.shape))
         self.traj_scale[env_ids] = self.traj_scale_dist.sample(env_ids.shape)
-        traj_w = self.traj_w_dist.sample(env_ids.shape)
-        self.traj_w[env_ids] = torch.randn_like(traj_w).sign() * traj_w
+        # randomly flip the direction
+        traj_w = self.traj_w_dist.sample(env_ids.shape) 
+        traj_w = traj_w * torch.randn_like(traj_w).sign()
+        self.traj_w[env_ids] = traj_w
 
         t0 = torch.full((len(env_ids),), self.traj_t0, device=self.device)
         pos_0 = lemniscate(t0, self.traj_c[env_ids]) + self.origin
@@ -211,19 +222,28 @@ class TrackV1(IsaacEnv):
             torch.zeros(len(env_ids), device=self.device),
             torch.arctan2(traj_heading[:, 1], traj_heading[:, 0])
         ], dim=-1)
-        rot = euler_to_quaternion(rpy)
+        rot = euler_to_quaternion(rpy).unsqueeze(1)
         vel = torch.zeros(len(env_ids), 1, 6, device=self.device)
         self.drone.set_world_poses(
             pos_0 + self.envs_positions[env_ids], rot, env_ids
         )
         self.drone.set_velocities(vel, env_ids)
-        # TODO@btx0424: workout a better way 
-        payload_z = self.payload_z_dist.sample(env_ids.shape)
-        joint_indices = torch.tensor([self.drone._view._dof_indices["PrismaticJoint"]], device=self.device)
-        self.drone._view.set_joint_positions(
-            payload_z, env_indices=env_ids, joint_indices=joint_indices)
-        self.drone._view.set_joint_position_targets(
-            payload_z, env_indices=env_ids, joint_indices=joint_indices)
+
+        if self.has_payload:
+            # TODO@btx0424: workout a better way 
+            payload_z = self.payload_z_dist.sample(env_ids.shape)
+            joint_indices = torch.tensor([self.drone._view._dof_indices["PrismaticJoint"]], device=self.device)
+            self.drone._view.set_joint_positions(
+                payload_z, env_indices=env_ids, joint_indices=joint_indices)
+            self.drone._view.set_joint_position_targets(
+                payload_z, env_indices=env_ids, joint_indices=joint_indices)
+            
+            self.drone._view.set_joint_velocities(
+                torch.zeros(len(env_ids), 1, device=self.device), 
+                env_indices=env_ids, joint_indices=joint_indices)
+            
+            payload_mass = self.payload_mass_dist.sample(env_ids.shape+(1,)) * self.drone.masses[env_ids]
+            self.payload.set_masses(payload_mass, env_indices=env_ids)
 
         self.stats[env_ids] = 0.
         self.last_action[env_ids] =  0.
@@ -297,11 +317,10 @@ class TrackV1(IsaacEnv):
         self.stats["return"] += reward
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
 
-        done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-            | (self.drone.pos[..., 2] < 0.1)
-            | (pos_error > self.reset_thres)
-        ) 
+        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
+        done = (self.drone.pos[..., 2] < 0.1) | (pos_error > self.reset_thres)
+        if self.training:
+            done = done | truncated
         
         return TensorDict(
             {
@@ -309,6 +328,7 @@ class TrackV1(IsaacEnv):
                     "reward": reward.unsqueeze(-1),
                 },
                 "done": done,
+                "truncated": truncated,
             },
             self.batch_size,
         )

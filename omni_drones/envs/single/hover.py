@@ -2,13 +2,36 @@ import functorch
 import torch
 import torch.distributions as D
 
+import omni.isaac.core.utils.prims as prim_utils
+
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
-from omni_drones.robots.drone import MultirotorBase, MultirotorCfg
-from omni_drones.views import ArticulationView
-from omni_drones.utils.torch import euler_to_quaternion, normalize, quat_axis
+from omni_drones.robots.drone import MultirotorBase
+from omni_drones.views import ArticulationView, RigidPrimView
+from omni_drones.utils.torch import euler_to_quaternion, quat_axis
 
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec
+
+def attach_payload(parent_path):
+    from omni.isaac.core import objects
+    import omni.physx.scripts.utils as script_utils
+    from pxr import UsdPhysics
+
+    payload_prim = objects.DynamicCuboid(
+        prim_path=parent_path + "/payload",
+        scale=torch.tensor([0.1, 0.1, .15]),
+        mass=0.0001
+    ).prim
+
+    parent_prim = prim_utils.get_prim_at_path(parent_path + "/base_link")
+    stage = prim_utils.get_current_stage()
+    joint = script_utils.createJoint(stage, "Prismatic", payload_prim, parent_prim)
+    UsdPhysics.DriveAPI.Apply(joint, "linear")
+    joint.GetAttribute("physics:lowerLimit").Set(-0.15)
+    joint.GetAttribute("physics:upperLimit").Set(0.15)
+    joint.GetAttribute("physics:axis").Set("Z")
+    joint.GetAttribute("drive:linear:physics:damping").Set(10.)
+    joint.GetAttribute("drive:linear:physics:stiffness").Set(10000.)
 
 
 class Hover(IsaacEnv):
@@ -50,17 +73,34 @@ class Hover(IsaacEnv):
 
     """
     def __init__(self, cfg, headless):
+        self.reward_effort_weight = cfg.task.reward_effort_weight
+        self.reward_action_smoothness_weight = cfg.task.reward_action_smoothness_weight
+        self.reward_distance_scale = cfg.task.reward_distance_scale
+        self.time_encoding = cfg.task.time_encoding
+        self.randomization = cfg.task.get("randomization", {})
+        self.has_payload = "payload" in self.randomization.keys()
+
         super().__init__(cfg, headless)
-        self.reward_effort_weight = self.cfg.task.reward_effort_weight
-        self.reward_action_smoothness_weight = self.cfg.task.reward_action_smoothness_weight
-        self.reward_distance_scale = self.cfg.task.reward_distance_scale
-        self.time_encoding = self.cfg.task.time_encoding
 
         self.drone.initialize()
-        randomization = self.cfg.task.get("randomization", None)
-        if randomization is not None:
-            if "drone" in self.cfg.task.randomization:
-                self.drone.setup_randomization(self.cfg.task.randomization["drone"])
+        if "drone" in self.randomization:
+            self.drone.setup_randomization(self.randomization["drone"])
+        if "payload" in self.randomization:
+            payload_cfg = self.randomization["payload"]
+            self.payload_z_dist = D.Uniform(
+                torch.tensor([payload_cfg["z"][0]], device=self.device),
+                torch.tensor([payload_cfg["z"][1]], device=self.device)
+            )
+            self.payload_mass_dist = D.Uniform(
+                torch.tensor([payload_cfg["mass"][0]], device=self.device),
+                torch.tensor([payload_cfg["mass"][1]], device=self.device)
+            )
+            self.payload = RigidPrimView(
+                f"/World/envs/env_*/{self.drone.name}_*/payload",
+                reset_xform_properties=False,
+                shape=(-1, self.drone.n)
+            )
+            self.payload.initialize()
         
         self.target_vis = ArticulationView(
             "/World/envs/env_*/target",
@@ -116,7 +156,9 @@ class Hover(IsaacEnv):
             dynamic_friction=1.0,
             restitution=0.0,
         )
-        self.drone.spawn(translations=[(0.0, 0.0, 2.)])
+        drone_prim = self.drone.spawn(translations=[(0.0, 0.0, 2.)])[0]
+        if self.has_payload:
+            attach_payload(drone_prim.GetPath().pathString)
         return ["/World/defaultGroundPlane"]
 
     def _set_specs(self):
@@ -129,7 +171,8 @@ class Hover(IsaacEnv):
 
         self.observation_spec = CompositeSpec({
             "agents": CompositeSpec({
-                "observation": UnboundedContinuousTensorSpec((1, observation_dim)) ,
+                "observation": UnboundedContinuousTensorSpec((1, observation_dim), device=self.device),
+                "intrinsics": self.drone.intrinsics_spec.unsqueeze(0).to(self.device)
             })
         }).expand(self.num_envs).to(self.device)
         self.action_spec = CompositeSpec({
@@ -147,6 +190,7 @@ class Hover(IsaacEnv):
             observation_key=("agents", "observation"),
             action_key=("agents", "action"),
             reward_key=("agents", "reward"),
+            state_key=("agents", "intrinsics")
         )
 
         stats_spec = CompositeSpec({
@@ -177,6 +221,21 @@ class Hover(IsaacEnv):
         )
         self.drone.set_velocities(self.init_vels[env_ids], env_ids)
 
+        if self.has_payload:
+            # TODO@btx0424: workout a better way 
+            payload_z = self.payload_z_dist.sample(env_ids.shape)
+            joint_indices = torch.tensor([self.drone._view._dof_indices["PrismaticJoint"]], device=self.device)
+            self.drone._view.set_joint_positions(
+                payload_z, env_indices=env_ids, joint_indices=joint_indices)
+            self.drone._view.set_joint_position_targets(
+                payload_z, env_indices=env_ids, joint_indices=joint_indices)
+            self.drone._view.set_joint_velocities(
+                torch.zeros(len(env_ids), 1, device=self.device), 
+                env_indices=env_ids, joint_indices=joint_indices)
+            
+            payload_mass = self.payload_mass_dist.sample(env_ids.shape+(1,)) * self.drone.masses[env_ids]
+            self.payload.set_masses(payload_mass, env_indices=env_ids)
+
         target_rpy = self.target_rpy_dist.sample((*env_ids.shape, 1))
         target_rot = euler_to_quaternion(target_rpy)
         self.target_heading[env_ids] = quat_axis(target_rot.squeeze(1), 0).unsqueeze(1)
@@ -185,7 +244,7 @@ class Hover(IsaacEnv):
         self.stats[env_ids] = 0.
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
-        actions = tensordict[("agents", "action")].clone()
+        actions = tensordict[("agents", "action")]
         self.effort = self.drone.apply_action(actions)
 
     def _compute_state_and_obs(self):
@@ -205,6 +264,7 @@ class Hover(IsaacEnv):
         return TensorDict({
             "agents": {
                 "observation": obs,
+                "intrinsics": self.drone.intrinsics
             },
             "stats": self.stats,
             "info": self.info

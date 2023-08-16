@@ -280,7 +280,7 @@ class ArticulationView(_ArticulationView):
     ) -> None:
         indices = self._resolve_env_indices(env_indices)
         super().set_joint_velocities(
-            velocities.reshape(-1, self.num_dof), 
+            velocities.flatten(end_dim=-2), 
             indices,
             joint_indices
         )

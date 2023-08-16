@@ -107,7 +107,10 @@ def main(cfg):
         transforms.append(ravel_composite(base_env.observation_spec, ("agents", "observation")))
     if cfg.task.get("flatten_state", False):
         transforms.append(ravel_composite(base_env.observation_spec, "state"))
-    if cfg.task.get("flatten_intrinsics", True):
+    if (
+        cfg.task.get("flatten_intrinsics", True)
+        and ("agents", "intrinsics") in base_env.observation_spec.keys(True)
+    ):
         transforms.append(ravel_composite(base_env.observation_spec, ("agents", "intrinsics"), start_dim=-1))
 
     if cfg.task.get("history", False):

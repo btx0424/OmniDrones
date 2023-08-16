@@ -66,7 +66,7 @@ def main(cfg):
 
     # let's fly a circular trajectory
     radius = 1.5
-    omega = 1.
+    omega = 0.
     phase = torch.linspace(0, 2, n+1, device=sim.device)[:n]
 
     def ref(t):
@@ -84,13 +84,16 @@ def main(cfg):
         return pos, yaw
 
     init_rpy = torch.zeros(n, 3, device=sim.device)
-    init_pos, init_rpy[:, 2] = ref(torch.tensor(0.0).to(sim.device))
+    # init_rpy[:, 2] = -torch.pi + 0.1
+    init_pos, _ = ref(torch.tensor(0.0).to(sim.device))
     init_rot = euler_to_quaternion(init_rpy)
     init_vels = torch.zeros(n, 6, device=sim.device)
 
     # create a position controller
     # note: the controller is state-less (but holds its parameters)
     controller = LeePositionController(g=9.81, uav_params=drone.params).to(sim.device)
+    control_target = torch.zeros(n, 7, device=sim.device)
+    control_target[:, -1] = torch.pi/2
 
     def reset():
         drone._reset_idx(torch.tensor([0]))
@@ -105,17 +108,27 @@ def main(cfg):
 
     frames_sensor = []
     frames_vis = []
+    rot = []
+    angvel = []
+    Rs = []
+    angerrors = []
     from tqdm import tqdm
-    for i in tqdm(range(1000)):
+    for i in tqdm(range(800)):
         if sim.is_stopped():
             break
         if not sim.is_playing():
             sim.render()
             continue
         ref_pos, ref_yaw = ref((i % 1000)*cfg.sim.dt)
+        rot.append(drone.rot[0].cpu())
+        angvel.append(drone.angvel[0].cpu())
         yaw = quaternion_to_euler(drone.rot)[0, :, 2]
-        
-        action = controller(drone_state, target_pos=ref_pos, target_yaw=ref_yaw)
+        # print(f"yaw: {yaw}, ref_yaw: {ref_yaw}")
+        control_target[:, :3] = ref_pos
+        control_target[:, 6] = yaw + -0.3*torch.pi
+        action, R_des, angerror = controller(drone_state, control_target)
+        Rs.append(R_des)
+        angerrors.append(angerror)
         drone.apply_action(action)
         sim.step(render=True)
 
@@ -127,6 +140,9 @@ def main(cfg):
             reset()
         drone_state = drone.get_state()[..., :13].squeeze(0)
 
+    torch.save(torch.stack(rot), "rot_isaac.pt")
+    torch.save(torch.stack(Rs), "Rs_isaac.pt")
+    torch.save(torch.stack(angerrors), "angerrors_isaac.pt")
     from torchvision.io import write_video
 
     for image_type, arrays in torch.stack(frames_sensor).items():

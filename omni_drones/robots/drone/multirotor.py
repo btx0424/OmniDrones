@@ -15,7 +15,7 @@ from omni_drones.actuators.rotor_group import RotorGroup
 from omni_drones.controllers import LeePositionController
 
 from omni_drones.robots import RobotBase, RobotCfg
-from omni_drones.utils.torch import normalize, off_diag
+from omni_drones.utils.torch import normalize, off_diag, quaternion_to_euler
 
 from dataclasses import dataclass
 from collections import defaultdict
@@ -110,6 +110,7 @@ class MultirotorBase(RobotBase):
         self.forces = torch.zeros(*self.shape, 3, device=self.device)
 
         self.pos, self.rot = self.get_world_poses(True)
+        self.rpy = torch.zeros(*self.shape, 3, device=self.device)
         self.throttle_difference = torch.zeros(self.throttle.shape[:-1], device=self.device)
         self.heading = torch.zeros(*self.shape, 3, device=self.device)
         self.up = torch.zeros(*self.shape, 3, device=self.device)
@@ -237,6 +238,9 @@ class MultirotorBase(RobotBase):
 
     def get_state(self, check_nan: bool=False):
         self.pos[:], self.rot[:] = self.get_world_poses(True)
+        rpy = quaternion_to_euler(self.rot)
+        self.angvel = (rpy - self.rpy) / self.dt
+        self.rpy[:] = rpy
         if hasattr(self, "_envs_positions"):
             self.pos.sub_(self._envs_positions)
         vel = self.get_velocities(True)
@@ -247,7 +251,8 @@ class MultirotorBase(RobotBase):
         self.vel[:] = vel
         self.heading[:] = vmap(torch_utils.quat_axis)(self.rot, axis=0)
         self.up[:] = vmap(torch_utils.quat_axis)(self.rot, axis=2)
-        state = [self.pos, self.rot, self.vel, self.heading, self.up, self.throttle * 2 - 1]
+        # state = [self.pos, self.rot, self.vel, self.heading, self.up, self.throttle * 2 - 1]
+        state = [self.pos, self.rot, self.vel[..., :3], self.angvel, self.heading, self.up, self.throttle * 2 - 1]
         if self.use_force_sensor:
             self.force_readings, self.torque_readings = self.get_force_sensor_forces().chunk(2, -1)
             # normalize by mass and inertia
@@ -260,15 +265,12 @@ class MultirotorBase(RobotBase):
             assert not torch.isnan(state).any()
         return state
 
-    def get_info(self):
-        info = torch.cat(list(self.intrinsics.values()), dim=-1)
-        return info
-
     def _reset_idx(self, env_ids: torch.Tensor, train: bool=True):
         if env_ids is None:
             env_ids = torch.arange(self.shape[0], device=self.device)
         self.thrusts[env_ids] = 0.0
         self.torques[env_ids] = 0.0
+        self.rpy[env_ids] = 0.
         self.vel[env_ids] = 0.
         self.acc[env_ids] = 0.
         self.jerk[env_ids] = 0.
@@ -281,6 +283,16 @@ class MultirotorBase(RobotBase):
         self.throttle_difference[env_ids] = 0.0
         return env_ids
     
+    def set_world_poses(
+        self, 
+        positions: torch.Tensor = None, 
+        orientations: torch.Tensor = None, 
+        env_indices: torch.Tensor = None
+    ):
+        if orientations is not None:
+            self.rpy[env_indices] = quaternion_to_euler(orientations)
+        return super().set_world_poses(positions, orientations, env_indices)
+
     def _randomize(self, env_ids: torch.Tensor, distributions: Dict[str, D.Distribution]):
         shape = env_ids.shape
         if "mass" in distributions:

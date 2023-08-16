@@ -35,7 +35,8 @@ class RotorGroup(nn.Module):
         tau = torch.clamp(tau, 0, 1)
         self.throttle.add_(tau * (target_throttle - self.throttle))
 
-        t = torch.clamp(self.f(self.throttle) + torch.randn_like(self.throttle) * self.noise_scale, 0)
+        noise = torch.randn_like(self.throttle) * self.noise_scale * 0.
+        t = torch.clamp(self.f(self.throttle) + noise, 0., 1.)
         thrusts = t * self.KF
         moments = (t * self.KM) * -self.directions
 

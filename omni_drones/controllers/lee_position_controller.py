@@ -6,6 +6,7 @@ from omni_drones.utils.torch import (
     quat_mul,
     normalize, 
     quaternion_to_rotation_matrix,
+    quaternion_to_euler,
     axis_angle_to_quaternion,
     axis_angle_to_matrix
 )
@@ -87,53 +88,92 @@ class LeePositionController(nn.Module):
         )
         self.requires_grad_(False)
 
-    def forward(self, root_state: torch.Tensor, control_target: torch.Tensor):
-        pos, rot, vel, ang_vel = torch.split(root_state, [3, 4, 3, 3], dim=-1)
-        target_pos, target_vel, target_yaw = torch.split(control_target, [3, 3, 1], dim=-1)
+    def forward(
+        self, 
+        root_state: torch.Tensor, 
+        target_pos: torch.Tensor=None,
+        target_vel: torch.Tensor=None,
+        target_acc: torch.Tensor=None,
+        target_yaw: torch.Tensor=None
+    ):
+        batch_shape = root_state.shape[:-1]
+        device = root_state.device
+        if target_pos is None:
+            target_pos = root_state[..., :3]
+        else:
+            target_pos = target_pos.expand(batch_shape+(3,))
+        if target_vel is None:
+            target_vel = torch.zeros(*batch_shape, 3, device=device)
+        else:
+            target_vel = target_vel.expand(batch_shape+(3,))
+        if target_acc is None:
+            target_acc = torch.zeros(*batch_shape, 3, device=device)
+        else:
+            target_acc = target_acc.expand(batch_shape+(3,))
+        if target_yaw is None:
+            target_yaw = quaternion_to_euler(root_state[..., 3:7])[..., -1]
+        else:
+            if not target_yaw.shape[-1] == 1:
+                target_yaw = target_yaw.unsqueeze(-1)
+            target_yaw = target_yaw.expand(batch_shape+(1,))
+        
+        cmd = self._compute(
+            root_state.reshape(-1, 13),
+            target_pos.reshape(-1, 3),
+            target_vel.reshape(-1, 3),
+            target_acc.reshape(-1, 3),
+            target_yaw.reshape(-1, 1)
+        )
 
-        pos_error = target_pos - pos
-        vel_error = target_vel - vel
+        return cmd.reshape(*batch_shape, -1)
+    
+    def _compute(self, root_state, target_pos, target_vel, target_acc, target_yaw):
+        pos, rot, vel, ang_vel = torch.split(root_state, [3, 4, 3, 3], dim=-1)
+
+        pos_error = pos - target_pos
+        vel_error = vel - target_vel
 
         acc = (
             pos_error * self.pos_gain 
-            + vel_error * self.vel_gain + self.g
+            + vel_error * self.vel_gain 
+            - self.g
+            - target_acc
         )
         R = quaternion_to_rotation_matrix(rot)
-        b1_des = torch.cat(
-            [
-                torch.cos(target_yaw), 
-                torch.sin(target_yaw), 
-                torch.zeros_like(target_yaw)
-            ],
-        dim=-1)
-        b3_des = acc / torch.norm(acc, dim=-1, keepdim=True)
-        b2_des = normalize(torch.cross(b3_des, b1_des))
-        R_des = torch.stack([b2_des.cross(b3_des), b2_des, b3_des], dim=-1)
+        b1_des = torch.cat([
+            torch.cos(target_yaw), 
+            torch.sin(target_yaw), 
+            torch.zeros_like(target_yaw)
+        ],dim=-1)
+        b3_des = -normalize(acc)
+        b2_des = normalize(torch.cross(b3_des, b1_des, 1))
+        R_des = torch.stack([
+            b2_des.cross(b3_des, 1), 
+            b2_des, 
+            b3_des
+        ], dim=-1)
         ang_error_matrix = 0.5 * (
             torch.bmm(R_des.transpose(-2, -1), R) 
             - torch.bmm(R.transpose(-2, -1), R_des)
         )
-        ang_error = torch.stack(
-            [
-                ang_error_matrix[:, 2, 1], 
-                ang_error_matrix[:, 0, 2], 
-                ang_error_matrix[:, 1, 0]
-            ],
-            dim=-1,
-        )
+        ang_error = torch.stack([
+            ang_error_matrix[:, 2, 1], 
+            ang_error_matrix[:, 0, 2], 
+            ang_error_matrix[:, 1, 0]
+        ],dim=-1)
         ang_rate_err = ang_vel
         ang_acc = (
             - ang_error * self.attitute_gain
             - ang_rate_err * self.ang_rate_gain
             + torch.cross(ang_vel, ang_vel)
         )
-        thrust = (self.mass * (acc * R[:, :, 2]).sum(-1, True))
+        thrust = (-self.mass * (acc * R[:, :, 2]).sum(-1, True))
         ang_acc_thrust = torch.cat([ang_acc, thrust], dim=-1)
         cmd = (self.mixer @ ang_acc_thrust.T).T
         cmd = (cmd / self.max_thrusts) * 2 - 1
         return cmd
 
-
+    
 class AttitudeController(nn.Module):
     r"""
     
@@ -196,7 +236,7 @@ class AttitudeController(nn.Module):
 
 class RateController(nn.Module):
 
-    def __init__(self, uav_params) -> None:
+    def __init__(self, g, uav_params) -> None:
         super().__init__()
         rotor_config = uav_params["rotor_configuration"]
         inertia = uav_params["inertia"]
@@ -211,16 +251,26 @@ class RateController(nn.Module):
         )
 
         self.mixer = nn.Parameter(compute_parameters(rotor_config, I))
-        self.gain_attitude = nn.Parameter(
-            torch.tensor([3., 3., 0.035]) @ I[:3, :3].inverse()
-        )
         self.gain_angular_rate = nn.Parameter(
             torch.tensor([0.52, 0.52, 0.025]) @ I[:3, :3].inverse()
         )
+        print(self.mixer)
 
     
     def forward(self, root_state: torch.Tensor, control_target: torch.Tensor):
-
-
-
+        assert root_state.shape[:-1] == control_target.shape[:-1]
+        batch_shape = root_state.shape[:-1]
+        root_state = root_state.reshape(batch_shape, 13)
+        control_target = control_target.reshape(*batch_shape, 4)
+        pos, rot, linvel, angvel = root_state.split([3, 4, 3, 3], dim=1)
+        rate_target, thrust_target = control_target.split([3, 1], dim=1)
+        rate_error = angvel - rate_target
+        acc_des = (
+            - rate_error * self.gain_angular_rate
+            + angvel.cross(angvel)
+        )
+        angacc_thrust = torch.cat([acc_des, thrust_target], dim=1)
+        cmd = (self.mixer @ angacc_thrust.T).T
+        cmd = (cmd / self.max_thrusts) * 2 - 1
         return cmd
+

@@ -20,7 +20,7 @@ def main(cfg):
     from omni.isaac.core.simulation_context import SimulationContext
     from omni_drones.controllers import LeePositionController
     from omni_drones.robots.drone import MultirotorBase
-    from omni_drones.utils.torch import euler_to_quaternion, quaternion_to_euler
+    from omni_drones.utils.torch import euler_to_quaternion, quaternion_to_euler, quat_rotate
     from omni_drones.sensors.camera import Camera, PinholeCameraCfg
     import dataclasses
 
@@ -113,8 +113,6 @@ def main(cfg):
             sim.render()
             continue
         ref_pos, ref_yaw = ref((i % 1000)*cfg.sim.dt)
-        yaw = quaternion_to_euler(drone.rot)[0, :, 2]
-        
         action = controller(drone_state, target_pos=ref_pos, target_yaw=ref_yaw)
         drone.apply_action(action)
         sim.step(render=True)

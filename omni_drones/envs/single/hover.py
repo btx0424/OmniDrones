@@ -202,7 +202,8 @@ class Hover(IsaacEnv):
             "action_smoothness": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
         info_spec = CompositeSpec({
-            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13)),
+            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13), device=self.device),
+            "prev_action": torch.stack([self.drone.action_spec] * self.drone.n, 0).to(self.device),
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
         self.observation_spec["info"] = info_spec

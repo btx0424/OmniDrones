@@ -3,10 +3,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.distributions as D
 
-from torchrl.data import CompositeSpec
+from torchrl.data import CompositeSpec, TensorSpec
 from torchrl.modules import ProbabilisticActor
+from torchrl.envs.transforms import CatTensors
 from tensordict import TensorDict
-from tensordict.nn import TensorDictModule
+from tensordict.nn import TensorDictModule, TensorDictSequential
 
 from hydra.core.config_store import ConfigStore
 from dataclasses import dataclass
@@ -22,10 +23,13 @@ class PPOConfig:
     ppo_epochs: int = 4
     num_minibatches: int = 16
 
-    tcn: bool = False
+    priv_actor: bool = False
+    priv_critic: bool = False
 
 cs = ConfigStore.instance()
 cs.store("ppo", node=PPOConfig, group="algo")
+cs.store("ppo_priv", node=PPOConfig(priv_actor=True, priv_critic=True), group="algo")
+cs.store("ppo_priv_critic", node=PPOConfig(priv_critic=True), group="algo")
 
 
 def make_mlp(num_units):
@@ -35,6 +39,34 @@ def make_mlp(num_units):
         layers.append(nn.LeakyReLU())
         layers.append(nn.LayerNorm(n))
     return nn.Sequential(*layers)
+
+
+class GAE(nn.Module):
+    def __init__(self, gamma, lmbda):
+        super().__init__()
+        self.register_buffer("gamma", torch.tensor(gamma))
+        self.register_buffer("lmbda", torch.tensor(lmbda))
+        self.gamma: torch.Tensor
+        self.lmdba: torch.Tensor
+    
+    def forward(
+        self, 
+        reward: torch.Tensor, 
+        terminated: torch.Tensor, 
+        value: torch.Tensor, 
+        next_value: torch.Tensor
+    ):
+        num_steps = terminated.shape[2]
+        advantages = torch.zeros_like(reward)
+        gae = 0
+        for step in reversed(range(num_steps)):
+            delta = (
+                reward[:, step] 
+                + self.gamma * next_value * not_done[:, step] 
+                - value[:, step]
+            )
+        
+        return advantages, 
 
 
 class Actor(nn.Module):
@@ -49,86 +81,91 @@ class Actor(nn.Module):
         return loc, scale
 
 
-class TConv(nn.Module):
-    def __init__(self) -> None:
-        super().__init__()
-        self.projection = nn.LazyLinear(64)
-        self.tconv = nn.Sequential(
-            nn.Conv1d(64, 64, kernel_size=5, stride=2), nn.ELU(),
-            nn.Conv1d(64, 64, kernel_size=5, stride=2), nn.ELU(),
-        )
-        self.mlp = make_mlp([256, 256])
-    
-    def forward(self, features: torch.Tensor):
-        batch_shape = features.shape[:-2]
-        features = features.flatten(0, -3) # [*, T, D]
-        features = self.projection(features)
-        features_t = features[..., -1, :]
-        # features_conv = self.tconv(features.transpose(-2, -1))
-        # features = torch.cat([features_t, features_conv.flatten(1)], dim=1)
-        features = self.mlp(features_t)
-        return features.unflatten(0, batch_shape)
-
-
 class PPOPolicy:
 
-    def __init__(self, cfg: PPOConfig, agent_spec, device):
+    def __init__(
+        self, 
+        cfg: PPOConfig, 
+        observation_spec: CompositeSpec, 
+        action_spec: CompositeSpec, 
+        reward_spec: TensorSpec,
+        device
+    ):
         self.cfg = cfg
         self.device = device
-        self.agent_spec = agent_spec
 
         self.entropy_coef = 0.001
         self.clip_param = 0.1
         self.critic_loss_fn = nn.HuberLoss(delta=10)
-        self.action_dim = self.agent_spec.action_spec.shape[-1]
+        self.n_agents, self.action_dim = action_spec.shape[-2:]
+        intrinsics_dim = observation_spec[("agents", "intrinsics")].shape[-1]
 
-        # fake_input = CompositeSpec({
-        #     "agents": {
-        #         "observation": agent_spec.observation_spec
-        #     }
-        # }).zero()
+        fake_input = observation_spec.zero()
         
-        if self.cfg.tcn:
-            actor = nn.Sequential(TConv(), Actor(self.action_dim))
-            critic = nn.Sequential(TConv(), nn.LazyLinear(1))
-            in_keys = [("agents", "observation_h")]
+        if self.cfg.priv_actor:
+            actor_module = TensorDictSequential(
+                TensorDictModule(make_mlp([128, 128]), [("agents", "observation")], ["feature"]),
+                TensorDictModule(
+                    nn.Sequential(nn.LayerNorm(intrinsics_dim), make_mlp([64, 64])), 
+                    [("agents", "intrinsics")], ["context"]
+                ),
+                CatTensors(["feature", "context"], "feature"),
+                TensorDictModule(
+                    nn.Sequential(make_mlp([256, 256]), Actor(self.action_dim)), 
+                    ["feature"], ["loc", "scale"]
+                )
+            )
         else:
-            actor = nn.Sequential(make_mlp([256, 256, 128]), Actor(self.action_dim))
-            critic = nn.Sequential(make_mlp([256, 256, 128]), nn.LazyLinear(1))
-            in_keys = [("agents", "observation")]
-        
+            actor_module=TensorDictModule(
+                nn.Sequential(make_mlp([256, 256, 256]), Actor(self.action_dim)),
+                [("agents", "observation")], ["loc", "scale"]
+            )
         self.actor: ProbabilisticActor = ProbabilisticActor(
-            module=TensorDictModule(actor, in_keys, out_keys=["loc", "scale"]),
+            module=actor_module,
             in_keys=["loc", "scale"],
             out_keys=[("agents", "action")],
             distribution_class=IndependentNormal,
             return_log_prob=True
         ).to(self.device)
-        self.critic = TensorDictModule(
-            module=critic,
-            in_keys=in_keys,
-            out_keys=["state_value"]
-        ).to(self.device)
 
-        # self.actor(fake_input)
-        # self.critic(fake_input)
+        if self.cfg.priv_critic:
+            self.critic = TensorDictSequential(
+                TensorDictModule(make_mlp([128, 128]), [("agents", "observation")], ["feature"]),
+                TensorDictModule(
+                    nn.Sequential(nn.LayerNorm(intrinsics_dim), make_mlp([64, 64])), 
+                    [("agents", "intrinsics")], ["context"]
+                ),
+                CatTensors(["feature", "context"], "feature"),
+                TensorDictModule(
+                    nn.Sequential(make_mlp([256, 256]), nn.LazyLinear(1)),
+                    ["feature"], ["state_value"]
+                )
+            ).to(self.device)
+        else:
+            self.critic = TensorDictModule(
+                nn.Sequential(make_mlp([256, 256, 256]), nn.LazyLinear(1)),
+                [("agents", "observation")], ["state_value"]
+            ).to(self.device)
+
+        self.actor(fake_input)
+        self.critic(fake_input)
         
-        # def init_(module):
-        #     if isinstance(module, nn.Linear):
-        #         # nn.init.orthogonal_(module.weight, 0.01)
-        #         nn.init.constant_(module.bias, 0.)
+        def init_(module):
+            if isinstance(module, nn.Linear):
+                nn.init.orthogonal_(module.weight, 0.01)
+                nn.init.constant_(module.bias, 0.)
         
-        # self.actor.apply(init_)
-        # self.critic.apply(init_)
+        self.actor.apply(init_)
+        self.critic.apply(init_)
 
         self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=5e-4)
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=5e-4)
-        self.value_norm = ValueNorm1(self.agent_spec.reward_spec.shape[-2:]).to(self.device)
+        self.value_norm = ValueNorm1(reward_spec.shape[-2:]).to(self.device)
     
     def __call__(self, tensordict: TensorDict):
         tensordict = self.actor(tensordict)
         tensordict = self.critic(tensordict)
-        tensordict = tensordict.exclude("loc", "scale")
+        tensordict = tensordict.exclude("loc", "scale", "feature")
         return tensordict
 
     def train_op(self, tensordict: TensorDict):
@@ -138,7 +175,7 @@ class PPOPolicy:
         rewards = tensordict[("next", "agents", "reward")]
         dones = (
             tensordict[("next", "done")]
-            .expand(-1, -1, self.agent_spec.n)
+            .expand(-1, -1, self.n_agents)
             .unsqueeze(-1)
         )
         values = tensordict["state_value"]
@@ -156,8 +193,8 @@ class PPOPolicy:
         tensordict.set("ret", ret)
 
         infos = []
-        for epoch in range(4):
-            batch = make_batch(tensordict, 16)
+        for epoch in range(self.cfg.ppo_epochs):
+            batch = make_batch(tensordict, self.cfg.num_minibatches)
             for minibatch in batch:
                 infos.append(self._update(minibatch))
         

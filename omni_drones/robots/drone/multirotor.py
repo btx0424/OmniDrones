@@ -20,6 +20,8 @@ from omni_drones.utils.torch import normalize, off_diag, quaternion_to_euler
 from dataclasses import dataclass
 from collections import defaultdict
 
+import pprint
+
 @dataclass
 class MultirotorCfg(RobotCfg):
     force_sensor: bool = False
@@ -110,7 +112,6 @@ class MultirotorBase(RobotBase):
         self.forces = torch.zeros(*self.shape, 3, device=self.device)
 
         self.pos, self.rot = self.get_world_poses(True)
-        self.rpy = torch.zeros(*self.shape, 3, device=self.device)
         self.throttle_difference = torch.zeros(self.throttle.shape[:-1], device=self.device)
         self.heading = torch.zeros(*self.shape, 3, device=self.device)
         self.up = torch.zeros(*self.shape, 3, device=self.device)
@@ -149,8 +150,6 @@ class MultirotorBase(RobotBase):
         if not self.initialized:
             raise RuntimeError
         
-        logging.info(f"Setup randomization:\n")
-
         for phase in ("train", "eval"):
             if phase not in cfg: continue
             mass_scale = cfg[phase].get("mass_scale", None)
@@ -158,7 +157,6 @@ class MultirotorBase(RobotBase):
                 low = self.MASS_0 * mass_scale[0]
                 high = self.MASS_0 * mass_scale[1]
                 self.randomization[phase]["mass"] = D.Uniform(low, high)
-                logging.info(f"Mass range: ({low.tolist()}, {high.tolist()})")
             inertia_scale = cfg[phase].get("inertia_scale", None)
             if inertia_scale is not None:
                 low = self.INERTIA_0 * torch.as_tensor(inertia_scale[0], device=self.device)
@@ -169,7 +167,6 @@ class MultirotorBase(RobotBase):
                 low = self.THRUST2WEIGHT_0 * torch.as_tensor(t2w_scale[0], device=self.device)
                 high = self.THRUST2WEIGHT_0 * torch.as_tensor(t2w_scale[1], device=self.device)
                 self.randomization[phase]["thrust2weight"] = D.Uniform(low, high)
-                logging.info(f"Thrust2Weight range: ({low.tolist()}, {high.tolist()})")
             f2m_scale = cfg[phase].get("f2m_scale", None)
             if f2m_scale is not None:
                 low = self.FORCE2MOMENT_0 * torch.as_tensor(f2m_scale[0], device=self.device)
@@ -194,6 +191,8 @@ class MultirotorBase(RobotBase):
                 raise ValueError(
                     f"Unknown randomization {unkown_keys}."
                 )
+
+        logging.info(f"Setup randomization:\n" + pprint.pformat(dict(self.randomization)))
 
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
         rotor_cmds = actions.expand(*self.shape, self.num_rotors)
@@ -229,7 +228,7 @@ class MultirotorBase(RobotBase):
             is_global=False
         )
         self.base_link.apply_forces_and_torques_at_pos(
-            vmap(torch_utils.quat_rotate)(self.rot, self.forces).reshape(-1, 3), 
+            self.forces.reshape(-1, 3), 
             self.torques.reshape(-1, 3), 
             is_global=True
         )
@@ -238,9 +237,6 @@ class MultirotorBase(RobotBase):
 
     def get_state(self, check_nan: bool=False):
         self.pos[:], self.rot[:] = self.get_world_poses(True)
-        rpy = quaternion_to_euler(self.rot)
-        self.angvel = (rpy - self.rpy) / self.dt
-        self.rpy[:] = rpy
         if hasattr(self, "_envs_positions"):
             self.pos.sub_(self._envs_positions)
         vel = self.get_velocities(True)
@@ -251,8 +247,7 @@ class MultirotorBase(RobotBase):
         self.vel[:] = vel
         self.heading[:] = vmap(torch_utils.quat_axis)(self.rot, axis=0)
         self.up[:] = vmap(torch_utils.quat_axis)(self.rot, axis=2)
-        # state = [self.pos, self.rot, self.vel, self.heading, self.up, self.throttle * 2 - 1]
-        state = [self.pos, self.rot, self.vel[..., :3], self.angvel, self.heading, self.up, self.throttle * 2 - 1]
+        state = [self.pos, self.rot, self.vel, self.heading, self.up, self.throttle * 2 - 1]
         if self.use_force_sensor:
             self.force_readings, self.torque_readings = self.get_force_sensor_forces().chunk(2, -1)
             # normalize by mass and inertia
@@ -270,7 +265,6 @@ class MultirotorBase(RobotBase):
             env_ids = torch.arange(self.shape[0], device=self.device)
         self.thrusts[env_ids] = 0.0
         self.torques[env_ids] = 0.0
-        self.rpy[env_ids] = 0.
         self.vel[env_ids] = 0.
         self.acc[env_ids] = 0.
         self.jerk[env_ids] = 0.
@@ -282,16 +276,6 @@ class MultirotorBase(RobotBase):
         self.throttle[env_ids] = self.rotors.f_inv(init_throttle)
         self.throttle_difference[env_ids] = 0.0
         return env_ids
-    
-    def set_world_poses(
-        self, 
-        positions: torch.Tensor = None, 
-        orientations: torch.Tensor = None, 
-        env_indices: torch.Tensor = None
-    ):
-        if orientations is not None:
-            self.rpy[env_indices] = quaternion_to_euler(orientations)
-        return super().set_world_poses(positions, orientations, env_indices)
 
     def _randomize(self, env_ids: torch.Tensor, distributions: Dict[str, D.Distribution]):
         shape = env_ids.shape

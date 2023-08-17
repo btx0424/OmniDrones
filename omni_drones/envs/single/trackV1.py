@@ -130,8 +130,6 @@ class TrackV1(IsaacEnv):
         self.ref_pos = torch.zeros(self.num_envs, self.future_traj_steps, 3, device=self.device)
         self.ref_heading = torch.zeros(self.num_envs, 2, device=self.device)
 
-        self.last_action = self.action_spec.zero()
-
         self.alpha = 0.8
         self.draw = _debug_draw.acquire_debug_draw_interface()
 
@@ -162,11 +160,13 @@ class TrackV1(IsaacEnv):
             self.time_encoding = Fraction(self.max_episode_length)
             drone_obs_dim += self.time_encoding.dim
         
+        # TODO@btx0424: observe history through a Transform
         self.observation_spec = CompositeSpec({
-            "agents": {
+            "agents": CompositeSpec({
                 "observation": UnboundedContinuousTensorSpec((1, drone_obs_dim), device=self.device),
+                "observation_h": UnboundedContinuousTensorSpec((1, drone_obs_dim, 32), device=self.device),
                 "intrinsics": self.drone.intrinsics_spec.unsqueeze(0).to(self.device)
-            }
+            })
         }).expand(self.num_envs)
         self.action_spec = CompositeSpec({
             "agents": {
@@ -194,13 +194,16 @@ class TrackV1(IsaacEnv):
             "action_smoothness": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
         info_spec = CompositeSpec({
-            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13)),
-        }).expand(self.num_envs).to(self.device)
+            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13), device=self.device),
+            "prev_action": torch.stack([self.drone.action_spec] * self.drone.n, dim=0).to(self.device),
+        }).expand(self.num_envs)
 
         self.observation_spec["info"] = info_spec
         self.observation_spec["stats"] = stats_spec
         self.info = info_spec.zero()
         self.stats = stats_spec.zero()
+
+        self.observation_h = self.observation_spec[("agents", "observation_h")].zero()
         
 
     def _reset_idx(self, env_ids: torch.Tensor):
@@ -246,7 +249,8 @@ class TrackV1(IsaacEnv):
             self.payload.set_masses(payload_mass, env_indices=env_ids)
 
         self.stats[env_ids] = 0.
-        self.last_action[env_ids] =  0.
+        self.info["prev_action"][env_ids] = 0.
+        self.observation_h[env_ids] = 0.
 
         if self._should_render(0) and (env_ids == self.central_env_idx).any() :
             # visualize the trajectory
@@ -263,7 +267,7 @@ class TrackV1(IsaacEnv):
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("agents", "action")]
         self.effort = self.drone.apply_action(actions)
-        self.last_action[:] = actions
+        self.info["prev_action"][:] = actions
 
     def _compute_state_and_obs(self):
         self.root_state = self.drone.get_state()
@@ -277,16 +281,19 @@ class TrackV1(IsaacEnv):
             self.rpos.flatten(1).unsqueeze(1),
             self.ref_heading.unsqueeze(1) - normalize(self.drone.heading[..., :2]),
             self.root_state[..., 3:],
-            self.last_action,
+            self.info["prev_action"]
         ]
         if self.time_encoding:
             obs.append(self.time_encoding.encode(self.progress_buf).unsqueeze(1))
 
         obs = torch.cat(obs, dim=-1)
+        self.observation_h[..., -1] = obs
 
         return TensorDict({
             "agents": {
                 "observation": obs,
+                # "observation": self.observation_h[..., -1],
+                # "observation_h": self.observation_h,
                 "intrinsics": self.drone.intrinsics
             },
             "stats": self.stats,
@@ -322,6 +329,7 @@ class TrackV1(IsaacEnv):
         if self.training:
             done = done | truncated
         
+        self.observation_h[..., :-1] = self.observation_h[..., 1:]
         return TensorDict(
             {
                 "agents": {

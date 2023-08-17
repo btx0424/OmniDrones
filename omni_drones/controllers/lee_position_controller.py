@@ -4,6 +4,7 @@ from tensordict import TensorDict
 
 from omni_drones.utils.torch import (
     quat_mul,
+    quat_rotate_inverse,
     normalize, 
     quaternion_to_rotation_matrix,
     quaternion_to_euler,
@@ -129,7 +130,8 @@ class LeePositionController(nn.Module):
     
     def _compute(self, root_state, target_pos, target_vel, target_acc, target_yaw):
         pos, rot, vel, ang_vel = torch.split(root_state, [3, 4, 3, 3], dim=-1)
-
+        ang_vel = quat_rotate_inverse(rot, ang_vel)
+        
         pos_error = pos - target_pos
         vel_error = vel - target_vel
 

@@ -20,8 +20,8 @@ class RotorGroup(nn.Module):
         self.throttle = nn.Parameter(torch.zeros(self.num_rotors))
         self.directions = nn.Parameter(torch.as_tensor(rotor_config["directions"]).float())
 
-        self.tau_up = nn.Parameter(4 * dt / self.time_up * torch.ones(self.num_rotors))
-        self.tau_down = nn.Parameter(4 * dt / self.time_down * torch.ones(self.num_rotors))
+        self.tau_up = nn.Parameter(0.43 * torch.ones(self.num_rotors))
+        self.tau_down = nn.Parameter(0.43 * torch.ones(self.num_rotors))
 
         self.f = torch.square
         self.f_inv = torch.sqrt

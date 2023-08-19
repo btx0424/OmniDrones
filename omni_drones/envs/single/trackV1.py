@@ -293,7 +293,7 @@ class TrackV1(IsaacEnv):
             "agents": {
                 "observation": obs,
                 # "observation": self.observation_h[..., -1],
-                # "observation_h": self.observation_h,
+                "observation_h": self.observation_h,
                 "intrinsics": self.drone.intrinsics
             },
             "stats": self.stats,

@@ -309,7 +309,6 @@ class AttitudeController(Transform):
         return tensordict
 
 
-from collections import defaultdict
 class History(Transform):
     def __init__(
         self,
@@ -322,6 +321,8 @@ class History(Transform):
                 f"{key}_h" if isinstance(key, str) else key[:-1] + (f"{key[-1]}_h",)
                 for key in in_keys
             ]
+        if any(key in in_keys for key in out_keys):
+            raise ValueError
         super().__init__(in_keys=in_keys, out_keys=out_keys)
         self.steps = steps
     
@@ -330,7 +331,7 @@ class History(Transform):
             is_tuple = isinstance(in_key, tuple)
             if in_key in observation_spec.keys(include_nested=is_tuple):
                 spec = observation_spec[in_key]
-                spec = spec.unsqueeze(spec.ndim-1).expand(*spec.shape[:-1], self.steps, spec.shape[-1])
+                spec = spec.unsqueeze(-1).expand(*spec.shape, self.steps)
                 observation_spec[out_key] = spec
         return observation_spec
 
@@ -338,16 +339,16 @@ class History(Transform):
         for in_key, out_key in zip(self.in_keys, self.out_keys):
             item = tensordict.get(in_key)
             item_history = tensordict.get(out_key)
-            item_history[..., :-1, :] = item_history[..., 1:, :]
-            item_history[..., -1, :] = item
+            item_history[..., :-1] = item_history[..., 1:]
+            item_history[..., -1] = item
         return tensordict
 
     def _step(self, tensordict: TensorDictBase) -> TensorDictBase:
         for in_key, out_key in zip(self.in_keys, self.out_keys):
             item = tensordict.get(in_key)
             item_history = tensordict.get(out_key).clone()
-            item_history[..., :-1, :] = item_history[..., 1:, :]
-            item_history[..., -1, :] = item
+            item_history[..., :-1] = item_history[..., 1:]
+            item_history[..., -1] = item
             tensordict.set(("next", out_key), item_history)
         return tensordict
 
@@ -359,8 +360,8 @@ class History(Transform):
             if out_key not in tensordict.keys(True, True):
                 item = tensordict.get(in_key)
                 item_history = (
-                    item.unsqueeze(item.ndim-1)
-                    .expand(*item.shape[:-1], self.steps, item.shape[-1])
+                    item.unsqueeze(-1)
+                    .expand(*item.shape, self.steps)
                     .clone()
                     .zero_()
                 )

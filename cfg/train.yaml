@@ -1,3 +1,5 @@
+# hydra.job.chdir: false
+
 headless: false
 
 sim: ${task.sim}

@@ -1,0 +1,45 @@
+program: train.py
+name: PPO
+project: aaa
+entity: marl-drones
+method: grid
+
+metric:
+  name: train/return
+  goal: maximize
+
+parameters:
+
+  task: 
+    values: 
+    - TrackRand
+    - HoverRand
+
+  algo:
+    values:
+    - ppo
+    - ppo_priv
+    - ppo_priv_critic
+
+  total_frames: 
+    # value: 15_000_000
+    value: 150_000_000
+
+  headless:
+    value: true
+  
+  # seed:
+  #   values: [0, 42, 81]
+
+  algo.num_minibatches:
+    values: [16, 32]
+  
+  algo.train_every:
+    value: 128
+
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args_no_hyphens}

@@ -272,7 +272,7 @@ class IsaacEnv(EnvBase):
     def to(self, device) -> EnvBase:
         if torch.device(device) != self.device:
             raise RuntimeError(
-                "Cannot move IsaacEnv to a different device once it's initialized."
+                f"Cannot move IsaacEnv on {self.device} to a different device {device} once it's initialized."
             )
         return self
 

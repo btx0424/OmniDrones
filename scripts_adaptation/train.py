@@ -22,17 +22,7 @@ from omni_drones.utils.torchrl.transforms import (
 )
 from omni_drones.utils.wandb import init_wandb
 from omni_drones.learning import (
-    MAPPOPolicy, 
-    HAPPOPolicy,
-    QMIXPolicy,
-    DQNPolicy,
-    SACPolicy,
-    TD3Policy,
-    MATD3Policy,
-    TDMPCPolicy,
-    Policy,
-    PPOPolicy,
-    PPOAdaptivePolicy, PPORNNPolicy
+    PPOAdaptivePolicy, PPORNNPolicy, PPOPolicy, PPOTConvPolicy
 )
 
 from setproctitle import setproctitle
@@ -40,6 +30,7 @@ from torchrl.envs.transforms import (
     TransformedEnv, 
     InitTracker, 
     Compose,
+    CatTensors
 )
 
 from tqdm import tqdm
@@ -55,7 +46,7 @@ class Every:
             self.func(*args, **kwargs)
         self.i += 1
 
-@hydra.main(version_base=None, config_path=CONFIG_PATH, config_name="train")
+@hydra.main(config_path=CONFIG_PATH, config_name="train", version_base=None)
 def main(cfg):
     OmegaConf.register_new_resolver("eval", eval)
     OmegaConf.resolve(cfg)
@@ -70,17 +61,8 @@ def main(cfg):
         "ppo": PPOPolicy,
         "ppo_adaptive": PPOAdaptivePolicy,
         "ppo_rnn": PPORNNPolicy,
-        "mappo": MAPPOPolicy, 
-        "happo": HAPPOPolicy,
-        "qmix": QMIXPolicy,
-        "dqn": DQNPolicy,
-        "sac": SACPolicy,
-        "td3": TD3Policy,
-        "matd3": MATD3Policy,
-        "tdmpc": TDMPCPolicy,
-        "test": Policy
+        "ppo_tconv": PPOTConvPolicy,
     }
-
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
     base_env = env_class(cfg, headless=cfg.headless)
 
@@ -113,9 +95,10 @@ def main(cfg):
     ):
         transforms.append(ravel_composite(base_env.observation_spec, ("agents", "intrinsics"), start_dim=-1))
 
-    if cfg.task.get("history", False):
-        transforms.append(History([("agents", "observation")]))
-    
+    # if cfg.task.get("history", False):
+    #     # transforms.append(History([("info", "drone_state"), ("info", "prev_action")]))
+    #     transforms.append(History([("agents", "observation")]))
+
     # optionally discretize the action space or use a controller
     action_transform: str = cfg.task.get("action_transform", None)
     if action_transform is not None:
@@ -143,8 +126,8 @@ def main(cfg):
     env = TransformedEnv(base_env, Compose(*transforms)).train()
     env.set_seed(cfg.seed)
 
-    agent_spec: AgentSpec = env.agent_spec["drone"]
-    policy = algos[cfg.algo.name.lower()](cfg.algo, agent_spec=agent_spec, device="cuda")
+    policy = algos[cfg.algo.name.lower()](
+        cfg.algo, env.observation_spec, env.action_spec, env.reward_spec, device=base_env.device)
 
     frames_per_batch = env.num_envs * int(cfg.algo.train_every)
     total_frames = cfg.get("total_frames", -1) // frames_per_batch * frames_per_batch
@@ -203,10 +186,12 @@ def main(cfg):
             info.update(evaluate())
 
         if save_interval > 0 and i % save_interval == 0:
-            if hasattr(policy, "state_dict"):
+            try:
                 ckpt_path = os.path.join(run.dir, f"checkpoint_{collector._frames}.pt")
                 logging.info(f"Save checkpoint to {str(ckpt_path)}")
                 torch.save(policy.state_dict(), ckpt_path)
+            except AttributeError:
+                logging.warn(f"Policy {policy} does not implement `.state_dict()`")
 
         run.log(info)
         print(OmegaConf.to_yaml({k: v for k, v in info.items() if isinstance(v, float)}))
@@ -224,10 +209,13 @@ def main(cfg):
     info.update(evaluate())
     run.log(info)
 
-    if hasattr(policy, "state_dict"):
+    try:
         ckpt_path = os.path.join(run.dir, "checkpoint_final.pt")
         logging.info(f"Save checkpoint to {str(ckpt_path)}")
         torch.save(policy.state_dict(), ckpt_path)
+    except AttributeError:
+        logging.warn(f"Policy {policy} does not implement `.state_dict()`")
+        
 
     wandb.save(os.path.join(run.dir, "checkpoint*"))
     wandb.finish()

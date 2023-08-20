@@ -270,12 +270,43 @@ class VelController(Transform):
         drone_state = tensordict[("info", "drone_state")][..., :13]
         action = tensordict[self.action_key]
         target_vel, target_yaw = action.split([3, 1], -1)
-        control_target = torch.cat([
-            drone_state[..., :3],
-            target_vel * 1.6,
-            target_yaw * torch.pi,
-        ], dim=-1)
-        cmds = self.controller(drone_state, control_target)
+        cmds = self.controller(
+            drone_state, 
+            target_vel=target_vel, 
+            target_yaw=target_yaw*torch.pi
+        )
+        torch.nan_to_num_(cmds, 0.)
+        tensordict.set(self.action_key, cmds)
+        return tensordict
+
+
+class RateController(Transform):
+    def __init__(
+        self,
+        controller,
+        action_key: str = ("agents", "action"),
+    ):
+        super().__init__([], in_keys_inv=[("info", "drone_state")])
+        self.controller = controller
+        self.action_key = action_key
+        self.max_thrust = self.controller.max_thrusts.sum(-1)
+    
+    def transform_input_spec(self, input_spec: TensorSpec) -> TensorSpec:
+        action_spec = input_spec[("_action_spec", *self.action_key)]
+        spec = UnboundedContinuousTensorSpec(action_spec.shape[:-1]+(4,), device=action_spec.device)
+        input_spec[("_action_spec", *self.action_key)] = spec
+        return input_spec
+    
+    def _inv_call(self, tensordict: TensorDictBase) -> TensorDictBase:
+        drone_state = tensordict[("info", "drone_state")][..., :13]
+        action = tensordict[self.action_key]
+        target_rate, target_thrust = action.split([3, 1], -1)
+        target_thrust = ((target_thrust + 1) / 2).clip(0.) * self.max_thrust
+        cmds = self.controller(
+            drone_state, 
+            target_rate=target_rate * torch.pi, 
+            target_thrust=target_thrust
+        )
         torch.nan_to_num_(cmds, 0.)
         tensordict.set(self.action_key, cmds)
         return tensordict

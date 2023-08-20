@@ -245,7 +245,6 @@ class RateController(nn.Module):
         force_constants = torch.as_tensor(rotor_config["force_constants"])
         max_rot_vel = torch.as_tensor(rotor_config["max_rotation_velocities"])
 
-        self.mass = nn.Parameter(torch.tensor(uav_params["mass"]))
         self.g = nn.Parameter(torch.tensor(g))
         self.max_thrusts = nn.Parameter(max_rot_vel.square() * force_constants)
         I = torch.diag_embed(
@@ -256,23 +255,32 @@ class RateController(nn.Module):
         self.gain_angular_rate = nn.Parameter(
             torch.tensor([0.52, 0.52, 0.025]) @ I[:3, :3].inverse()
         )
-        print(self.mixer)
 
     
-    def forward(self, root_state: torch.Tensor, control_target: torch.Tensor):
-        assert root_state.shape[:-1] == control_target.shape[:-1]
+    def forward(
+        self, 
+        root_state: torch.Tensor, 
+        target_rate: torch.Tensor,
+        target_thrust: torch.Tensor,
+    ):
+        assert root_state.shape[:-1] == target_rate.shape[:-1]
+
         batch_shape = root_state.shape[:-1]
-        root_state = root_state.reshape(batch_shape, 13)
-        control_target = control_target.reshape(*batch_shape, 4)
+        root_state = root_state.reshape(-1, 13)
+        target_rate = target_rate.reshape(-1, 3)
+        target_thrust = target_thrust.reshape(-1, 1)
+
         pos, rot, linvel, angvel = root_state.split([3, 4, 3, 3], dim=1)
-        rate_target, thrust_target = control_target.split([3, 1], dim=1)
-        rate_error = angvel - rate_target
+        angvel = quat_rotate_inverse(rot, angvel)
+
+        rate_error = angvel - target_rate
         acc_des = (
             - rate_error * self.gain_angular_rate
             + angvel.cross(angvel)
         )
-        angacc_thrust = torch.cat([acc_des, thrust_target], dim=1)
+        angacc_thrust = torch.cat([acc_des, target_thrust], dim=1)
         cmd = (self.mixer @ angacc_thrust.T).T
         cmd = (cmd / self.max_thrusts) * 2 - 1
+        cmd = cmd.reshape(*batch_shape, -1)
         return cmd
 

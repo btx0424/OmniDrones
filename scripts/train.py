@@ -16,8 +16,6 @@ from omni_drones.utils.torchrl.transforms import (
     FromMultiDiscreteAction, 
     FromDiscreteAction,
     ravel_composite,
-    VelController,
-    AttitudeController,
     History
 )
 from omni_drones.utils.wandb import init_wandb
@@ -129,13 +127,15 @@ def main(cfg):
             transforms.append(transform)
         elif action_transform == "velocity":
             from omni_drones.controllers import LeePositionController
+            from omni_drones.utils.torchrl.transforms import VelController
             controller = LeePositionController(9.81, base_env.drone.params).to(base_env.device)
             transform = VelController(vmap(controller))
             transforms.append(transform)
-        elif action_transform == "attitude":
-            from omni_drones.controllers import AttitudeController as _AttitudeController
-            controller = _AttitudeController(9.81, base_env.drone.params).to(base_env.device)
-            transform = AttitudeController(vmap(vmap(controller)))
+        elif action_transform == "rate":
+            from omni_drones.controllers import RateController as _RateController
+            from omni_drones.utils.torchrl.transforms import RateController
+            controller = _RateController(9.81, base_env.drone.params).to(base_env.device)
+            transform = RateController(controller)
             transforms.append(transform)
         elif not action_transform.lower() == "none":
             raise NotImplementedError(f"Unknown action transform: {action_transform}")

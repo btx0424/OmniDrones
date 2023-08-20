@@ -10,7 +10,7 @@ Set the following environment variables to your ``~/.bashrc`` or ``~/.zshrc`` fi
     # Isaac Sim root directory
     export ISAACSIM_PATH="${HOME}/.local/share/ov/pkg/isaac_sim-*"
 
-where ``*`` corresponds to the Isaac Sim version.
+where ``*`` corresponds to the Isaac Sim version. Remember to run `source ~/.bashrc` before you proceed.
 
 Although Isaac Sim comes with a built-in Python environment, we recommend using a seperate conda environment which is more flexible. We provide scripts to automate environment setup when activating/deactivating a conda environment at ``OmniDrones/conda_setup``. 
 

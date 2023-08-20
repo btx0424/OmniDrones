@@ -10,9 +10,10 @@ Welcome to OmniDrones's documentation!
 
 .. toctree::
    :caption: Getting Started
+   :maxdepth: 1
 
-   installation/workstation
-   installation/container
+   installation
+   rl
 
 .. toctree::
    :caption: Tutorials
@@ -22,15 +23,15 @@ Welcome to OmniDrones's documentation!
    environment
    tips
 
-.. toctree::
-   :caption: Usage
+.. .. toctree::
+..    :caption: Usage
 
-   tasks
+..    tasks
 
-.. toctree::
-   :caption: Misc.
+.. .. toctree::
+..    :caption: Misc.
 
-   roadmap
+..    roadmap
 
 Indices and tables
 ==================

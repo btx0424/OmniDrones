@@ -182,6 +182,8 @@ output:
 Data Collection
 ---------------
 
+TorchRL provides a series of :py:class:`Collector` s, which make data collection very convenient.
+
 .. code:: python
 
     from omni_drones.utils.torchrl import SyncDataCollector
@@ -207,6 +209,13 @@ Data Collection
 Creating New Tasks
 ------------------
 
+Creating a new environment effectively amounts to implementing or overriding the following methods of :py:class:`IsaacEnv`'s:
+
+- :py:meth:`_set_specs` method to specify the input and output of the environment. It should at least include :py:attr:`observation_spec` and :py:attr:`action_spec`.
+- :py:meth:`_reset_idx(env_ids: torch.Tensor)` method to reset sub-environment instances given by `env_ids`.
+- :py:meth:`_pre_sim_step` method to apply the agents' actions.
+- :py:meth:`_compute_state_and_obs` method to compute the state and observation for the transition step.
+- :py:meth:`_compute_reward_and_done` method to compute the reward and termination flags for the transition step.
 
 
 Environment Transforms

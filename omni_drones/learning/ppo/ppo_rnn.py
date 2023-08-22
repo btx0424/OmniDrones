@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.distributions as D
 
-from torchrl.data import CompositeSpec
+from torchrl.data import CompositeSpec, TensorSpec
 from torchrl.modules import ProbabilisticActor
 from tensordict import TensorDict
 from tensordict.nn import TensorDictModule, TensorDictSequential
@@ -92,8 +92,8 @@ class GRU(nn.Module):
 
     def forward(self, x: torch.Tensor, is_init: torch.Tensor, hx: torch.Tensor):
         T = x.shape[1]
-        if is_init is None:
-            is_init = torch.ones(*x.shape[:-1], 1, device=x.device) 
+        # if is_init is None:
+        #     is_init = torch.ones(*x.shape[:-1], 1, device=x.device) 
         if hx is None:
             hx = torch.zeros(*x.shape[:-1], self.gru.hidden_size, device=x.device)
         hx = hx[:, 0]
@@ -140,21 +140,23 @@ cs.store("ppo_lstm", node=replace(PPOConfig(), rnn="lstm"), group="algo")
 
 class PPORNNPolicy:
 
-    def __init__(self, cfg: PPOConfig, agent_spec, device):
+    def __init__(
+        self, 
+        cfg: PPOConfig, 
+        observation_spec: CompositeSpec, 
+        action_spec: TensorSpec, 
+        reward_spec: TensorSpec,
+        device
+    ):
         self.cfg = cfg
         self.device = device
-        self.agent_spec = agent_spec
         
         self.entropy_coef = 0.001
         self.clip_param = 0.1
         self.critic_loss_fn = nn.HuberLoss(delta=10)
-        self.action_dim = self.agent_spec.action_spec.shape[-1]
+        self.n_agents, self.action_dim = action_spec.shape[-2:]
 
-        fake_input = CompositeSpec({
-            "agents": {
-                "observation": agent_spec.observation_spec
-            }
-        }, shape=(agent_spec.observation_spec.shape[0],)).zero()
+        fake_input = observation_spec.zero()
         
         if self.cfg.rnn.lower() == "gru":
             actor = TensorDictSequential(
@@ -216,7 +218,7 @@ class PPORNNPolicy:
 
         self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=5e-4)
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=5e-4)
-        self.value_norm = ValueNorm1(self.agent_spec.reward_spec.shape[-2:]).to(self.device)
+        self.value_norm = ValueNorm1(reward_spec.shape[-2:]).to(self.device)
     
     def __call__(self, tensordict: TensorDict):
         tensordict = tensordict.unsqueeze(1) # dummy time dimension
@@ -233,7 +235,7 @@ class PPORNNPolicy:
         rewards = tensordict[("next", "agents", "reward")]
         dones = (
             tensordict[("next", "done")]
-            .expand(-1, -1, self.agent_spec.n)
+            .expand(-1, -1, self.n_agents)
             .unsqueeze(-1)
         )
         values = tensordict["state_value"]

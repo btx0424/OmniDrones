@@ -18,7 +18,7 @@ def main(cfg):
 
     import omni_drones.utils.scene as scene_utils
     from omni.isaac.core.simulation_context import SimulationContext
-    from omni_drones.controllers import RateController
+    from omni_drones.controllers import AttitudeController
     from omni_drones.robots.drone import MultirotorBase
     from omni_drones.utils.torch import euler_to_quaternion, quaternion_to_euler
     from omni_drones.sensors.camera import Camera, PinholeCameraCfg
@@ -58,10 +58,12 @@ def main(cfg):
 
     init_pos, init_rot = drone.get_world_poses(True)
     init_vels = torch.zeros(n, 6, device=sim.device)
-    target_rate = torch.zeros(n, 3, device=sim.device)
-    target_rate[:, 2] = torch.pi
+    target_yaw_rate = torch.zeros(n, 1, device=sim.device)
+    # target_yaw_rate[:] = torch.pi
+    target_pitch = torch.zeros(n, 1, device=sim.device)
+    target_pitch[:] = torch.pi/6
 
-    controller = RateController(9.8, uav_params=drone.params).to(sim.device)
+    controller = AttitudeController(9.8, uav_params=drone.params).to(sim.device)
 
     def reset():
         drone._reset_idx(torch.tensor([0]))
@@ -85,8 +87,9 @@ def main(cfg):
             continue
         action = controller(
             drone_state, 
-            target_rate=target_rate, 
-            target_thrust=drone.MASS_0 * 9.81
+            target_yaw_rate=target_yaw_rate, 
+            target_pitch=target_pitch,
+            target_thrust=(drone.MASS_0 * 10.)
         )
         drone.apply_action(action)
         sim.step(render=True)

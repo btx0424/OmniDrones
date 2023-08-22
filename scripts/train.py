@@ -129,7 +129,13 @@ def main(cfg):
             from omni_drones.controllers import LeePositionController
             from omni_drones.utils.torchrl.transforms import VelController
             controller = LeePositionController(9.81, base_env.drone.params).to(base_env.device)
-            transform = VelController(vmap(controller))
+            transform = VelController(controller)
+            transforms.append(transform)
+        elif action_transform == "attitude":
+            from omni_drones.controllers import AttitudeController as Controller
+            from omni_drones.utils.torchrl.transforms import AttitudeController
+            controller = Controller(9.81, base_env.drone.params).to(base_env.device)
+            transform = AttitudeController(controller)
             transforms.append(transform)
         elif action_transform == "rate":
             from omni_drones.controllers import RateController as _RateController

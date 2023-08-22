@@ -130,7 +130,6 @@ class LeePositionController(nn.Module):
     
     def _compute(self, root_state, target_pos, target_vel, target_acc, target_yaw):
         pos, rot, vel, ang_vel = torch.split(root_state, [3, 4, 3, 3], dim=-1)
-        ang_vel = quat_rotate_inverse(rot, ang_vel)
         
         pos_error = pos - target_pos
         vel_error = vel - target_vel
@@ -203,35 +202,72 @@ class AttitudeController(nn.Module):
         )
 
 
-    def forward(self, root_state: torch.Tensor, control_target: torch.Tensor):
-        pos, rot, vel, ang_vel = torch.split(root_state, [3, 4, 3, 3])
+    def forward(
+        self, 
+        root_state: torch.Tensor, 
+        target_thrust: torch.Tensor,
+        target_yaw_rate: torch.Tensor=None,
+        target_roll: torch.Tensor=None,
+        target_pitch: torch.Tensor=None,
+    ):
+        batch_shape = root_state.shape[:-1]
+        device = root_state.device
+
+        if target_yaw_rate is None:
+            target_yaw_rate = torch.zeros(*batch_shape, 1, device=device)
+        if target_pitch is None:
+            target_pitch = torch.zeros(*batch_shape, 1, device=device)
+        if target_roll is None:
+            target_roll = torch.zeros(*batch_shape, 1, device=device)
+        
+        cmd = self._compute(
+            root_state.reshape(-1, 13),
+            target_thrust.reshape(-1, 1),
+            target_yaw_rate=target_yaw_rate.reshape(-1, 1),
+            target_roll=target_roll.reshape(-1, 1),
+            target_pitch=target_pitch.reshape(-1, 1),
+        )
+        return cmd.reshape(*batch_shape, -1)
+
+    def _compute(
+        self, 
+        root_state: torch.Tensor,
+        target_thrust: torch.Tensor, 
+        target_yaw_rate: torch.Tensor, 
+        target_roll: torch.Tensor,
+        target_pitch: torch.Tensor
+    ):
+        pos, rot, vel, ang_vel = torch.split(root_state, [3, 4, 3, 3], dim=-1)
         device = pos.device
 
         R = quaternion_to_rotation_matrix(rot)
-        ref_roll, ref_pitch, ref_yaw_rates, ref_thrust = control_target
-        yaw = torch.atan2(R[1, 0], R[0, 0])
-        yaw = axis_angle_to_matrix(ref_yaw_rates, torch.tensor([0., 0., 1.], device=device))
-        roll = axis_angle_to_matrix(ref_roll, torch.tensor([1., 0., 0.], device=device))
-        pitch = axis_angle_to_matrix(ref_pitch, torch.tensor([0., 1., 0.], device=device))
-        R_des = yaw @ roll @ pitch
-        angle_error_matrix = 0.5 * (R_des.T @ R - R.T @ R_des)
-
-        angle_error = torch.stack(
-            [angle_error_matrix[2, 1], angle_error_matrix[0, 2], torch.zeros_like(ref_roll)],
-            dim=-1,
+        yaw = torch.atan2(R[:, 1, 0], R[:, 0, 0]).unsqueeze(-1)
+        yaw = axis_angle_to_matrix(yaw, torch.tensor([0., 0., 1.], device=device))
+        roll = axis_angle_to_matrix(target_roll, torch.tensor([1., 0., 0.], device=device))
+        pitch = axis_angle_to_matrix(target_pitch, torch.tensor([0., 1., 0.], device=device))
+        R_des = torch.bmm(torch.bmm(yaw,  roll), pitch)
+        angle_error_matrix = 0.5 * (
+            torch.bmm(R_des.transpose(-2, -1), R) 
+            - torch.bmm(R.transpose(-2, -1), R_des)
         )
+
+        angle_error = torch.stack([
+            angle_error_matrix[:, 2, 1], 
+            angle_error_matrix[:, 0, 2], 
+            torch.zeros(yaw.shape[0], device=device)
+        ], dim=-1)
+
         angular_rate_des = torch.zeros_like(ang_vel)
-        angular_rate_des[2] = ref_yaw_rates
-        angular_rate_error = ang_vel - R_des.T @ R @ angular_rate_des
+        angular_rate_des[:, 2] = target_yaw_rate.squeeze(1)
+        angular_rate_error = ang_vel - torch.bmm(torch.bmm(R_des.transpose(-2, -1), R), angular_rate_des.unsqueeze(2)).squeeze(2)
 
         angular_acc = (
             - angle_error * self.gain_attitude 
             - angular_rate_error * self.gain_angular_rate 
             + torch.cross(ang_vel, ang_vel)
         )
-        ref_thrust = (ref_thrust * self.mass * self.g).unsqueeze(-1)
-        angular_acc_thrust = torch.cat([angular_acc, ref_thrust])
-        cmd = self.mixer @ angular_acc_thrust
+        angular_acc_thrust = torch.cat([angular_acc, target_thrust], dim=1)
+        cmd = (self.mixer @ angular_acc_thrust.T).T
         cmd = (cmd / self.max_thrusts) * 2 - 1
         return cmd
 
@@ -271,7 +307,6 @@ class RateController(nn.Module):
         target_thrust = target_thrust.reshape(-1, 1)
 
         pos, rot, linvel, angvel = root_state.split([3, 4, 3, 3], dim=1)
-        angvel = quat_rotate_inverse(rot, angvel)
 
         rate_error = angvel - target_rate
         acc_des = (

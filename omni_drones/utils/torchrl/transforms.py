@@ -321,6 +321,7 @@ class AttitudeController(Transform):
         super().__init__([], in_keys_inv=[("info", "drone_state")])
         self.controller = controller
         self.action_key = action_key
+        self.max_thrust = self.controller.max_thrusts.sum(-1)
     
     def transform_input_spec(self, input_spec: TensorSpec) -> TensorSpec:
         action_spec = input_spec[("_action_spec", *self.action_key)]
@@ -331,10 +332,14 @@ class AttitudeController(Transform):
     def _inv_call(self, tensordict: TensorDictBase) -> TensorDictBase:
         drone_state = tensordict[("info", "drone_state")][..., :13]
         action = tensordict[self.action_key]
-        control_target = action.clone()
-        control_target[..., :3] *= torch.pi
-        control_target[..., 3] = (control_target[..., 3].clamp(-1., 1.)+ 1.)
-        cmds = self.controller(drone_state, control_target)
+        target_thrust, target_yaw_rate, target_roll, target_pitch = action.split(1, dim=-1)
+        cmds = self.controller(
+            drone_state,
+            target_thrust=((target_thrust+1)/2).clip(0.) * self.max_thrust,
+            target_yaw_rate=target_yaw_rate * torch.pi,
+            target_roll=target_roll * torch.pi,
+            target_pitch=target_pitch * torch.pi
+        )
         torch.nan_to_num_(cmds, 0.)
         tensordict.set(self.action_key, cmds)
         return tensordict

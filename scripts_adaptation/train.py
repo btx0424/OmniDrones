@@ -32,6 +32,7 @@ from torchrl.envs.transforms import (
     Compose,
     CatTensors
 )
+from torchrl.record import VideoRecorder
 
 from tqdm import tqdm
 
@@ -115,6 +116,10 @@ def main(cfg):
             controller = LeePositionController(9.81, base_env.drone.params).to(base_env.device)
             transform = VelController(vmap(controller))
             transforms.append(transform)
+        elif action_transform == "rate":
+            from omni_drones.controllers import RateController
+            transform = RateController.make()
+            transforms.append()
         elif action_transform == "attitude":
             from omni_drones.controllers import AttitudeController as _AttitudeController
             controller = _AttitudeController(9.81, base_env.drone.params).to(base_env.device)

@@ -15,7 +15,7 @@ from omni_drones.actuators.rotor_group import RotorGroup
 from omni_drones.controllers import LeePositionController
 
 from omni_drones.robots import RobotBase, RobotCfg
-from omni_drones.utils.torch import normalize, off_diag, quaternion_to_euler
+from omni_drones.utils.torch import normalize, off_diag, quat_rotate_inverse
 
 from dataclasses import dataclass
 from collections import defaultdict
@@ -240,6 +240,7 @@ class MultirotorBase(RobotBase):
         if hasattr(self, "_envs_positions"):
             self.pos.sub_(self._envs_positions)
         vel = self.get_velocities(True)
+        vel[..., 3:] = quat_rotate_inverse(self.rot, vel[..., 3:])
         acc = self.acc.lerp((vel - self.vel) / self.dt, self.alpha)
         jerk = self.jerk.lerp((acc - self.acc) / self.dt, self.alpha)
         self.jerk[:] = jerk

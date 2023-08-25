@@ -56,10 +56,10 @@ class InvPendulumHover(IsaacEnv):
 
     """
     def __init__(self, cfg, headless):
-        self.reward_effort_weight = self.cfg.task.reward_effort_weight
-        self.reward_action_smoothness_weight = self.cfg.task.reward_action_smoothness_weight
-        self.reward_distance_scale = self.cfg.task.reward_distance_scale
-        self.time_encoding = self.cfg.task.time_encoding
+        self.reward_effort_weight = cfg.task.reward_effort_weight
+        self.reward_action_smoothness_weight = cfg.task.reward_action_smoothness_weight
+        self.reward_distance_scale = cfg.task.reward_distance_scale
+        self.time_encoding = cfg.task.time_encoding
 
         self.bar_length = 1.
         super().__init__(cfg, headless)

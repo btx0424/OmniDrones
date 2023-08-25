@@ -5,10 +5,10 @@ import torch.nn as nn
 class RotorGroup(nn.Module):
     def __init__(self, rotor_config, dt: float):
         super().__init__()
-        self.num_rotors = rotor_config["num_rotors"]
         force_constants = torch.as_tensor(rotor_config["force_constants"])
         moment_constants = torch.as_tensor(rotor_config["moment_constants"])
         max_rot_vels = torch.as_tensor(rotor_config["max_rotation_velocities"]).float()
+        self.num_rotors = len(force_constants)
 
         self.dt = dt
         self.time_up = 0.15

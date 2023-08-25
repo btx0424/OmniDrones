@@ -178,6 +178,7 @@ def quat_rotate_inverse(q: torch.Tensor, v: torch.Tensor):
     return a - b + c
 
 
+@manual_batch
 def quat_axis(q: torch.Tensor, axis: int=0):
     basis_vec = torch.zeros(q.shape[0], 3, device=q.device)
     basis_vec[:, axis] = 1

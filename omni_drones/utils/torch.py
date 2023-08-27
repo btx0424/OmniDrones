@@ -139,7 +139,7 @@ import functools
 def manual_batch(func):
     @functools.wraps(func)
     def wrapped(*args, **kwargs):
-        batch_shapes = set(arg.shape[:-1] for arg in args)
+        batch_shapes = set(arg.shape[:-1] for arg in args if isinstance(arg, torch.Tensor))
         if not len(batch_shapes) == 1:
             raise ValueError
         batch_shape = batch_shapes.pop()
@@ -176,6 +176,23 @@ def quat_rotate_inverse(q: torch.Tensor, v: torch.Tensor):
     b = torch.cross(q_vec, v, dim=-1) * q_w.unsqueeze(-1) * 2.0
     c = q_vec * torch.bmm(q_vec.view(shape[0], 1, 3), v.view(shape[0], 3, 1)).squeeze(-1) * 2.0
     return a - b + c
+
+@manual_batch
+def euler_rotate(rpy: torch.Tensor, v: torch.Tensor):
+    shape = rpy.shape
+    r, p, y = torch.unbind(rpy, dim=-1)
+    cr = torch.cos(r)
+    sr = torch.sin(r)
+    cp = torch.cos(p)
+    sp = torch.sin(p)
+    cy = torch.cos(y)
+    sy = torch.sin(y)
+    R = torch.stack([
+        cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr,
+        sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr,
+        -sp, cp * sr, cp * cr
+    ], dim=-1).view(*shape[:-1], 3, 3)
+    return torch.bmm(R, v.unsqueeze(-1)).squeeze(-1)
 
 
 @manual_batch

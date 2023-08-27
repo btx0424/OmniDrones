@@ -198,6 +198,11 @@ class RobotBase(abc.ABC):
             raise NotImplementedError
         return self._view.set_joint_positions(pos, env_indices=env_indices)
 
+    def set_joint_position_targets(self, pos: torch.Tensor, env_indices: torch.Tensor = None):
+        if not self.is_articulation:
+            raise NotImplementedError
+        self._view.set_joint_position_targets(pos, env_indices=env_indices)
+
     def get_joint_velocities(self, clone: bool=False):
         return self._view.get_joint_velocities(clone=clone)
 

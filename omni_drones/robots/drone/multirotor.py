@@ -117,7 +117,7 @@ class MultirotorBase(RobotBase):
         self.up = torch.zeros(*self.shape, 3, device=self.device)
         self.vel = torch.zeros(*self.shape, 6, device=self.device)
         self.acc = torch.zeros(*self.shape, 6, device=self.device)
-        self.jerk = torch.zeros(*self.shape, 6, device=self.device)
+        # self.jerk = torch.zeros(*self.shape, 6, device=self.device)
         self.alpha = 0.9
 
         self.rotor_pos_0 = (
@@ -242,8 +242,8 @@ class MultirotorBase(RobotBase):
         vel = self.get_velocities(True)
         vel[..., 3:] = quat_rotate_inverse(self.rot, vel[..., 3:])
         acc = self.acc.lerp((vel - self.vel) / self.dt, self.alpha)
-        jerk = self.jerk.lerp((acc - self.acc) / self.dt, self.alpha)
-        self.jerk[:] = jerk
+        # jerk = self.jerk.lerp((acc - self.acc) / self.dt, self.alpha)
+        # self.jerk[:] = jerk
         self.acc[:] = acc
         self.vel[:] = vel
         self.heading[:] = vmap(torch_utils.quat_axis)(self.rot, axis=0)
@@ -268,7 +268,7 @@ class MultirotorBase(RobotBase):
         self.torques[env_ids] = 0.0
         self.vel[env_ids] = 0.
         self.acc[env_ids] = 0.
-        self.jerk[env_ids] = 0.
+        # self.jerk[env_ids] = 0.
         if train and "train" in self.randomization:
             self._randomize(env_ids, self.randomization["train"])
         elif "eval" in self.randomization:

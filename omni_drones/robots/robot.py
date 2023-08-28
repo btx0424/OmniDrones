@@ -97,12 +97,7 @@ class RobotBase(abc.ABC):
         for prim_path, translation, orientation in zip(prim_paths, translations, orientations):
             if prim_utils.is_prim_path_valid(prim_path):
                 raise RuntimeError(f"Duplicate prim at {prim_path}.")
-            prim = prim_utils.create_prim(
-                prim_path,
-                usd_path=self.usd_path,
-                translation=translation,
-                orientation=orientation,
-            )
+            prim = self._create_prim(prim_path, translation, orientation)
             # apply rigid body properties
             kit_utils.set_nested_rigid_body_properties(
                 prim_path,
@@ -127,6 +122,15 @@ class RobotBase(abc.ABC):
 
         self.n += n
         return prims
+
+    def _create_prim(self, prim_path, translation, orientation):
+        prim = prim_utils.create_prim(
+            prim_path,
+            usd_path=self.usd_path,
+            translation=translation,
+            orientation=orientation,
+        )
+        return prim
 
     def initialize(
         self,

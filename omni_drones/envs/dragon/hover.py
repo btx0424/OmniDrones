@@ -4,7 +4,7 @@ import torch.distributions as D
 import omni.isaac.core.utils.prims as prim_utils
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
-from omni_drones.robots.drone import MultirotorBase
+from omni_drones.robots.drone.dragon import Dragon, DragonCfg
 from omni_drones.views import ArticulationView, RigidPrimView
 from omni_drones.utils.torch import euler_to_quaternion, quat_axis
 
@@ -100,11 +100,8 @@ class DragonHover(IsaacEnv):
 
     def _design_scene(self):
         import omni_drones.utils.kit as kit_utils
-        import omni.isaac.core.utils.prims as prim_utils
-
-        drone_model = MultirotorBase.REGISTRY["dragon"]
-        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
-        self.drone: MultirotorBase = drone_model(cfg=cfg)
+        cfg = Dragon.cfg_cls(num_links=5)
+        self.drone = Dragon(cfg=cfg)
 
         kit_utils.create_ground_plane(
             "/World/defaultGroundPlane",
@@ -199,7 +196,7 @@ class DragonHover(IsaacEnv):
         self.rpos = self.target_pos - self.drone.pos[..., 0, :]
         self.rheading = self.target_heading - self.drone.heading[..., 0, :]
         
-        obs = [self.rpos, self.root_state.flatten(-2), self.rheading,]
+        obs = [self.rpos, self.root_state, self.rheading,]
         if self.time_encoding:
             t = (self.progress_buf / self.max_episode_length).unsqueeze(-1)
             obs.append(t.expand(-1, self.time_encoding_dim).unsqueeze(1))

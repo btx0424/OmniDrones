@@ -3,8 +3,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.distributions as D
 
-from torchrl.data import CompositeSpec, TensorSpec
+from torchrl.data import CompositeSpec, TensorSpec, UnboundedContinuousTensorSpec
 from torchrl.modules import ProbabilisticActor
+from torchrl.envs import TensorDictPrimer
 from tensordict import TensorDict
 from tensordict.nn import TensorDictModule, TensorDictSequential
 
@@ -48,10 +49,10 @@ class LSTM(nn.Module):
     
     def forward(self, x: torch.Tensor, is_init: torch.Tensor, hx: torch.Tensor, cx: torch.Tensor):
         T = x.shape[1]
-        if hx is None:
-            hx = torch.zeros(*x.shape[:-1], self.lstm.hidden_size, device=x.device)
-        if cx is None:
-            cx = torch.zeros(*x.shape[:-1], self.lstm.hidden_size, device=x.device)
+        # if hx is None:
+        #     hx = torch.zeros(*x.shape[:-1], self.lstm.hidden_size, device=x.device)
+        # if cx is None:
+        #     cx = torch.zeros(*x.shape[:-1], self.lstm.hidden_size, device=x.device)
         hx, cx = hx[:, 0], cx[:, 0]
         output = []
         for i in range(T):
@@ -84,25 +85,25 @@ class LSTM(nn.Module):
 
 
 class GRU(nn.Module):
-    def __init__(self, input_size, hidden_size, skip_conn) -> None:
+    def __init__(self, input_size, hidden_size, skip_conn, bptt_len: int=8) -> None:
         super().__init__()
         self.gru = nn.GRUCell(input_size, hidden_size)
         self.skip_conn = skip_conn
-        self.ln = nn.LayerNorm(hidden_size)
+        # self.ln = nn.LayerNorm(hidden_size)
 
     def forward(self, x: torch.Tensor, is_init: torch.Tensor, hx: torch.Tensor):
         T = x.shape[1]
         # if is_init is None:
         #     is_init = torch.ones(*x.shape[:-1], 1, device=x.device) 
-        if hx is None:
-            hx = torch.zeros(*x.shape[:-1], self.gru.hidden_size, device=x.device)
+        # if hx is None:
+        #     hx = torch.zeros(*x.shape[:-1], self.gru.hidden_size, device=x.device)
         hx = hx[:, 0]
         output = []
         for i in range(T):
             hx = self._forward(x[:, i], is_init[:, i], hx)
             output.append(hx)
         output = torch.stack(output, dim=1)
-        output = self.ln(output)
+        # output = self.ln(output)
         if self.skip_conn == "add":
             output = x + output
         elif self.skip_conn == "cat":
@@ -123,7 +124,7 @@ class GRU(nn.Module):
 @dataclass
 class PPOConfig:
     name: str = "ppo_rnn"
-    train_every: int = 64
+    train_every: int = 32
     ppo_epochs: int = 4
     num_minibatches: int = 16
     seq_len: int = 16
@@ -135,7 +136,7 @@ class PPOConfig:
 
 cs = ConfigStore.instance()
 cs.store("ppo_gru", node=PPOConfig, group="algo")
-cs.store("ppo_lstm", node=replace(PPOConfig(), rnn="lstm"), group="algo")
+cs.store("ppo_lstm", node=PPOConfig(rnn="lstm"), group="algo")
 
 
 class PPORNNPolicy:
@@ -203,6 +204,7 @@ class PPORNNPolicy:
             return_log_prob=True
         ).to(self.device)
 
+        self._maybe_init_state(fake_input)
         self.actor(fake_input.unsqueeze(1))
         self.critic(fake_input.unsqueeze(1))
         
@@ -220,7 +222,20 @@ class PPORNNPolicy:
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=5e-4)
         self.value_norm = ValueNorm1(reward_spec.shape[-2:]).to(self.device)
     
+    def _maybe_init_state(self, tensordict: TensorDict):
+        shape = tensordict.get(("agents", "observation")).shape[:-1]
+        if self.cfg.rnn == "gru":
+            for key in ("actor_hx", "critic_hx"):
+                if key not in tensordict.keys():
+                    tensordict.set(key, torch.zeros(*shape, self.cfg.hidden_size, device=self.device))
+        elif self.cfg.rnn == "lstm":
+            for key in ("actor_hx", "actor_cx", "critic_hx", "critic_cx"):
+                if key not in tensordict.keys():
+                    tensordict.set(key, torch.zeros(*shape, self.cfg.hidden_size, device=self.device))
+        return tensordict
+
     def __call__(self, tensordict: TensorDict):
+        self._maybe_init_state(tensordict)
         tensordict = tensordict.unsqueeze(1) # dummy time dimension
         tensordict = self.actor(tensordict)
         tensordict = self.critic(tensordict)
@@ -307,8 +322,9 @@ def make_batch(tensordict: TensorDict, num_minibatches: int, seq_len: int=-1):
     if seq_len > 1:
         N, T = tensordict.shape
         T = (T // seq_len) * seq_len
+        tensordict = tensordict[:, :T].reshape(-1, seq_len)
         perm = torch.randperm(
-            (N // num_minibatches) * num_minibatches,
+            (tensordict.shape[0] // num_minibatches) * num_minibatches,
             device=tensordict.device,
         ).reshape(num_minibatches, -1)
         for indices in perm:

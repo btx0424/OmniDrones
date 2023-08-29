@@ -160,7 +160,6 @@ class InvPendulumHover(IsaacEnv):
             "episode_len": UnboundedContinuousTensorSpec(1),
             "pos_error": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(1),
-            "motion_smoothness": UnboundedContinuousTensorSpec(1)
         }).expand(self.num_envs).to(self.device)
         info_spec = CompositeSpec({
             "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13)),
@@ -220,11 +219,6 @@ class InvPendulumHover(IsaacEnv):
 
         self.stats["pos_error"].lerp_(self.pos_error, (1-self.alpha))
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
-        smoothness = (
-            self.drone.get_linear_smoothness()
-            + self.drone.get_angular_smoothness()
-        )
-        self.stats["motion_smoothness"].lerp_(smoothness, (1-self.alpha))
 
         return TensorDict({
             "agents":{

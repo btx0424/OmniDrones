@@ -38,7 +38,7 @@ class RotorConfig:
 class DragonCfg(RobotCfg):
     num_links: int = 4
     articulation_props: ArticulationRootPropertiesCfg = ArticulationRootPropertiesCfg(
-        solver_velocity_iteration_count=16, enable_self_collisions=False)
+        solver_velocity_iteration_count=16, enable_self_collisions=True)
     force_sensor: bool = False
     rotor_cfg: RotorConfig = RotorConfig(
         directions=torch.tensor([1, -1]),

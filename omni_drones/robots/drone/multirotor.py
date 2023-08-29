@@ -52,6 +52,8 @@ class MultirotorBase(RobotBase):
             # "com": UnboundedContinuousTensorSpec(3),
             "KF": UnboundedContinuousTensorSpec(self.num_rotors),
             "KM": UnboundedContinuousTensorSpec(self.num_rotors),
+            "tau_up": UnboundedContinuousTensorSpec(self.num_rotors),
+            "tau_down": UnboundedContinuousTensorSpec(self.num_rotors),
             "drag_coef": UnboundedContinuousTensorSpec(1),
             "rotor_offset": UnboundedContinuousTensorSpec(1),
         }).to(self.device)
@@ -102,6 +104,8 @@ class MultirotorBase(RobotBase):
         self.KM_0 = rotor_params["KM"].clone()
         self.rotor_params = rotor_params.expand(self.shape).clone()
 
+        self.tau_up = self.rotor_params["tau_up"]
+        self.tau_down = self.rotor_params["tau_down"]
         self.KF = self.rotor_params["KF"]
         self.KM = self.rotor_params["KM"]
         self.throttle = self.rotor_params["throttle"]
@@ -185,6 +189,18 @@ class MultirotorBase(RobotBase):
                 self.randomization[phase]["rotor_offset"] = D.Uniform(
                     torch.tensor(rotor_pos_offset_scale[0], device=self.device), 
                     torch.tensor(rotor_pos_offset_scale[1], device=self.device)
+                )
+            tau_up = cfg[phase].get("tau_up", None)
+            if tau_up is not None:
+                self.randomization[phase]["tau_up"] = D.Uniform(
+                    torch.tensor(tau_up[0], device=self.device),
+                    torch.tensor(tau_up[1], device=self.device)
+                )
+            tau_down = cfg[phase].get("tau_down", None)
+            if tau_down is not None:
+                self.randomization[phase]["tau_down"] = D.Uniform(
+                    torch.tensor(tau_down[0], device=self.device),
+                    torch.tensor(tau_down[1], device=self.device)
                 )
             if not len(self.randomization[phase]) == len(cfg[phase]):
                 unkown_keys = set(cfg[phase].keys()) - set(self.randomization[phase].keys())
@@ -316,6 +332,14 @@ class MultirotorBase(RobotBase):
             pos_offset = self.rotor_pos_0[..., :2] * offset_scale
             self.rotor_pos_offset[env_ids, ..., :2] = pos_offset.unsqueeze(1)
             self.intrinsics["rotor_offset"][env_ids] = offset_scale
+        if "tau_up" in distributions:
+            tau_up = distributions["tau_up"].sample(shape+self.rotors_view.shape[1:])
+            self.tau_up[env_ids] = tau_up
+            self.intrinsics["tau_up"][env_ids] = tau_up
+        if "tau_down" in distributions:
+            tau_down = distributions["tau_down"].sample(shape+self.rotors_view.shape[1:])
+            self.tau_down[env_ids] = tau_down
+            self.intrinsics["tau_down"][env_ids] = tau_down
     
     def get_thrust_to_weight_ratio(self):
         return self.KF.sum(-1, keepdim=True) / (self.masses * 9.81)

@@ -143,8 +143,8 @@ class PlatformHover(IsaacEnv):
         self.observation_spec = CompositeSpec({
             "agents": {
                 "observation": observation_spec.expand(self.drone.n),
-                "state": state_spec,
-            }
+            },
+            "state": state_spec,
         }).expand(self.num_envs).to(self.device)
         self.action_spec = CompositeSpec({
             "agents": {
@@ -269,8 +269,8 @@ class PlatformHover(IsaacEnv):
             {
                 "agents": {
                     "observation": obs,
-                    "state": state
                 },
+                "state": state,
                 "stats": self.stats
             },
             self.batch_size,

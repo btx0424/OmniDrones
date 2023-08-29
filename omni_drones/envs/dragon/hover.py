@@ -100,7 +100,7 @@ class DragonHover(IsaacEnv):
 
     def _design_scene(self):
         import omni_drones.utils.kit as kit_utils
-        cfg = Dragon.cfg_cls(num_links=5)
+        cfg = Dragon.cfg_cls(num_links=4)
         self.drone = Dragon(cfg=cfg)
 
         kit_utils.create_ground_plane(

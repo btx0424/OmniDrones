@@ -24,7 +24,7 @@ def main(cfg):
         backend="torch",
         device=cfg.sim.device,
     )
-    drone = Dragon()
+    drone = Dragon(cfg=Dragon.cfg_cls(num_links=5))
 
     translations = torch.zeros(1, 3)
     translations[:, 2] = 1.5

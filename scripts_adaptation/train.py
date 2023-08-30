@@ -10,9 +10,8 @@ from functorch import vmap
 from omegaconf import OmegaConf
 
 from omni_drones import CONFIG_PATH, init_simulation_app
-from omni_drones.utils.torchrl import SyncDataCollector, AgentSpec
+from omni_drones.utils.torchrl import SyncDataCollector
 from omni_drones.utils.torchrl.transforms import (
-    LogOnEpisode, 
     FromMultiDiscreteAction, 
     FromDiscreteAction,
     ravel_composite,
@@ -32,7 +31,6 @@ from torchrl.envs.transforms import (
     Compose,
     CatTensors
 )
-from torchrl.record import VideoRecorder
 
 from tqdm import tqdm
 
@@ -46,6 +44,33 @@ class Every:
         if self.i % self.steps == 0:
             self.func(*args, **kwargs)
         self.i += 1
+
+from typing import Sequence
+from tensordict import TensorDictBase
+
+class EpisodeStats:
+    def __init__(self, in_keys: Sequence[str] = None):
+        self.in_keys = in_keys
+        self._stats = []
+        self._episodes = 0
+
+    def __call__(self, tensordict: TensorDictBase) -> TensorDictBase:
+        _reset = tensordict.get(("next", "done"), None)
+        if _reset is not None and _reset.any():
+            _reset = _reset.squeeze(-1)
+            self._episodes += _reset.sum().item()
+            self._stats.extend(
+                tensordict.select(*self.in_keys)[_reset].clone().unbind(0)
+            )
+    
+    def pop(self):
+        stats: TensorDictBase = torch.stack(self._stats).to_tensordict()
+        self._stats.clear()
+        return stats
+
+    def __len__(self):
+        return len(self._stats)
+
 
 @hydra.main(config_path=CONFIG_PATH, config_name="train", version_base=None)
 def main(cfg):
@@ -67,22 +92,7 @@ def main(cfg):
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
     base_env = env_class(cfg, headless=cfg.headless)
 
-    def log(info):
-        print(OmegaConf.to_yaml(info))
-        run.log(info)
-
-    stats_keys = [
-        k for k in base_env.observation_spec.keys(True, True) 
-        if isinstance(k, tuple) and k[0]=="stats"
-    ]
-    logger = LogOnEpisode(
-        cfg.env.num_envs,
-        in_keys=stats_keys,
-        log_keys=stats_keys,
-        logger_func=log,
-        # process_func={"return_std": lambda x: torch.std(x).item()}
-    )
-    transforms = [InitTracker(), logger]
+    transforms = [InitTracker()]
 
     # a CompositeSpec is by deafault processed by a entity-based encoder
     # flatten it to use a MLP encoder instead
@@ -140,6 +150,11 @@ def main(cfg):
     eval_interval = cfg.get("eval_interval", -1)
     save_interval = cfg.get("save_interval", -1)
 
+    stats_keys = [
+        k for k in base_env.observation_spec.keys(True, True) 
+        if isinstance(k, tuple) and k[0]=="stats"
+    ]
+    episode_stats = EpisodeStats(stats_keys)
     collector = SyncDataCollector(
         env,
         policy=policy,
@@ -150,7 +165,7 @@ def main(cfg):
     )
 
     @torch.no_grad()
-    def evaluate():
+    def evaluate(seed: int=0):
         frames = []
 
         def record_frame(*args, **kwargs):
@@ -159,36 +174,55 @@ def main(cfg):
 
         base_env.enable_render(True)
         env.eval()
-        env.rollout(
+        env.set_seed(seed)
+        traj = env.rollout(
             max_steps=base_env.max_episode_length,
             policy=policy,
             callback=Every(record_frame, 2),
             auto_reset=True,
             break_when_any_done=False,
-            return_contiguous=False
+            return_contiguous=False,
         )
         base_env.enable_render(not cfg.headless)
         env.reset()
-        env.train()
 
-        if len(frames):
-            # video_array = torch.stack(frames)
-            video_array = np.stack(frames).transpose(0, 3, 1, 2)
-            info["recording"] = wandb.Video(
-                video_array, fps=0.5 / cfg.sim.dt, format="mp4"
-            )
+        first_done = torch.argmax(traj[("next", "done")].long(), dim=1).cpu()
+        def take_first(tensor: torch.Tensor):
+            indices = first_done.reshape(first_done.shape+(1,)*(tensor.ndim-2))
+            return torch.take_along_dim(tensor, indices)
+        traj_stats = traj.select(*stats_keys).cpu().apply(take_first, batch_size=[len(first_done)])
+        info = {
+            "eval/" + (".".join(k) if isinstance(k, tuple) else k): torch.mean(v).item() 
+            for k, v in traj_stats.items(True, True)
+        }
+        video_array = np.stack(frames).transpose(0, 3, 1, 2)
         frames.clear()
+        info["recording"] = wandb.Video(video_array, fps=0.5 / cfg.sim.dt, format="mp4")
+        returns = traj_stats[("stats", "return")]
+        info["return_hist"] = wandb.Histogram(np_histogram=np.histogram(returns, bins=32))
+        table = wandb.Table(columns=["return"], data=returns.unsqueeze(-1).tolist())
+        info["return_dist"] = wandb.plot.histogram(table, "return")
         return info
 
     pbar = tqdm(collector)
     env.train()
     for i, data in enumerate(pbar):
         info = {"env_frames": collector._frames, "rollout_fps": collector._fps}
+        episode_stats(data.to_tensordict())
+        
+        if len(episode_stats) >= base_env.num_envs:
+            stats = {
+                "train/" + (".".join(k) if isinstance(k, tuple) else k): torch.mean(v).item() 
+                for k, v in episode_stats.pop().items(True, True)
+            }
+            info.update(stats)
+
         info.update(policy.train_op(data.to_tensordict()))
 
         if eval_interval > 0 and i % eval_interval == 0:
             logging.info(f"Eval at {collector._frames} steps.")
             info.update(evaluate())
+            env.train()
 
         if save_interval > 0 and i % save_interval == 0:
             try:

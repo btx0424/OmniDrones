@@ -32,12 +32,15 @@ randomization:
       rotor_offset_scale: [-0.4, 0.4]
       tau_up: [0.2, 1.0]
       tau_down: [0.2, 1.0]
-    # eval:
-    #   mass_scale: [0.6, 1.25]
-    #   inertia_scale: [[0.6, 0.6, 0.6], [2.0, 2.0, 2.0]]
-    #   t2w_scale: [0.8, 1.2]
-    #   drag_coef_scale: [0.2, 2.]
-    #   rotor_pos_offset_scale: 0.1
+    eval:
+      mass_scale: [0.26, 1.74]
+      inertia_scale: [0.026, 1.974]
+      t2w_scale: [0.5556, 2.23]
+      f2m_scale: [0.625, 2.5]
+      drag_coef_scale: [0, 0.62]
+      rotor_offset_scale: [-0.4, 0.4]
+      tau_up: [0.2, 1.0]
+      tau_down: [0.2, 1.0]
   payload:
     z: [-0.1, 0.1]
     mass: [0.01, 0.5]

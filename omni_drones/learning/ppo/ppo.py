@@ -19,7 +19,7 @@ from ..modules.distributions import IndependentNormal
 @dataclass
 class PPOConfig:
     name: str = "ppo"
-    train_every: int = 64
+    train_every: int = 32
     ppo_epochs: int = 4
     num_minibatches: int = 16
 

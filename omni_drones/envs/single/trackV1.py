@@ -80,6 +80,7 @@ class TrackV1(IsaacEnv):
         self.wind = cfg.task.wind
         self.randomization = cfg.task.get("randomization", {})
         self.has_payload = "payload" in self.randomization.keys()
+        self.device_name='cuda:0'
 
         super().__init__(cfg, headless)
         
@@ -192,15 +193,19 @@ class TrackV1(IsaacEnv):
             "tracking_error": UnboundedContinuousTensorSpec(1),
             "heading_alignment": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(1),
+            "mse": UnboundedContinuousTensorSpec(1),
             "dist_one":UnboundedContinuousTensorSpec(1),
             "dist_two":UnboundedContinuousTensorSpec(1),
             "dist_three":UnboundedContinuousTensorSpec(1),
             "dist_four":UnboundedContinuousTensorSpec(1),
             "dist_five":UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
+        context_dims=64
         info_spec = CompositeSpec({
             "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13), device=self.device),
             "prev_action": torch.stack([self.drone.action_spec] * self.drone.n, dim=0).to(self.device),
+            "true_context": UnboundedContinuousTensorSpec((1,context_dims), device=self.device),
+            "pred_context": UnboundedContinuousTensorSpec((1,context_dims), device=self.device),
         }).expand(self.num_envs)
 
         self.observation_spec["info"] = info_spec
@@ -278,6 +283,9 @@ class TrackV1(IsaacEnv):
         actions = tensordict[("agents", "action")]
         self.effort = self.drone.apply_action(actions)
         self.info["prev_action"][:] = actions
+        if not self.training :
+            self.info["pred_context"][:] = tensordict['context']
+            self.info["true_context"][:] = tensordict['context_target']
 
     def _compute_state_and_obs(self):
         self.root_state = self.drone.get_state()
@@ -335,8 +343,22 @@ class TrackV1(IsaacEnv):
             self.stats["return"] += reward
         else:
             #reward=self.check_nan(reward)
+            mse_loss=torch.nn.MSELoss(reduction='none')
+            mse=mse_loss(self.info['pred_context'],self.info['true_context']).mean(-1)
+            self.stats["mse"] = mse
             reward_weight=torch.where((self.progress_buf > self.warmup_phase_steps * torch.ones_like(self.progress_buf)), 1, 0)[0].item()
-            self.stats["return"] += reward_weight * reward 
+            self.stats["return"] += reward_weight * reward
+            range_nums_one = ( ( pos_error < 0.1 ) == True ).sum().item()
+            range_nums_two = ( ( pos_error < 0.3 ) == True ).sum().item()
+            range_nums_three = ( ( pos_error < 1 ) == True ).sum().item()
+            range_nums_four = ( ( pos_error < 5 ) == True ).sum().item()
+            range_nums_five = ( (pos_error >= 5) == True ).sum().item() 
+            self.stats["dist_one"] = range_nums_one / self.num_envs * torch.ones([self.num_envs,1],device=self.device_name)
+            self.stats["dist_two"] = range_nums_two / self.num_envs * torch.ones([self.num_envs,1],device=self.device_name)
+            self.stats["dist_three"] = range_nums_three / self.num_envs * torch.ones([self.num_envs,1],device=self.device_name)
+            self.stats["dist_four"] = range_nums_four / self.num_envs * torch.ones([self.num_envs,1],device=self.device_name)
+            self.stats["dist_five"] = range_nums_five / self.num_envs * torch.ones([self.num_envs,1],device=self.device_name)
+
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
 
 

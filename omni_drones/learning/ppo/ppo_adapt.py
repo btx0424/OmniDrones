@@ -26,8 +26,8 @@ class PPOConfig:
     
 
     checkpoint_path: Union[str, None] = None
-    #phase: str = "adaptation"
-    phase: str = "encoder"
+    phase: str = "adaptation"
+    #phase: str = "encoder"
     checkpoint_path: str = "/home/liyitong/OmniDrones/wandb/run-20230831_212213-uwd70zfc/files/checkpoint_final.pt"
     condition_mode: str = "cat"
 

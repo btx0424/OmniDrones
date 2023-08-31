@@ -38,6 +38,7 @@ class IsaacEnv(EnvBase):
         self.enable_viewport = True
         # extract commonly used parameters
         self.num_envs = self.cfg.env.num_envs
+        self.warmup_phase_steps = self.cfg.env.warmup_phase_steps
         self.max_episode_length = self.cfg.env.max_episode_length
         self.min_episode_length = self.cfg.env.min_episode_length
 
@@ -190,7 +191,13 @@ class IsaacEnv(EnvBase):
         else:
             env_mask = torch.ones(self.num_envs, dtype=bool, device=self.device)
         env_ids = env_mask.nonzero().squeeze(-1)
-        self._reset_idx(env_ids)
+        if len(kwargs):   
+            judge=kwargs['kwargs']
+            self.judge=judge
+            self._reset_idx(env_ids,judge)
+        else:
+            self.judge=False
+            self._reset_idx(env_ids)
         # self.sim.step(render=False)
         self.sim._physics_sim_view.flush()
         self.progress_buf[env_ids] = 0.

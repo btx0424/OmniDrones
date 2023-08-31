@@ -1,7 +1,7 @@
 import functorch
 import torch
 import torch.distributions as D
-
+import numpy as np
 import omni.isaac.core.utils.prims as prim_utils
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
@@ -87,21 +87,35 @@ class Hover(IsaacEnv):
             self.drone.setup_randomization(self.randomization["drone"])
         if "payload" in self.randomization:
             payload_cfg = self.randomization["payload"]
-            self.payload_z_dist = D.Uniform(
-                torch.tensor([payload_cfg["z"][0]], device=self.device),
-                torch.tensor([payload_cfg["z"][1]], device=self.device)
+            self.payload_z_dist_train = D.Uniform(
+                torch.tensor([payload_cfg["z_train"][0]], device=self.device),
+                torch.tensor([payload_cfg["z_train"][1]], device=self.device)
             )
-            self.payload_mass_dist = D.Uniform(
-                torch.tensor([payload_cfg["mass"][0]], device=self.device),
-                torch.tensor([payload_cfg["mass"][1]], device=self.device)
+            self.payload_mass_dist_train = D.Uniform(
+                torch.tensor([payload_cfg["mass_train"][0]], device=self.device),
+                torch.tensor([payload_cfg["mass_train"][1]], device=self.device)
             )
+            self.payload_z_dist_eval = D.Uniform(
+                torch.tensor([payload_cfg["z_eval"][0]], device=self.device),
+                torch.tensor([payload_cfg["z_eval"][1]], device=self.device)
+            )
+            self.payload_mass_dist_eval = D.Uniform(
+                torch.tensor([payload_cfg["mass_eval"][0]], device=self.device),
+                torch.tensor([payload_cfg["mass_eval"][1]], device=self.device)
+            )
+            self.low = torch.tensor([payload_cfg["mass_eval"][0]], device=self.device)
+            self.high = torch.tensor([payload_cfg["mass_eval"][1]], device=self.device)
+            self.interval = (self.high - self.low) / 3
+
             self.payload = RigidPrimView(
                 f"/World/envs/env_*/{self.drone.name}_*/payload",
                 reset_xform_properties=False,
                 shape=(-1, self.drone.n)
             )
             self.payload.initialize()
-        
+
+        self.device_name='cuda:0'
+        self.thre=0.1
         self.target_vis = ArticulationView(
             "/World/envs/env_*/target",
             reset_xform_properties=False
@@ -126,6 +140,7 @@ class Hover(IsaacEnv):
         self.target_pos = torch.tensor([[0.0, 0.0, 2.]], device=self.device)
         self.target_heading = torch.zeros(self.num_envs, 1, 3, device=self.device)
         self.alpha = 0.8
+        self.index = 0
 
     def _design_scene(self):
         import omni_drones.utils.kit as kit_utils
@@ -168,10 +183,12 @@ class Hover(IsaacEnv):
         if self.cfg.task.time_encoding:
             self.time_encoding_dim = 4
             observation_dim += self.time_encoding_dim
+        observation_dim += self.drone.action_spec.shape[-1]
 
         self.observation_spec = CompositeSpec({
             "agents": CompositeSpec({
                 "observation": UnboundedContinuousTensorSpec((1, observation_dim), device=self.device),
+                "observation_h": UnboundedContinuousTensorSpec((1, observation_dim, 50), device=self.device),
                 "intrinsics": self.drone.intrinsics_spec.unsqueeze(0).to(self.device)
             })
         }).expand(self.num_envs).to(self.device)
@@ -200,19 +217,41 @@ class Hover(IsaacEnv):
             "heading_alignment": UnboundedContinuousTensorSpec(1),
             "uprightness": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(1),
+            "mse": UnboundedContinuousTensorSpec(1),
+            #"success_rate":UnboundedContinuousTensorSpec(1),
+            "dist_one":UnboundedContinuousTensorSpec(1),
+            "dist_two":UnboundedContinuousTensorSpec(1),
+            "dist_three":UnboundedContinuousTensorSpec(1),
+            "dist_four":UnboundedContinuousTensorSpec(1),
+            "dist_five":UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
+        context_dims = 64
         info_spec = CompositeSpec({
             "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13), device=self.device),
             "prev_action": torch.stack([self.drone.action_spec] * self.drone.n, 0).to(self.device),
+            "true_context": UnboundedContinuousTensorSpec((1,context_dims), device=self.device),
+            "pred_context": UnboundedContinuousTensorSpec((1,context_dims), device=self.device),
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
         self.observation_spec["info"] = info_spec
         self.stats = stats_spec.zero()
         self.info = info_spec.zero()
+        self.log_in_range=False
+
+        self.observation_h = self.observation_spec[("agents", "observation_h")].zero()
 
 
-    def _reset_idx(self, env_ids: torch.Tensor):
-        self.drone._reset_idx(env_ids, self.training)
+
+    def _reset_idx(self, env_ids: torch.Tensor, judge:bool=False):
+        if judge:
+            train_judge=False
+        else:
+            train_judge=True
+        self.training=train_judge
+
+        payload_mass_ratio = self.payload_mass_dist_train.sample(env_ids.shape+(1,))
+
+        self.drone._reset_idx(env_ids, train_judge,self.has_payload, payload_mass_ratio)
         
         pos = self.init_pos_dist.sample((*env_ids.shape, 1))
         rpy = self.init_rpy_dist.sample((*env_ids.shape, 1))
@@ -222,9 +261,9 @@ class Hover(IsaacEnv):
         )
         self.drone.set_velocities(self.init_vels[env_ids], env_ids)
 
-        if self.has_payload:
+        if self.has_payload and train_judge:
             # TODO@btx0424: workout a better way 
-            payload_z = self.payload_z_dist.sample(env_ids.shape)
+            payload_z = self.payload_z_dist_train.sample(env_ids.shape)
             joint_indices = torch.tensor([self.drone._view._dof_indices["PrismaticJoint"]], device=self.device)
             self.drone._view.set_joint_positions(
                 payload_z, env_indices=env_ids, joint_indices=joint_indices)
@@ -234,8 +273,29 @@ class Hover(IsaacEnv):
                 torch.zeros(len(env_ids), 1, device=self.device), 
                 env_indices=env_ids, joint_indices=joint_indices)
             
-            payload_mass = self.payload_mass_dist.sample(env_ids.shape+(1,)) * self.drone.masses[env_ids]
+            payload_mass =  payload_mass_ratio* self.drone.masses[env_ids]
             self.payload.set_masses(payload_mass, env_indices=env_ids)
+        elif self.has_payload:
+            '''self.index = 0
+            point = self.low + self.interval * self.index
+            print(point)
+            self.payload_mass_dist_eval = D.Uniform(
+                point,
+                1.0001 * point
+            )'''
+            payload_z = self.payload_z_dist_eval.sample(env_ids.shape)
+            joint_indices = torch.tensor([self.drone._view._dof_indices["PrismaticJoint"]], device=self.device)
+            self.drone._view.set_joint_positions(
+                payload_z, env_indices=env_ids, joint_indices=joint_indices)
+            self.drone._view.set_joint_position_targets(
+                payload_z, env_indices=env_ids, joint_indices=joint_indices)
+            self.drone._view.set_joint_velocities(
+                torch.zeros(len(env_ids), 1, device=self.device), 
+                env_indices=env_ids, joint_indices=joint_indices)
+            
+            payload_mass = payload_mass_ratio * self.drone.masses[env_ids]
+            self.payload.set_masses(payload_mass, env_indices=env_ids)
+
 
         target_rpy = self.target_rpy_dist.sample((*env_ids.shape, 1))
         target_rot = euler_to_quaternion(target_rpy)
@@ -243,10 +303,38 @@ class Hover(IsaacEnv):
         self.target_vis.set_world_poses(orientations=target_rot, env_indices=env_ids)
 
         self.stats[env_ids] = 0.
+        self.info["prev_action"][env_ids] = 0.
+        self.observation_h[env_ids] = 0.
+
+    def force_reset(self):
+        env_ids = torch.arange(0,self.num_envs,1,device='cuda:0')
+        point = self.low + self.interval * self.index
+        print(point)
+        self.payload_mass_dist_eval = D.Uniform(
+                point,
+                1.0001 * point
+        )
+        if True:
+            payload_z = self.payload_z_dist_eval.sample(env_ids.shape)
+            joint_indices = torch.tensor([self.drone._view._dof_indices["PrismaticJoint"]], device=self.device)
+            self.drone._view.set_joint_positions(
+                payload_z, env_indices=env_ids, joint_indices=joint_indices)
+            self.drone._view.set_joint_position_targets(
+                payload_z, env_indices=env_ids, joint_indices=joint_indices)
+            self.drone._view.set_joint_velocities(
+                torch.zeros(len(env_ids), 1, device=self.device), 
+                env_indices=env_ids, joint_indices=joint_indices)
+            
+            payload_mass = self.payload_mass_dist_eval.sample(env_ids.shape+(1,)) * self.drone.masses[env_ids]
+            self.payload.set_masses(payload_mass, env_indices=env_ids)      
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("agents", "action")]
         self.effort = self.drone.apply_action(actions)
+        self.info["prev_action"][:] = actions
+        if not self.training :
+            self.info["pred_context"][:] = tensordict['context']
+            self.info["true_context"][:] = tensordict['context_target']
 
     def _compute_state_and_obs(self):
         self.root_state = self.drone.get_state()
@@ -256,15 +344,17 @@ class Hover(IsaacEnv):
         self.rpos = self.target_pos - self.root_state[..., :3]
         self.rheading = self.target_heading - self.root_state[..., 13:16]
         
-        obs = [self.rpos, self.root_state[..., 3:], self.rheading,]
+        obs = [self.rpos, self.root_state[..., 3:], self.rheading,self.info["prev_action"]]
         if self.time_encoding:
             t = (self.progress_buf / self.max_episode_length).unsqueeze(-1)
             obs.append(t.expand(-1, self.time_encoding_dim).unsqueeze(1))
         obs = torch.cat(obs, dim=-1)
+        self.observation_h[..., -1] = obs
 
         return TensorDict({
             "agents": {
                 "observation": obs,
+                "observation_h": self.observation_h,
                 "intrinsics": self.drone.intrinsics
             },
             "stats": self.stats,
@@ -298,21 +388,85 @@ class Hover(IsaacEnv):
             + reward_effort 
             + reward_action_smoothness
         )
+
         
         done_misbehave = (self.drone.pos[..., 2] < 0.2) | (distance > 4)
-
-        done = (
+        truncated_eval = (self.progress_buf >= self.max_episode_length - 1).unsqueeze(-1)
+        if self.training:
+            done = (
             (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
             | done_misbehave
-        )
+            )
+        else:
+            done = truncated_eval
+            if self.progress_buf[0] == 1 or self.progress_buf[0] == 150 or self.progress_buf[0] == 300 or self.progress_buf[0] == 450 :
+                #self.force_reset()
+                print(self.progress_buf[0])
+                self.index += 1
+                if self.index==4:
+                    self.index=0
+            #mse_loss=torch.nn.MSELoss(reduction='none')
+            #mse=mse_loss(self.info['pred_context'],self.info['true_context']).mean(-1)
 
-        self.stats["pos_error"].lerp_(pos_error, (1-self.alpha))
-        self.stats["heading_alignment"].lerp_(heading_alignment, (1-self.alpha))
-        self.stats["uprightness"].lerp_(self.root_state[..., 18], (1-self.alpha))
-        self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
-        self.stats["return"] += reward
+
+        #self.stats["pos_error"].lerp_(pos_error, (1-self.alpha))
+
+
+        if self.training:
+            self.stats["pos_error"].lerp_(pos_error, (1-self.alpha))
+            self.stats["heading_alignment"].lerp_(heading_alignment, (1-self.alpha))
+            self.stats["uprightness"].lerp_(self.root_state[..., 18], (1-self.alpha))
+            self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
+        else:
+            #pos_error_weight=torch.where((self.progress_buf > ( 5 * self.warmup_phase_steps + 60 ) * torch.ones_like(self.progress_buf)), 1, 0)[0].item()
+            pos_error_weight=torch.where((self.progress_buf > (1) * torch.ones_like(self.progress_buf)), 1, 0)[0].item()
+            self.stats["pos_error"] = pos_error_weight * pos_error
+            range_nums_one = ( ( self.stats['pos_error'] < 0.1 ) == True ).sum().item()
+            range_nums_two = ( ( self.stats['pos_error'] < 0.3 ) == True ).sum().item()
+            range_nums_three = ( ( self.stats['pos_error'] < 1 ) == True ).sum().item()
+            range_nums_four = ( ( self.stats['pos_error'] < 5 ) == True ).sum().item()
+            range_nums_five = ( (self.stats['pos_error'] >= 5) == True ).sum().item()
+            self.stats["mse"] = self.stats["pos_error"]
+            self.stats["dist_one"] = range_nums_one / self.num_envs * torch.ones([self.num_envs,1],device=self.device_name)
+            self.stats["dist_two"] = range_nums_two / self.num_envs * torch.ones([self.num_envs,1],device=self.device_name)
+            self.stats["dist_three"] = range_nums_three / self.num_envs * torch.ones([self.num_envs,1],device=self.device_name)
+            self.stats["dist_four"] = range_nums_four / self.num_envs * torch.ones([self.num_envs,1],device=self.device_name)
+            self.stats["dist_five"] = range_nums_five / self.num_envs * torch.ones([self.num_envs,1],device=self.device_name)
+            self.stats["heading_alignment"].lerp_(heading_alignment, (1-self.alpha))
+            self.stats["uprightness"].lerp_(self.root_state[..., 18], (1-self.alpha))
+            self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
+
+            sample_1=self.info['pred_context'][0,:,:]
+            sample_1_data=sample_1.data.cpu()
+            title_1="sample_1"
+            with open(title_1,"a") as f:
+                np.savetxt(f,sample_1_data,delimiter=',',fmt="%f")
+
+            sample_2=self.info['pred_context'][50,:,:]
+            sample_2_data=sample_2.data.cpu()
+            title_2="sample_2"
+            with open(title_2,"a") as g:
+                np.savetxt(g,sample_2_data,delimiter=',',fmt="%f")
+
+            sample_3=self.info['pred_context'][100,:,:]
+            sample_3_data=sample_3.data.cpu()
+            title_3="sample_3"
+            with open(title_3,"a") as h:
+                np.savetxt(h,sample_3_data,delimiter=',',fmt="%f")
+
+            self.stats["action_smoothness"] = self.info['pred_context'][:,:,0]
+            self.stats["heading_alignment"] = self.info['pred_context'][:,:,5]
+            self.stats["uprightness"] = self.info['pred_context'][:,:,10]
+            
+
+        if self.training:
+            self.stats["return"] += reward
+        else:
+            reward_weight=torch.where((self.progress_buf > self.warmup_phase_steps * torch.ones_like(self.progress_buf)), 1, 0)[0].item()
+            self.stats["return"] += reward_weight * reward 
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
 
+        self.observation_h[..., :-1] = self.observation_h[..., 1:]
         return TensorDict(
             {
                 "agents": {

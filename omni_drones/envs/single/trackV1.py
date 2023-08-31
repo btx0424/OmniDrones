@@ -1,5 +1,5 @@
 from functorch import vmap
-
+import math
 import omni.isaac.core.utils.torch as torch_utils
 import omni_drones.utils.kit as kit_utils
 from omni_drones.utils.torch import euler_to_quaternion, normalize
@@ -164,7 +164,7 @@ class TrackV1(IsaacEnv):
         self.observation_spec = CompositeSpec({
             "agents": CompositeSpec({
                 "observation": UnboundedContinuousTensorSpec((1, drone_obs_dim), device=self.device),
-                "observation_h": UnboundedContinuousTensorSpec((1, drone_obs_dim, 32), device=self.device),
+                "observation_h": UnboundedContinuousTensorSpec((1, drone_obs_dim, 50), device=self.device),
                 "intrinsics": self.drone.intrinsics_spec.unsqueeze(0).to(self.device)
             })
         }).expand(self.num_envs)
@@ -206,8 +206,13 @@ class TrackV1(IsaacEnv):
         self.observation_h = self.observation_spec[("agents", "observation_h")].zero()
         
 
-    def _reset_idx(self, env_ids: torch.Tensor):
-        self.drone._reset_idx(env_ids)
+    def _reset_idx(self, env_ids: torch.Tensor,judge:bool=False):
+        if judge:
+            train_judge=False
+        else:
+            train_judge=True
+        self.training=train_judge
+        self.drone._reset_idx(env_ids,train_judge)
         self.traj_c[env_ids] = self.traj_c_dist.sample(env_ids.shape)
         self.traj_rot[env_ids] = euler_to_quaternion(self.traj_rpy_dist.sample(env_ids.shape))
         self.traj_scale[env_ids] = self.traj_scale_dist.sample(env_ids.shape)
@@ -321,13 +326,24 @@ class TrackV1(IsaacEnv):
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
         self.stats["tracking_error"].add_(pos_error)
         self.stats["heading_alignment"].add_(heading_alignment)
-        self.stats["return"] += reward
+        if self.training:
+            self.stats["return"] += reward
+        else:
+            #reward=self.check_nan(reward)
+            reward_weight=torch.where((self.progress_buf > self.warmup_phase_steps * torch.ones_like(self.progress_buf)), 1, 0)[0].item()
+            self.stats["return"] += reward_weight * reward 
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
 
+
+
+
         truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
+        truncated_eval = (self.progress_buf >= self.max_episode_length - 1).unsqueeze(-1)
         done = (self.drone.pos[..., 2] < 0.1) | (pos_error > self.reset_thres)
         if self.training:
             done = done | truncated
+        else:
+            done = truncated_eval
         
         self.observation_h[..., :-1] = self.observation_h[..., 1:]
         return TensorDict(
@@ -352,5 +368,12 @@ class TrackV1(IsaacEnv):
         ref_pos = vmap(torch_utils.quat_rotate)(traj_rot, ref_pos) * self.traj_scale[env_ids].unsqueeze(1)
 
         return self.origin + ref_pos
+    
+    def check_nan(self,input):
+        for i in range(self.num_envs):
+            if math.isnan(input[i][0].item()):
+                input[i][0]=0
+        return input 
+
 
 

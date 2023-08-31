@@ -54,6 +54,7 @@ class MultirotorBase(RobotBase):
             "KM": UnboundedContinuousTensorSpec(self.num_rotors),
             "drag_coef": UnboundedContinuousTensorSpec(1),
             "rotor_offset": UnboundedContinuousTensorSpec(1),
+            "payload_mass": UnboundedContinuousTensorSpec(1),
         }).to(self.device)
         
         if self.cfg.force_sensor:
@@ -157,21 +158,33 @@ class MultirotorBase(RobotBase):
                 low = self.MASS_0 * mass_scale[0]
                 high = self.MASS_0 * mass_scale[1]
                 self.randomization[phase]["mass"] = D.Uniform(low, high)
+                if phase == 'train':
+                    self.mass_low = low
+                    self.mass_high = high
             inertia_scale = cfg[phase].get("inertia_scale", None)
             if inertia_scale is not None:
                 low = self.INERTIA_0 * torch.as_tensor(inertia_scale[0], device=self.device)
                 high = self.INERTIA_0 * torch.as_tensor(inertia_scale[1], device=self.device)
                 self.randomization[phase]["inertia"] = D.Uniform(low, high)
+                if phase == 'train':
+                    self.inertia_low = low
+                    self.inertia_high = high
             t2w_scale = cfg[phase].get("t2w_scale", None)
             if t2w_scale is not None:
                 low = self.THRUST2WEIGHT_0 * torch.as_tensor(t2w_scale[0], device=self.device)
                 high = self.THRUST2WEIGHT_0 * torch.as_tensor(t2w_scale[1], device=self.device)
                 self.randomization[phase]["thrust2weight"] = D.Uniform(low, high)
+                if phase == 'train':
+                    self.t2w_low = low
+                    self.t2w_high = high
             f2m_scale = cfg[phase].get("f2m_scale", None)
             if f2m_scale is not None:
                 low = self.FORCE2MOMENT_0 * torch.as_tensor(f2m_scale[0], device=self.device)
                 high = self.FORCE2MOMENT_0 * torch.as_tensor(f2m_scale[1], device=self.device)
                 self.randomization[phase]["force2moment"] = D.Uniform(low, high)
+                if phase == 'train':
+                    self.f2m_low = low
+                    self.f2w_high = high
             drag_coef_scale = cfg[phase].get("drag_coef_scale", None)
             if drag_coef_scale is not None:
                 low = self.params["drag_coef"] * drag_coef_scale[0]
@@ -180,12 +193,18 @@ class MultirotorBase(RobotBase):
                     torch.tensor(low, device=self.device),
                     torch.tensor(high, device=self.device)
                 )
+                if phase == 'train':
+                    self.drag_low = torch.tensor(low, device=self.device)
+                    self.drag_high = torch.tensor(high, device=self.device)
             rotor_pos_offset_scale = cfg[phase].get("rotor_offset_scale")
             if rotor_pos_offset_scale is not None:
                 self.randomization[phase]["rotor_offset"] = D.Uniform(
                     torch.tensor(rotor_pos_offset_scale[0], device=self.device), 
                     torch.tensor(rotor_pos_offset_scale[1], device=self.device)
                 )
+                if phase == 'train':
+                    self.rotor_low = torch.tensor(rotor_pos_offset_scale[0], device=self.device)
+                    self.rotor_high = torch.tensor(rotor_pos_offset_scale[1], device=self.device)
             if not len(self.randomization[phase]) == len(cfg[phase]):
                 unkown_keys = set(cfg[phase].keys()) - set(self.randomization[phase].keys())
                 raise ValueError(
@@ -260,7 +279,7 @@ class MultirotorBase(RobotBase):
             assert not torch.isnan(state).any()
         return state
 
-    def _reset_idx(self, env_ids: torch.Tensor, train: bool=True):
+    def _reset_idx(self, env_ids: torch.Tensor, train: bool=True, has_payload:bool=False, payload_mass=None):
         if env_ids is None:
             env_ids = torch.arange(self.shape[0], device=self.device)
         self.thrusts[env_ids] = 0.0
@@ -269,52 +288,62 @@ class MultirotorBase(RobotBase):
         self.acc[env_ids] = 0.
         self.jerk[env_ids] = 0.
         if train and "train" in self.randomization:
-            self._randomize(env_ids, self.randomization["train"])
+            self._randomize(env_ids, self.randomization["train"], has_payload, payload_mass)
         elif "eval" in self.randomization:
-            self._randomize(env_ids, self.randomization["eval"])
+            self._randomize(env_ids, self.randomization["eval"], has_payload, payload_mass)
         init_throttle = self.gravity[env_ids] / self.KF[env_ids].sum(-1, keepdim=True)
         self.throttle[env_ids] = self.rotors.f_inv(init_throttle)
         self.throttle_difference[env_ids] = 0.0
         return env_ids
+    
+    def norm(self,input, high_bound, low_bound):
+        interval = high_bound - low_bound
+        output = 2*( input - (low_bound + high_bound)/2 )/interval
+        return output
 
-    def _randomize(self, env_ids: torch.Tensor, distributions: Dict[str, D.Distribution]):
+    def _randomize(self, env_ids: torch.Tensor, distributions: Dict[str, D.Distribution], has_payload:bool=False, payload_mass_ratio=None):
         shape = env_ids.shape
         if "mass" in distributions:
             masses = distributions["mass"].sample(shape)
             self.base_link.set_masses(masses, env_indices=env_ids)
             self.masses[env_ids] = masses
             self.gravity[env_ids] = masses * 9.81
-            self.intrinsics["mass"][env_ids] = (masses / self.MASS_0)
+            self.intrinsics["mass"][env_ids] = self.norm(masses,self.mass_high,self.mass_low)
+        if has_payload:
+            self.intrinsics["payload_mass"][env_ids] = (payload_mass_ratio - 0.3)*5
         if "inertia" in distributions:
             inertias = distributions["inertia"].sample(shape)
             self.inertias[env_ids] = inertias
             self.base_link.set_inertias(
                 torch.diag_embed(inertias).flatten(-2), env_indices=env_ids
             )
-            self.intrinsics["inertia"][env_ids] = inertias / self.INERTIA_0
+            self.intrinsics["inertia"][env_ids] = self.norm(inertias, self.inertia_high,self.inertia_low)
         # if "com" in distributions:
         #     coms = distributions["com"].sample(shape)
         #     self.base_link.set_coms(coms, env_indices=env_ids)
         #     self.intrinsics["com"][env_ids] = coms / self.params["l"]
         if "thrust2weight" in distributions:
             thrust2weight = distributions["thrust2weight"].sample(shape)
-            KF = thrust2weight * self.masses[env_ids] * 9.81 
+            if has_payload:
+                KF = thrust2weight * self.masses[env_ids] * (1+payload_mass_ratio) * 9.81
+            else:
+                KF = thrust2weight * (self.masses[env_ids]) * 9.81
             self.KF[env_ids] = KF
-            self.intrinsics["KF"][env_ids] = KF / self.KF_0
+            self.intrinsics["KF"][env_ids] = self.norm(thrust2weight, self.t2w_high, self.t2w_low)
         if "force2moment" in distributions:
             force2moment = distributions["force2moment"].sample(shape)
             KM = self.KF[env_ids] / force2moment
             self.KM[env_ids] = KM
-            self.intrinsics["KM"][env_ids] = KM / self.KM_0
+            self.intrinsics["KM"][env_ids] = self.norm(force2moment, self.f2w_high, self.f2m_low)
         if "drag_coef" in distributions:
             drag_coef = distributions["drag_coef"].sample(shape).reshape(-1, 1, 1)
             self.drag_coef[env_ids] = drag_coef
-            self.intrinsics["drag_coef"][env_ids] = drag_coef
+            self.intrinsics["drag_coef"][env_ids] = self.norm(drag_coef,self.drag_high.unsqueeze(-1).unsqueeze(-1),self.drag_low.unsqueeze(-1).unsqueeze(-1))
         if "rotor_offset" in distributions:
             offset_scale = distributions["rotor_offset"].sample(shape).reshape(-1, 1, 1)
             pos_offset = self.rotor_pos_0[..., :2] * offset_scale
             self.rotor_pos_offset[env_ids, ..., :2] = pos_offset.unsqueeze(1)
-            self.intrinsics["rotor_offset"][env_ids] = offset_scale
+            self.intrinsics["rotor_offset"][env_ids] = self.norm(offset_scale,self.rotor_high.unsqueeze(-1).unsqueeze(-1),self.rotor_low.unsqueeze(-1).unsqueeze(-1))
     
     def get_thrust_to_weight_ratio(self):
         return self.KF.sum(-1, keepdim=True) / (self.masses * 9.81)

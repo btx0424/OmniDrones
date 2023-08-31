@@ -1,6 +1,7 @@
 from collections import Callable, defaultdict
 from typing import Any, Dict, Optional, Sequence, Union, Tuple
 
+import math
 import torch
 from tensordict.tensordict import TensorDictBase, TensorDict
 from torchrl.data.tensor_specs import TensorSpec
@@ -50,6 +51,7 @@ class LogOnEpisode(Transform):
         log_keys: Sequence[str] = None,
         logger_func: Callable = None,
         process_func: Dict[str, Callable] = None,
+        track_all : bool = True
     ):
         super().__init__(in_keys=in_keys)
         if not len(in_keys) == len(log_keys):
@@ -59,12 +61,13 @@ class LogOnEpisode(Transform):
 
         self.n_episodes = n_episodes
         self.logger_func = logger_func
-        self.process_func = defaultdict(lambda: lambda x: torch.mean(x.float()).item())
+        self.process_func = defaultdict(lambda: lambda x: torch.nanmean(x.float()).item())
         if process_func is not None:
             self.process_func.update(process_func)
 
         self.stats = []
         self._frames = 0
+        self.track_all = track_all
 
     def _call(self, tensordict: TensorDictBase) -> TensorDictBase:
         return tensordict
@@ -75,31 +78,59 @@ class LogOnEpisode(Transform):
             _reset = torch.zeros(
                 tensordict.batch_size, dtype=torch.bool, device=tensordict.device
             )
-        if _reset.any():
+        if self.track_all and not self.training :
+            _reset = torch.ones_like(_reset).bool()
             _reset = _reset.all(-1).nonzero().squeeze(-1)
-            self.stats.extend(
+            if True:
+                self.stats.extend(
                 tensordict[_reset].select(*self.in_keys).clone().unbind(0)
-            )
-            if len(self.stats) >= self.n_episodes:
-                stats: TensorDictBase = torch.stack(self.stats)
-                dict_to_log = {}
-                for in_key, log_key in zip(self.in_keys, self.log_keys):
-                    try:
-                        process_func = self.process_func[log_key]
-                        if isinstance(log_key, tuple):
-                            log_key = ".".join(log_key)
-                        dict_to_log[log_key] = process_func(stats[in_key])
-                    except:
-                        pass
-                if self.training:
-                    dict_to_log = {f"train/{k}": v for k, v in dict_to_log.items()}
-                else:
-                    dict_to_log = {f"eval/{k}": v for k, v in dict_to_log.items()}
+                )
+                if not self.training :
+                    stats: TensorDictBase = torch.stack(self.stats)
+                    dict_to_log = {}
+                    for in_key, log_key in zip(self.in_keys, self.log_keys):
+                        try:
+                            process_func = self.process_func[log_key]
+                            if isinstance(log_key, tuple):
+                                log_key = ".".join(log_key)
+                            dict_to_log[log_key] = process_func(stats[in_key])
+                        except:
+                            pass
+                    if self.training:
+                        dict_to_log = {f"train/{k}": v for k, v in dict_to_log.items()}
+                    else:
+                        dict_to_log = {f"eval/{k}": v for k, v in dict_to_log.items()}
                 
-                if self.logger_func is not None:
-                    dict_to_log["env_frames"] = self._frames
-                    self.logger_func(dict_to_log)
+                    if self.logger_func is not None:
+                        dict_to_log["env_frames"] = self._frames
+                        self.logger_func(dict_to_log)
                 self.stats.clear()
+        else:
+            if _reset.any():
+                _reset = _reset.all(-1).nonzero().squeeze(-1)
+                self.stats.extend(
+                    tensordict[_reset].select(*self.in_keys).clone().unbind(0)
+                )
+                if len(self.stats) >= self.n_episodes:
+                    stats: TensorDictBase = torch.stack(self.stats)
+                    dict_to_log = {}
+                    for in_key, log_key in zip(self.in_keys, self.log_keys):
+                        try:
+                            process_func = self.process_func[log_key]
+                            if isinstance(log_key, tuple):
+                                log_key = ".".join(log_key)
+                            dict_to_log[log_key] = process_func(stats[in_key])
+                        except:
+                            pass
+                    if self.training:
+                        dict_to_log = {f"train/{k}": v for k, v in dict_to_log.items()}
+                    else:
+                        dict_to_log = {f"eval/{k}": v for k, v in dict_to_log.items()}
+                
+                    if self.logger_func is not None:
+                        dict_to_log["env_frames"] = self._frames
+                        self.logger_func(dict_to_log)
+                    self.stats.clear()
         
         if self.training:
             self._frames += tensordict.numel()

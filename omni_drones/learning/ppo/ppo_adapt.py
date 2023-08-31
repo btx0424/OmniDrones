@@ -23,9 +23,12 @@ class PPOConfig:
     train_every: int = 64
     ppo_epochs: int = 4
     num_minibatches: int = 16
+    
 
     checkpoint_path: Union[str, None] = None
-    phase: str = "encoder"
+    phase: str = "adaptation"
+    #phase: str = "encoder"
+    checkpoint_path: str = "/home/liyitong/OmniDrones/wandb/run-20230830_230522-1o1gz9lq/files/checkpoint_final.pt"
     condition_mode: str = "cat"
 
     # what the adaptation module learns to predict
@@ -189,10 +192,16 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
     def forward(self, tensordict: TensorDict):
         if self.phase == "encoder":
             tensordict = self.encoder(tensordict)
+            tensordict.rename_key_(
+                self.cfg.adaptation_key, f"{self.cfg.adaptation_key}_target")
+            tensordict = self.encoder(tensordict)
             tensordict = self.actor(tensordict)
             tensordict = self.critic(tensordict)
             tensordict.exclude("_feature", "loc", "scale", inplace=True)
         elif self.phase == "adaptation":
+            tensordict = self.encoder(tensordict)
+            tensordict.rename_key_(
+                self.cfg.adaptation_key, f"{self.cfg.adaptation_key}_target")
             tensordict = self.adaptation(tensordict)
             tensordict = self.actor(tensordict)
             tensordict = self.critic(tensordict)
@@ -293,6 +302,7 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
             tensordict = self.encoder(tensordict)
             tensordict.rename_key_(
                 self.cfg.adaptation_key, f"{self.cfg.adaptation_key}_target")
+
         
         info = []
         for epoch in range(4):

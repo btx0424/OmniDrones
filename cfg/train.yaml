@@ -7,7 +7,7 @@ env: ${task.env}
 
 total_frames: 250_000_000
 max_iters: 600
-eval_interval: 200
+eval_interval: -1
 save_interval: -1
 seed: 0
 

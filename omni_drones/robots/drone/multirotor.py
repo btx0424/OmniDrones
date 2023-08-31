@@ -308,7 +308,7 @@ class MultirotorBase(RobotBase):
             self.base_link.set_masses(masses, env_indices=env_ids)
             self.masses[env_ids] = masses
             self.gravity[env_ids] = masses * 9.81
-            self.intrinsics["mass"][env_ids] = self.norm(masses,self.mass_high,self.mass_low)
+            self.intrinsics["mass"][env_ids] = masses/self.MASS_0
         if has_payload:
             self.intrinsics["payload_mass"][env_ids] = (payload_mass_ratio - 0.3)*5
         if "inertia" in distributions:
@@ -317,7 +317,7 @@ class MultirotorBase(RobotBase):
             self.base_link.set_inertias(
                 torch.diag_embed(inertias).flatten(-2), env_indices=env_ids
             )
-            self.intrinsics["inertia"][env_ids] = self.norm(inertias, self.inertia_high,self.inertia_low)
+            self.intrinsics["inertia"][env_ids] = inertias/self.INERTIA_0
         # if "com" in distributions:
         #     coms = distributions["com"].sample(shape)
         #     self.base_link.set_coms(coms, env_indices=env_ids)
@@ -329,12 +329,12 @@ class MultirotorBase(RobotBase):
             else:
                 KF = thrust2weight * (self.masses[env_ids]) * 9.81
             self.KF[env_ids] = KF
-            self.intrinsics["KF"][env_ids] = self.norm(thrust2weight, self.t2w_high, self.t2w_low)
+            self.intrinsics["KF"][env_ids] = KF/self.KF_0
         if "force2moment" in distributions:
             force2moment = distributions["force2moment"].sample(shape)
             KM = self.KF[env_ids] / force2moment
             self.KM[env_ids] = KM
-            self.intrinsics["KM"][env_ids] = self.norm(force2moment, self.f2w_high, self.f2m_low)
+            self.intrinsics["KM"][env_ids] = KM/self.KM_0
         if "drag_coef" in distributions:
             drag_coef = distributions["drag_coef"].sample(shape).reshape(-1, 1, 1)
             self.drag_coef[env_ids] = drag_coef
@@ -343,7 +343,7 @@ class MultirotorBase(RobotBase):
             offset_scale = distributions["rotor_offset"].sample(shape).reshape(-1, 1, 1)
             pos_offset = self.rotor_pos_0[..., :2] * offset_scale
             self.rotor_pos_offset[env_ids, ..., :2] = pos_offset.unsqueeze(1)
-            self.intrinsics["rotor_offset"][env_ids] = self.norm(offset_scale,self.rotor_high.unsqueeze(-1).unsqueeze(-1),self.rotor_low.unsqueeze(-1).unsqueeze(-1))
+            self.intrinsics["rotor_offset"][env_ids] = offset_scale
     
     def get_thrust_to_weight_ratio(self):
         return self.KF.sum(-1, keepdim=True) / (self.masses * 9.81)

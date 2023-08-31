@@ -208,7 +208,7 @@ def main(cfg):
         if max_iters > 0 and i >= max_iters - 1:
             break 
         
-    for i in range(2):
+    for i in range(1):
         logging.info(f"Final Eval at {collector._frames} steps.")
         info = {"env_frames": collector._frames}
         info.update(evaluate())

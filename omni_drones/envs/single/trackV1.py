@@ -192,6 +192,11 @@ class TrackV1(IsaacEnv):
             "tracking_error": UnboundedContinuousTensorSpec(1),
             "heading_alignment": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(1),
+            "dist_one":UnboundedContinuousTensorSpec(1),
+            "dist_two":UnboundedContinuousTensorSpec(1),
+            "dist_three":UnboundedContinuousTensorSpec(1),
+            "dist_four":UnboundedContinuousTensorSpec(1),
+            "dist_five":UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
         info_spec = CompositeSpec({
             "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13), device=self.device),

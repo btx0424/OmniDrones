@@ -76,9 +76,10 @@ class LogOnEpisode(Transform):
                 tensordict.batch_size, dtype=torch.bool, device=tensordict.device
             )
         if _reset.any():
-            _reset = _reset.all(-1).nonzero().squeeze(-1)
+            _reset = _reset.all(-1)
+            rst_tensordict=tensordict[_reset]
             self.stats.extend(
-                tensordict[_reset].select(*self.in_keys).clone().unbind(0)
+                rst_tensordict.select(*self.in_keys).clone().unbind(0)
             )
             if len(self.stats) >= self.n_episodes:
                 stats: TensorDictBase = torch.stack(self.stats)

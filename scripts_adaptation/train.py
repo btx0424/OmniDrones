@@ -10,6 +10,7 @@ from functorch import vmap
 from omegaconf import OmegaConf
 
 from omni_drones import CONFIG_PATH, init_simulation_app
+from torchrl.data import CompositeSpec
 from omni_drones.utils.torchrl import SyncDataCollector
 from omni_drones.utils.torchrl.transforms import (
     FromMultiDiscreteAction, 
@@ -103,6 +104,7 @@ def main(cfg):
     if (
         cfg.task.get("flatten_intrinsics", True)
         and ("agents", "intrinsics") in base_env.observation_spec.keys(True)
+        and isinstance(base_env.observation_spec[("agents", "intrinsics")], CompositeSpec)
     ):
         transforms.append(ravel_composite(base_env.observation_spec, ("agents", "intrinsics"), start_dim=-1))
 
@@ -175,7 +177,7 @@ def main(cfg):
         base_env.enable_render(True)
         env.eval()
         env.set_seed(seed)
-        traj = env.rollout(
+        trajs = env.rollout(
             max_steps=base_env.max_episode_length,
             policy=policy,
             callback=Every(record_frame, 2),
@@ -186,11 +188,11 @@ def main(cfg):
         base_env.enable_render(not cfg.headless)
         env.reset()
 
-        first_done = torch.argmax(traj[("next", "done")].long(), dim=1).cpu()
+        first_done = torch.argmax(trajs[("next", "done")].long(), dim=1).cpu()
         def take_first(tensor: torch.Tensor):
             indices = first_done.reshape(first_done.shape+(1,)*(tensor.ndim-2))
             return torch.take_along_dim(tensor, indices)
-        traj_stats = traj.select(*stats_keys).cpu().apply(take_first, batch_size=[len(first_done)])
+        traj_stats = trajs.select(*stats_keys).cpu().apply(take_first, batch_size=[len(first_done)])
         info = {
             "eval/" + (".".join(k) if isinstance(k, tuple) else k): torch.mean(v).item() 
             for k, v in traj_stats.items(True, True)
@@ -201,7 +203,18 @@ def main(cfg):
         returns = traj_stats[("stats", "return")]
         info["return_hist"] = wandb.Histogram(np_histogram=np.histogram(returns, bins=32))
         table = wandb.Table(columns=["return"], data=returns.unsqueeze(-1).tolist())
-        info["return_dist"] = wandb.plot.histogram(table, "return")
+        info["eval/return_dist"] = wandb.plot.histogram(table, "return")
+        
+        try:
+            import matplotlib.pyplot as plt
+            fig, axes = plt.subplots(2, 1)
+            for i in range(5):
+                traj_loss = policy.adaptation_loss_traj(trajs[i, :first_done[i].item()].to(policy.device))
+                axes[0].plot(traj_loss["mse"])
+                axes[1].plot(traj_loss["value_error"])
+            info["eval/adaptation_loss_traj"] = fig
+        except AttributeError as e:
+            pass
         return info
 
     pbar = tqdm(collector)
@@ -230,7 +243,7 @@ def main(cfg):
                 logging.info(f"Save checkpoint to {str(ckpt_path)}")
                 torch.save(policy.state_dict(), ckpt_path)
             except AttributeError:
-                logging.warn(f"Policy {policy} does not implement `.state_dict()`")
+                logging.warning(f"Policy {policy} does not implement `.state_dict()`")
 
         run.log(info)
         print(OmegaConf.to_yaml({k: v for k, v in info.items() if isinstance(v, float)}))
@@ -253,7 +266,7 @@ def main(cfg):
         logging.info(f"Save checkpoint to {str(ckpt_path)}")
         torch.save(policy.state_dict(), ckpt_path)
     except AttributeError:
-        logging.warn(f"Policy {policy} does not implement `.state_dict()`")
+        logging.warning(f"Policy {policy} does not implement `.state_dict()`")
         
 
     wandb.save(os.path.join(run.dir, "checkpoint*"))

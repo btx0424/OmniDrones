@@ -180,7 +180,7 @@ class PPORNNPolicy:
             actor = TensorDictSequential(
                 TensorDictModule(make_mlp([256, 256]), [("agents", "observation")], ["feature"]),
                 TensorDictModule(
-                    LSTM(128, self.cfg.hidden_size, self.cfg.skip_conn), 
+                    LSTM(256, self.cfg.hidden_size, self.cfg.skip_conn), 
                     ["feature", "is_init", "actor_hx", "actor_cx"], 
                     ["feature", ("next", "actor_hx"), ("next", "actor_cx")]),
                 TensorDictModule(Actor(self.action_dim), ["feature"], ["loc", "scale"])
@@ -188,7 +188,7 @@ class PPORNNPolicy:
             self.critic = TensorDictSequential(
                 TensorDictModule(make_mlp([256, 256]), [("agents", "observation")], ["feature"]),
                 TensorDictModule(
-                    LSTM(128, self.cfg.hidden_size, self.cfg.skip_conn), 
+                    LSTM(256, self.cfg.hidden_size, self.cfg.skip_conn), 
                     ["feature", "is_init", "critic_hx", "critic_cx"], 
                     ["feature", ("next", "critic_hx"), ("next", "critic_cx")]),
                 TensorDictModule(nn.LazyLinear(1), ["feature"], ["state_value"])

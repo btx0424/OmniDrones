@@ -17,7 +17,9 @@ def compute_gae(
     advantages = torch.zeros_like(reward)
     for step in reversed(range(num_steps)):
         delta = (
-            reward[:, step] + gamma * next_value * not_done[:, step] - value[:, step]
+            reward[:, step] 
+            + gamma * next_value * not_done[:, step] 
+            - value[:, step]
         )
         advantages[:, step] = gae = delta + (gamma * lmbda * not_done[:, step] * gae)
         next_value = value[:, step]

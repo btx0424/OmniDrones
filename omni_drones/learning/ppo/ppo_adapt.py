@@ -13,9 +13,9 @@ from hydra.core.config_store import ConfigStore
 from dataclasses import dataclass
 from typing import Any, Mapping, Union, Tuple
 
-from ..utils.gae import compute_gae
 from ..utils.valuenorm import ValueNorm1
 from ..modules.distributions import IndependentNormal
+from .common import GAE
 
 @dataclass
 class PPOConfig:
@@ -137,6 +137,7 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
         self.adaptation_key = self.cfg.adaptation_key
         if not isinstance(self.adaptation_key, str):
             self.adaptation_key = tuple(self.adaptation_key)
+        self.gae = GAE(0.99, 0.95)
         
         self.n_agents, self.action_dim = action_spec.shape[-2:]
 
@@ -281,9 +282,8 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
         return tensordict
 
     def _train_policy(self, tensordict: TensorDict):
-        next_tensordict = tensordict["next"][:, -1]
+        next_tensordict = tensordict["next"]
         with torch.no_grad():
-            # self.encoder(next_tensordict)
             self._get_context(next_tensordict)
             next_values = self.critic(next_tensordict)["state_value"]
         rewards = tensordict[("next", "agents", "reward")]
@@ -296,7 +296,7 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
         values = self.value_norm.denormalize(values)
         next_values = self.value_norm.denormalize(next_values)
 
-        adv, ret = compute_gae(rewards, dones, values, next_values)
+        adv, ret = self.gae(rewards, dones, values, next_values)
         adv_mean = adv.mean()
         adv_std = adv.std()
         adv = (adv - adv_mean) / adv_std.clip(1e-7)

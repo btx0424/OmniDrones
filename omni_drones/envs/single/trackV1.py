@@ -11,7 +11,7 @@ from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.robots.drone import MultirotorBase
 from omni_drones.views import RigidPrimView
 from tensordict.tensordict import TensorDict, TensorDictBase
-from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec
+from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec, BinaryDiscreteTensorSpec
 from omni.isaac.debug_draw import _debug_draw
 
 from ..utils import lemniscate, scale_time
@@ -166,7 +166,8 @@ class TrackV1(IsaacEnv):
                 "observation": UnboundedContinuousTensorSpec((1, drone_obs_dim), device=self.device),
                 "observation_h": UnboundedContinuousTensorSpec((1, drone_obs_dim, 32), device=self.device),
                 "intrinsics": self.drone.intrinsics_spec.unsqueeze(0).to(self.device)
-            })
+            }),
+            "truncated": BinaryDiscreteTensorSpec(1, dtype=bool, device=self.device)
         }).expand(self.num_envs)
         self.action_spec = CompositeSpec({
             "agents": {
@@ -326,8 +327,6 @@ class TrackV1(IsaacEnv):
 
         truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
         done = (self.drone.pos[..., 2] < 0.1) | (pos_error > self.reset_thres)
-        if self.training:
-            done = done | truncated
         
         self.observation_h[..., :-1] = self.observation_h[..., 1:]
         return TensorDict(
@@ -353,4 +352,11 @@ class TrackV1(IsaacEnv):
 
         return self.origin + ref_pos
 
+    def train(self, mode: bool = True):
+        super().train(mode)
+        if mode:
+            self.max_episode_length = self.cfg.max_episode_length
+        else:
+            self.max_episode_length = int(self.cfg.max_episode_length * 1.6)
+        return self
 

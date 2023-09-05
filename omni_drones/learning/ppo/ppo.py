@@ -12,9 +12,9 @@ from tensordict.nn import TensorDictModule, TensorDictSequential
 from hydra.core.config_store import ConfigStore
 from dataclasses import dataclass
 
-from ..utils.gae import compute_gae
 from ..utils.valuenorm import ValueNorm1
 from ..modules.distributions import IndependentNormal
+from .common import GAE
 
 @dataclass
 class PPOConfig:
@@ -39,34 +39,6 @@ def make_mlp(num_units):
         layers.append(nn.LeakyReLU())
         layers.append(nn.LayerNorm(n))
     return nn.Sequential(*layers)
-
-
-class GAE(nn.Module):
-    def __init__(self, gamma, lmbda):
-        super().__init__()
-        self.register_buffer("gamma", torch.tensor(gamma))
-        self.register_buffer("lmbda", torch.tensor(lmbda))
-        self.gamma: torch.Tensor
-        self.lmdba: torch.Tensor
-    
-    def forward(
-        self, 
-        reward: torch.Tensor, 
-        terminated: torch.Tensor, 
-        value: torch.Tensor, 
-        next_value: torch.Tensor
-    ):
-        num_steps = terminated.shape[2]
-        advantages = torch.zeros_like(reward)
-        gae = 0
-        for step in reversed(range(num_steps)):
-            delta = (
-                reward[:, step] 
-                + self.gamma * next_value * not_done[:, step] 
-                - value[:, step]
-            )
-        
-        return advantages, 
 
 
 class Actor(nn.Module):
@@ -99,6 +71,7 @@ class PPOPolicy:
         self.critic_loss_fn = nn.HuberLoss(delta=10)
         self.n_agents, self.action_dim = action_spec.shape[-2:]
         intrinsics_dim = observation_spec[("agents", "intrinsics")].shape[-1]
+        self.gae = GAE(0.99, 0.95)
 
         fake_input = observation_spec.zero()
         
@@ -169,7 +142,7 @@ class PPOPolicy:
         return tensordict
 
     def train_op(self, tensordict: TensorDict):
-        next_tensordict = tensordict["next"][:, -1]
+        next_tensordict = tensordict["next"]
         with torch.no_grad():
             next_values = self.critic(next_tensordict)["state_value"]
         rewards = tensordict[("next", "agents", "reward")]
@@ -182,7 +155,7 @@ class PPOPolicy:
         values = self.value_norm.denormalize(values)
         next_values = self.value_norm.denormalize(next_values)
 
-        adv, ret = compute_gae(rewards, dones, values, next_values)
+        adv, ret = self.gae(rewards, dones, values, next_values)
         adv_mean = adv.mean()
         adv_std = adv.std()
         adv = (adv - adv_mean) / adv_std.clip(1e-7)

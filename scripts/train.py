@@ -53,6 +53,37 @@ class Every:
             self.func(*args, **kwargs)
         self.i += 1
 
+from typing import Sequence
+from tensordict import TensorDictBase
+
+class EpisodeStats:
+    def __init__(self, in_keys: Sequence[str] = None):
+        self.in_keys = in_keys
+        self._stats = []
+        self._episodes = 0
+
+    def __call__(self, tensordict: TensorDictBase) -> TensorDictBase:
+        done = tensordict.get(("next", "done"))
+        truncated = tensordict.get(("next", "truncated"), None)
+        done_or_truncated = (
+            (done | truncated) if truncated is not None else done.clone()
+        )
+        if done_or_truncated.any():
+            done_or_truncated = done_or_truncated.squeeze(-1)
+            self._episodes += done_or_truncated.sum().item()
+            self._stats.extend(
+                tensordict.select(*self.in_keys)[done_or_truncated].clone().unbind(0)
+            )
+    
+    def pop(self):
+        stats: TensorDictBase = torch.stack(self._stats).to_tensordict()
+        self._stats.clear()
+        return stats
+
+    def __len__(self):
+        return len(self._stats)
+
+
 @hydra.main(version_base=None, config_path=CONFIG_PATH, config_name="train")
 def main(cfg):
     OmegaConf.register_new_resolver("eval", eval)
@@ -82,22 +113,11 @@ def main(cfg):
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
     base_env = env_class(cfg, headless=cfg.headless)
 
-    def log(info):
-        print(OmegaConf.to_yaml(info))
-        run.log(info)
-
     stats_keys = [
         k for k in base_env.observation_spec.keys(True, True) 
         if isinstance(k, tuple) and k[0]=="stats"
     ]
-    logger = LogOnEpisode(
-        cfg.env.num_envs,
-        in_keys=stats_keys,
-        log_keys=stats_keys,
-        logger_func=log,
-        # process_func={"return_std": lambda x: torch.std(x).item()}
-    )
-    transforms = [InitTracker(), logger]
+    transforms = [InitTracker()]
 
     # a CompositeSpec is by deafault processed by a entity-based encoder
     # flatten it to use a MLP encoder instead
@@ -158,6 +178,11 @@ def main(cfg):
     eval_interval = cfg.get("eval_interval", -1)
     save_interval = cfg.get("save_interval", -1)
 
+    stats_keys = [
+        k for k in base_env.observation_spec.keys(True, True) 
+        if isinstance(k, tuple) and k[0]=="stats"
+    ]
+    episode_stats = EpisodeStats(stats_keys)
     collector = SyncDataCollector(
         env,
         policy=policy,
@@ -200,13 +225,25 @@ def main(cfg):
 
     pbar = tqdm(collector)
     env.train()
+    fps = []
     for i, data in enumerate(pbar):
+        # fps.append(collector._fps)
         info = {"env_frames": collector._frames, "rollout_fps": collector._fps}
+        episode_stats(data.to_tensordict())
+
+        if len(episode_stats) >= base_env.num_envs:
+            stats = {
+                "train/" + (".".join(k) if isinstance(k, tuple) else k): torch.mean(v).item() 
+                for k, v in episode_stats.pop().items(True, True)
+            }
+            info.update(stats)
+        
         info.update(policy.train_op(data.to_tensordict()))
 
         if eval_interval > 0 and i % eval_interval == 0:
             logging.info(f"Eval at {collector._frames} steps.")
             info.update(evaluate())
+            env.train()
 
         if save_interval > 0 and i % save_interval == 0:
             if hasattr(policy, "state_dict"):
@@ -224,6 +261,11 @@ def main(cfg):
 
         if max_iters > 0 and i >= max_iters - 1:
             break 
+
+        # if len(fps) > 50:
+        #     fps = np.array(fps)[10:]
+        #     print(fps.mean(), fps.std())
+        #     exit()
     
     logging.info(f"Final Eval at {collector._frames} steps.")
     info = {"env_frames": collector._frames}

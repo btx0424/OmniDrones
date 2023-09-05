@@ -56,12 +56,16 @@ class EpisodeStats:
         self._episodes = 0
 
     def __call__(self, tensordict: TensorDictBase) -> TensorDictBase:
-        _reset = tensordict.get(("next", "done"), None)
-        if _reset is not None and _reset.any():
-            _reset = _reset.squeeze(-1)
-            self._episodes += _reset.sum().item()
+        done = tensordict.get(("next", "done"))
+        truncated = tensordict.get(("next", "truncated"), None)
+        done_or_truncated = (
+            (done | truncated) if truncated is not None else done.clone()
+        )
+        if done_or_truncated.any():
+            done_or_truncated = done_or_truncated.squeeze(-1)
+            self._episodes += done_or_truncated.sum().item()
             self._stats.extend(
-                tensordict.select(*self.in_keys)[_reset].clone().unbind(0)
+                tensordict.select(*self.in_keys)[done_or_truncated].clone().unbind(0)
             )
     
     def pop(self):
@@ -188,11 +192,16 @@ def main(cfg):
         base_env.enable_render(not cfg.headless)
         env.reset()
 
-        first_done = torch.argmax(trajs[("next", "done")].long(), dim=1).cpu()
+        done = trajs.get(("next", "done"))
+        truncated = trajs.get(("next", "truncated"), None)
+        done_or_truncated = (done | truncated) if truncated is not None else done
+        first_done = torch.argmax(done_or_truncated.long(), dim=1).cpu()
+
         def take_first(tensor: torch.Tensor):
             indices = first_done.reshape(first_done.shape+(1,)*(tensor.ndim-2))
             return torch.take_along_dim(tensor, indices)
-        traj_stats = trajs.select(*stats_keys).cpu().apply(take_first, batch_size=[len(first_done)])
+        
+        traj_stats = trajs["next"].select(*stats_keys).cpu().apply(take_first, batch_size=[len(first_done)])
         info = {
             "eval/" + (".".join(k) if isinstance(k, tuple) else k): torch.mean(v).item() 
             for k, v in traj_stats.items(True, True)
@@ -205,7 +214,7 @@ def main(cfg):
         table = wandb.Table(columns=["return"], data=returns.unsqueeze(-1).tolist())
         info["eval/return_dist"] = wandb.plot.histogram(table, "return")
         
-        try:
+        if hasattr(policy, "adaptation_loss_traj"):
             import matplotlib.pyplot as plt
             fig, axes = plt.subplots(2, 1)
             for i in range(5):
@@ -213,8 +222,7 @@ def main(cfg):
                 axes[0].plot(traj_loss["mse"])
                 axes[1].plot(traj_loss["value_error"])
             info["eval/adaptation_loss_traj"] = fig
-        except AttributeError as e:
-            pass
+        
         return info
 
     pbar = tqdm(collector)

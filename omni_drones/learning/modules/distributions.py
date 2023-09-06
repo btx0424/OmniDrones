@@ -55,7 +55,7 @@ class DiagGaussian(nn.Module):
     def forward(self, x):
         action_mean = self.fc_mean(x)
         action_std = torch.broadcast_to(torch.exp(self.log_std), action_mean.shape)
-        dist = D.Independent(D.Normal(action_mean, action_std), 1)
+        dist = D.Independent(D.Normal(action_mean, action_std), 1) 
         return dist
 
 
@@ -112,6 +112,7 @@ class DiagGaussian(nn.Module):
 #     def entropy(self):
 #         return -self.log_prob(self.rsample(self.batch_shape))
 from torchrl.modules.distributions import TanhNormal
+
 
 class IndependentNormal(D.Independent):
     arg_constraints = {"loc": constraints.real, "scale": constraints.positive}
@@ -186,7 +187,6 @@ class IndependentNormalModule(nn.Module):
 
 
 class TanhNormalWithEntropy(TanhNormal):
-
     def entropy(self):
         return -self.log_prob(self.sample())
 
@@ -342,33 +342,33 @@ class MultiOneHotCategorical(D.Independent):
         self,
         logits: torch.Tensor = None,
         probs: torch.Tensor = None,
-        unimix: float = 0.01
+        unimix: float = 0.01,
     ):
         if (probs is None) == (logits is None):
             raise ValueError(
                 "Either `probs` or `logits` must be specified, but not both."
             )
-        
+
         if logits is not None:
             probs = F.softmax(logits, dim=-1)
-        
-        probs = probs * (1. - unimix) + unimix / probs.shape[-1]
-        super().__init__(
-            D.OneHotCategoricalStraightThrough(probs=probs),
-            1
-        )
+
+        probs = probs * (1.0 - unimix) + unimix / probs.shape[-1]
+        super().__init__(D.OneHotCategoricalStraightThrough(probs=probs), 1)
+
 
 class TwoHot(D.Distribution):
     def __init__(
-        self, 
-        logits: torch.Tensor, 
-        low=-20.0, 
-        high=20.0, 
+        self,
+        logits: torch.Tensor,
+        low=-20.0,
+        high=20.0,
     ):
         super().__init__(batch_shape=logits.shape[:-1])
         self.logits = logits
         self.probs = torch.softmax(logits, -1)
-        self.buckets = torch.linspace(low, high, steps=logits.shape[-1]).to(logits.device)
+        self.buckets = torch.linspace(low, high, steps=logits.shape[-1]).to(
+            logits.device
+        )
 
     @property
     def mean(self):
@@ -401,4 +401,3 @@ class TwoHot(D.Distribution):
         target = target.squeeze(-2)
 
         return (target * log_pred).sum(-1)
-

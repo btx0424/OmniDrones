@@ -15,6 +15,6 @@ viewer:
 policy_ckpt_path: /home/hesicheng/OmniDrones/wandb/run-20230905_181848-cdzus2eg/files/checkpoint_final.pt
 
 defaults:
-  - task: PingPong2v2
+  - task: PingPongRelay
   - algo: mappo
   - _self_

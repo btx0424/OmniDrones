@@ -25,18 +25,6 @@ from torchrl.data import (
 
 from omni.isaac.debug_draw import _debug_draw
 
-def get_drone_translations():
-    h = 2.0
-    initial_dist_to_net = 2.0
-    initial_dist_between_teammates = 2.0
-
-    return [
-        (-initial_dist_to_net / 2, -initial_dist_between_teammates / 2, h),
-        (initial_dist_to_net / 2, -initial_dist_between_teammates / 2, h),
-        (-initial_dist_to_net / 2, initial_dist_between_teammates / 2, h),
-        (initial_dist_to_net / 2, initial_dist_between_teammates / 2, h),
-    ]
-
 
 def turn_convert(t: torch.Tensor):
     """convert representation of drone turn
@@ -59,7 +47,16 @@ def turn_convert(t: torch.Tensor):
     return table[t]
 
 
-def turn_shift(t: torch.Tensor, h: torch.Tensor):
+def turn_shift(t: torch.Tensor, h: torch.Tensor) -> torch.Tensor:
+    """_summary_
+
+    Args:
+        t (torch.Tensor): (n_env,) int64
+        h (torch.Tensor): (n_env,) bool
+
+    Returns:
+        torch.Tensor: (n_env,) int64
+    """
     return (t + h.long()) % 4
 
 
@@ -161,7 +158,7 @@ def encode_drone_vel(drone_vel: torch.Tensor) -> torch.Tensor:
     )
 
 
-class PingPong2v2(IsaacEnv):
+class PingPongRelay(IsaacEnv):
     def __init__(self, cfg, headless):
         super().__init__(cfg, headless)
 
@@ -192,8 +189,8 @@ class PingPong2v2(IsaacEnv):
         )
 
         z_low, z_high = 1.5, 1.7
-        x_low, x_high = 0.5, 1.5
-        y_low, y_high = 0.2, 1.0
+        x_low, x_high = 0.5, 1.7
+        y_low, y_high = 0.5, 1.7
 
         self.init_drone_pos_dist = D.Uniform(
             torch.tensor(
@@ -220,6 +217,7 @@ class PingPong2v2(IsaacEnv):
             torch.tensor([0.1, 0.1, 2.0], device=self.device) * torch.pi,
         )
 
+        # turn[env_id] \in {0,1,2,3}. drone turn[env_id] should relay the ball to (turn[env_id]+1)%4
         self.turn = torch.zeros(self.num_envs, device=self.device, dtype=torch.int64)
         self.last_ball_vel = torch.zeros(self.num_envs, 1, 3, device=self.device)
         self.alpha = 0.8
@@ -248,8 +246,15 @@ class PingPong2v2(IsaacEnv):
             restitution=0.0,
         )
 
-        # seems useless
-        drone_prims = self.drone.spawn(translations=get_drone_translations())
+        # placeholders
+        drone_prims = self.drone.spawn(
+            translations=[
+                (1.0, -1.0, 1.0),
+                (1.0, 1.0, 2.0),
+                (-1.0, -1.0, 3.0),
+                (-1.0, 1.0, 4.0),
+            ]
+        )
 
         material = UsdShade.Material(material.prim)
         for drone_prim in drone_prims:
@@ -268,14 +273,14 @@ class PingPong2v2(IsaacEnv):
             + 9
             + 18  # other's position and linear and angular velocity
             + 1  # turn
-        ) # 57
+        )  # 57
         state_dim = (
             drone_state_dim * 4
             + 12
             + 3  # relative ball pos, ball vel
             + 12  # relative drone pos,
             + 4  # turn
-        ) # 123
+        )  # 123
 
         if self.cfg.task.time_encoding:
             self.time_encoding_dim = 4
@@ -354,6 +359,7 @@ class PingPong2v2(IsaacEnv):
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids, self.training)
 
+        # drone_pos (n_env,n_drones,3)
         drone_pos = self.init_drone_pos_dist.sample(env_ids.shape)
         drone_rpy = self.init_drone_rpy_dist.sample((*env_ids.shape, 4))
         drone_rot = euler_to_quaternion(drone_rpy)
@@ -367,8 +373,6 @@ class PingPong2v2(IsaacEnv):
         turn = torch.randint(0, 4, (len(env_ids),), device=self.device)
         self.turn[env_ids] = turn
 
-        # drone_pos (n_env,n_drones,3)
-        # will this op change the position of the balls in other unfinished envs?
         ball_pos_offset = self.init_ball_offset_dist.sample(env_ids.shape)
         ball_pos = drone_pos[torch.arange(len(env_ids)), turn, :] + ball_pos_offset
 
@@ -381,7 +385,12 @@ class PingPong2v2(IsaacEnv):
         self.ball.set_velocities(
             torch.zeros(len(env_ids), 6, device=self.device), env_ids
         )
-        self.ball.set_masses(self.ball_mass_dist.sample(env_ids.shape), env_ids)
+
+        # fix the mass now
+        # ball_masses = self.ball_mass_dist.sample(env_ids.shape)
+        ball_masses = torch.ones_like(env_ids) * 0.05
+
+        self.ball.set_masses(ball_masses, env_ids)
         self.last_ball_vel[env_ids] = 0.0
         self.stats[env_ids] = 0.0
 
@@ -400,6 +409,7 @@ class PingPong2v2(IsaacEnv):
         self.hit = (self.last_ball_vel * normalized_ball_vel).sum(dim=-1) < -0.1
         self.last_ball_vel[:] = normalized_ball_vel
 
+        # self.ball_pos (E,1,3)
         self.rpos_ball = self.ball_pos - self.drone.pos  # (E,4,3)
 
         self.rpos_drone = encode_drone_pos(self.drone.pos)  # (E,4,9)
@@ -453,29 +463,33 @@ class PingPong2v2(IsaacEnv):
         )
 
     def _compute_reward_and_done(self):
+        hit = self.ball.get_net_contact_forces().any(-1)  # (E,1)
+        which_drone = self.rpos_ball.norm(dim=-1).argmin(dim=1, keepdim=True)  # (E,1)
+        switch_turn: torch.Tensor = hit & (
+            self.turn.unsqueeze(-1) == which_drone
+        )  # (E,1)
+
+        self.turn = turn_shift(self.turn, switch_turn.squeeze(-1))
+
+
+        # 不能离得太近
+        safety_cost: torch.Tensor = 1.0 - self.rpos_drone[..., 0, :].norm(
+            dim=-1, keepdim=True
+        )
+        safety_cost: torch.Tensor = safety_cost.clip(0.0)
+
+        # 接球的无人机要离球近
         reward_pos = (turn_convert(self.turn) == 1).float() / (
             1 + torch.norm(self.rpos_ball[..., :2], dim=-1)
         )  # (E,4)
 
-        hit = self.ball.get_net_contact_forces().any(-1)  # (E,1)
-        which_drone = self.rpos_ball.norm(dim=-1).argmin(dim=1, keepdim=True)  # (E,1)
-
-        switch_turn = hit & torch.take_along_dim(
-            turn_convert(self.turn) == 1.0, which_drone, dim=1
-        )
-
-        self.turn = turn_shift(self.turn, switch_turn.squeeze(-1))
-
-        safety_cost = (
-            1.0 - self.rpos_drone[..., 0, :].norm(dim=-1, keepdim=True)
-        ).clip(0.0)
-        reward_pos = turn_convert(self.turn) / (
-            1 + torch.norm(self.rpos_ball[..., :2], dim=-1)
-        )
+        # 无人机要在球下面
         reward_height = 0.8 * (
             self.ball_pos[..., 2]
             - self.drone.pos[..., 2].max(dim=1, keepdim=True)[0].clip(1.5)
         ).clip(0.3)
+        
+        # 击中球了获得高额奖励
         reward_score = switch_turn.float() * 50.0
         reward = torch.sum(
             reward_pos + reward_height + reward_score - safety_cost, dim=1, keepdim=True

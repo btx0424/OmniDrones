@@ -1,4 +1,4 @@
-name: PingPong2v2
+name: PingPongRelay
 
 defaults:
   # see https://hydra.cc/docs/advanced/overriding_packages/
@@ -8,7 +8,7 @@ defaults:
 
 env:
   num_envs: 512
-  max_episode_length: 800
+  max_episode_length: 1600
 
 drone_model: Iris
 force_sensor: false

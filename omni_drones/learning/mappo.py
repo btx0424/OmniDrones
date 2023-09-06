@@ -380,7 +380,7 @@ class MAPPOPolicy(object):
         return state_dict
     
     def load_state_dict(self, state_dict):
-        self.actor_params = TensorDictParams(state_dict["actor_params"])
+        self.actor_params = state_dict["actor_params"]
         self.actor_opt = torch.optim.Adam(self.actor_params.parameters(), lr=self.cfg.actor.lr)
         self.critic.load_state_dict(state_dict["critic"])
         self.value_normalizer.load_state_dict(state_dict["value_normalizer"])
@@ -496,7 +496,17 @@ class Actor(nn.Module):
             dist_entropy = action_dist.entropy().unsqueeze(-1)
             return action, action_log_probs, dist_entropy, None
         else:
-            action = action_dist.mode if deterministic else action_dist.sample()
+            if deterministic:
+                action=action_dist.mode      
+            else:
+                try:
+                    action=action_dist.sample()
+                except RuntimeError as e:
+                    print(action_dist.base_dist.loc.shape)
+                    print(action_dist.base_dist.scale.shape)
+                    print(action_dist.base_dist.loc)
+                    print(action_dist.base_dist.scale)
+                    raise e  
             action_log_probs = action_dist.log_prob(action).unsqueeze(-1)
             return action, action_log_probs, None, rnn_state
 

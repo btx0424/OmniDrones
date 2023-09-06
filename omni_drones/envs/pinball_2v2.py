@@ -23,6 +23,7 @@ from torchrl.data import (
     DiscreteTensorSpec,
 )
 
+from omni.isaac.debug_draw import _debug_draw
 
 def get_drone_translations():
     h = 2.0
@@ -222,6 +223,7 @@ class PingPong2v2(IsaacEnv):
         self.turn = torch.zeros(self.num_envs, device=self.device, dtype=torch.int64)
         self.last_ball_vel = torch.zeros(self.num_envs, 1, 3, device=self.device)
         self.alpha = 0.8
+        self.draw = _debug_draw.acquire_debug_draw_interface()
 
     def _design_scene(self):
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
@@ -427,7 +429,7 @@ class PingPong2v2(IsaacEnv):
         obs = torch.cat(obs, dim=-1)
         state = torch.cat(state, dim=-1)
 
-        if self._should_render(0):
+        if False:
             central_env_pos = self.envs_positions[self.central_env_idx]
             drone_pos = self.drone.pos[self.central_env_idx]
             ball_pos = self.ball_pos[self.central_env_idx]

@@ -83,7 +83,7 @@ def main(cfg):
     base_env = env_class(cfg, headless=cfg.headless)
 
     def log(info):
-        print(OmegaConf.to_yaml(info))
+        # print(OmegaConf.to_yaml(info))
         run.log(info)
 
     stats_keys = [
@@ -215,7 +215,7 @@ def main(cfg):
                 torch.save(policy.state_dict(), ckpt_path)
 
         run.log(info)
-        print(OmegaConf.to_yaml({k: v for k, v in info.items() if isinstance(v, float)}))
+        # print(OmegaConf.to_yaml({k: v for k, v in info.items() if isinstance(v, float)}))
 
         pbar.set_postfix({
             "rollout_fps": collector._fps,

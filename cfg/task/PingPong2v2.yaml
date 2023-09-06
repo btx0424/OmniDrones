@@ -7,7 +7,7 @@ defaults:
   # - /base/randomization_base@_here_
 
 env:
-  num_envs: 128
+  num_envs: 512
   max_episode_length: 800
 
 drone_model: Iris

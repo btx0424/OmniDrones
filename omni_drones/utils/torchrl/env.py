@@ -29,13 +29,13 @@ class AgentSpec:
             return self._env.input_spec["_action_spec"][self.action_key]
         except:
             return self._env.action_spec[self.action_key]
-    
+
     @property
     def state_spec(self) -> TensorSpec:
         if self.state_key is None:
             raise ValueError()
         return self._env.observation_spec[self.state_key]
-    
+
     @property
     def reward_spec(self) -> TensorSpec:
         if self.reward_key is None:
@@ -54,3 +54,11 @@ class AgentSpec:
         except:
             return self._env.done_spec[self.done_key]
 
+
+
+# for debugging
+@dataclass
+class DummyEnv:
+    observation_spec: CompositeSpec
+    action_spec: CompositeSpec
+    reward_spec: CompositeSpec

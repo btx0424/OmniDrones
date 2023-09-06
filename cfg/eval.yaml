@@ -1,4 +1,4 @@
-headless: false
+headless: true
 
 sim: ${task.sim}
 env: ${task.env}
@@ -10,19 +10,11 @@ seed: 0
 viewer:
   eye: [7.5, 7.5, 7.5]
   lookat: [0., 0., 0.]
+  resolution: [960, 720]
 
-wandb:
-  group: ${oc.select:..task.name}
-  run_name: ${oc.select:..task.name,test}-${oc.select:..algo.name,none}
-  job_type: train
-  entity: marl-drones
-  project: omnidrones
-  mode: online # set to 'disabled' when debugging locally
-  run_id: 
-  monitor_gym: True
-  tags: 
+policy_ckpt_path: /home/hesicheng/OmniDrones/wandb/run-20230905_181848-cdzus2eg/files/checkpoint_final.pt
 
 defaults:
-  - task: Hover
+  - task: PingPong2v2
   - algo: mappo
   - _self_

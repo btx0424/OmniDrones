@@ -1,11 +1,5 @@
-import logging
-import os
-import time
-
 import hydra
-from tensordict.tensordict import TensorDictBase
 import torch
-from torchrl.data.tensor_specs import TensorSpec
 import wandb
 from functorch import vmap
 from omegaconf import OmegaConf
@@ -30,12 +24,9 @@ from omni_drones.learning import (
     SACPolicy,
     TD3Policy,
     MATD3Policy,
-    DreamerPolicy,
     TDMPCPolicy
 )
 
-from setproctitle import setproctitle
-from tensordict import TensorDict
 from torchrl.envs.transforms import (
     TransformedEnv, 
     InitTracker, 
@@ -43,8 +34,7 @@ from torchrl.envs.transforms import (
     CatTensors,
     StepCounter,
 )
-
-from tqdm import tqdm
+from torchvision.io.video import write_video
 
 class Every:
     def __init__(self, func, steps):
@@ -62,9 +52,7 @@ def main(cfg):
     OmegaConf.register_new_resolver("eval", eval)
     OmegaConf.resolve(cfg)
     OmegaConf.set_struct(cfg, False)
-    run = init_wandb(cfg)
     simulation_app = init_simulation_app(cfg)
-    setproctitle(run.name)
     print(OmegaConf.to_yaml(cfg))
 
     from omni_drones.envs.isaac_env import IsaacEnv
@@ -77,11 +65,10 @@ def main(cfg):
         "sac": SACPolicy,
         "td3": TD3Policy,
         "matd3": MATD3Policy,
-        "dreamer": DreamerPolicy,
         "tdmpc": TDMPCPolicy
     }
 
-    env_class = IsaacEnv.REGISTRY[run.config]
+    env_class = IsaacEnv.REGISTRY[cfg.task.name]
     base_env = env_class(cfg, headless=cfg.headless)
     
     def log(info):
@@ -159,21 +146,14 @@ def main(cfg):
     camera.initialize("/World/Camera")
 
     # TODO: create a agent_spec view for TransformedEnv
-    agent_spec = AgentSpec(
-        name=base_env.agent_spec["drone"].name,
-        n=base_env.agent_spec["drone"].n,
-        observation_spec=env.observation_spec["drone.obs"],
-        action_spec=env.action_spec["drone.action"],
-        reward_spec=env.reward_spec["drone.reward"],
-        state_spec=env.observation_spec["drone.state"] if base_env.agent_spec["drone"].state_spec is not None else None,
-    )
+    agent_spec: AgentSpec = env.agent_spec["drone"]
+    
     policy = algos[cfg.algo.name.lower()](
         cfg.algo, agent_spec=agent_spec, device="cuda"
     )
+    
 
-    ckpt_name = "checkpoint_final.pt"
-    ckpt = wandb.restore(ckpt_name, run.path)
-    state_dict = torch.load(ckpt)
+    state_dict = torch.load(cfg.policy_ckpt_path)
     policy.load_state_dict(state_dict)
 
     @torch.no_grad()
@@ -200,9 +180,7 @@ def main(cfg):
 
         if len(frames):
             video_array = torch.stack(frames)
-            info["recording"] = wandb.Video(
-                video_array, fps=0.5 / cfg.sim.dt, format="mp4"
-            )
+            write_video("eval.mp4",video_array,fps=0.5 / cfg.sim.dt)
         frames.clear()
         return info
 

@@ -60,7 +60,7 @@ def turn_shift(t: torch.Tensor, h: torch.Tensor) -> torch.Tensor:
     return (t + h.long()) % 4
 
 
-@torch.jit.script
+# @torch.jit.script
 def encode_drone_pos(drone_pos: torch.Tensor) -> torch.Tensor:
     """_summary_
 
@@ -109,7 +109,7 @@ def encode_drone_pos(drone_pos: torch.Tensor) -> torch.Tensor:
     )
 
 
-@torch.jit.script
+# @torch.jit.script
 def encode_drone_vel(drone_vel: torch.Tensor) -> torch.Tensor:
     """_summary_
 
@@ -158,7 +158,7 @@ def encode_drone_vel(drone_vel: torch.Tensor) -> torch.Tensor:
     )
 
 
-@torch.jit.script
+# @torch.jit.script
 def calculate_safety_cost(drone_rpos: torch.Tensor) -> torch.Tensor:
     """_summary_
 

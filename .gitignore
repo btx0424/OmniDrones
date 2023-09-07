@@ -144,3 +144,6 @@ urdf/
 *.pth
 tmp
 plot/
+
+
+test.py

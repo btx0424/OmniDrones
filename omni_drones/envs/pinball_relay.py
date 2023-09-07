@@ -158,6 +158,36 @@ def encode_drone_vel(drone_vel: torch.Tensor) -> torch.Tensor:
     )
 
 
+@torch.jit.script
+def calculate_safety_cost(drone_rpos: torch.Tensor) -> torch.Tensor:
+    """_summary_
+
+    Args:
+        drone_rpos (torch.Tensor): (E,4,9)
+
+    Returns:
+        torch.Tensor: (E,4)
+    """
+    # r (E,4,3)
+    r1, r2, r3 = torch.split(drone_rpos, [3, 3, 3], dim=-1)
+
+    # d (E,4,3)
+    d = torch.stack(
+        [
+            torch.norm(r1, dim=-1),
+            torch.norm(r2, dim=-1),
+            torch.norm(r3, dim=-1),
+        ],
+        dim=-1,
+    )
+
+    d_m, _ = torch.max(d, dim=-1)
+
+    safety_cost = 1.0 - d_m / 3
+    safety_cost = safety_cost.clip(0.0)
+    return safety_cost
+
+
 class PingPongRelay(IsaacEnv):
     def __init__(self, cfg, headless):
         super().__init__(cfg, headless)
@@ -197,8 +227,8 @@ class PingPongRelay(IsaacEnv):
                 [
                     [-x_high, -y_high, z_low],
                     [-x_high, y_low, z_low],
-                    [x_low, -y_high, z_low],
                     [x_low, y_low, z_low],
+                    [x_low, -y_high, z_low],
                 ],
                 device=self.device,
             ),
@@ -206,8 +236,8 @@ class PingPongRelay(IsaacEnv):
                 [
                     [-x_low, -y_low, z_high],
                     [-x_low, y_high, z_high],
-                    [x_high, -y_low, z_high],
                     [x_high, y_high, z_high],
+                    [x_high, -y_low, z_high],
                 ],
                 device=self.device,
             ),
@@ -219,6 +249,7 @@ class PingPongRelay(IsaacEnv):
 
         # turn[env_id] \in {0,1,2,3}. drone turn[env_id] should relay the ball to (turn[env_id]+1)%4
         self.turn = torch.zeros(self.num_envs, device=self.device, dtype=torch.int64)
+
         self.last_ball_vel = torch.zeros(self.num_envs, 1, 3, device=self.device)
         self.alpha = 0.8
         self.draw = _debug_draw.acquire_debug_draw_interface()
@@ -336,7 +367,6 @@ class PingPongRelay(IsaacEnv):
                     "return": UnboundedContinuousTensorSpec(1),
                     "episode_len": UnboundedContinuousTensorSpec(1),
                     "score": UnboundedContinuousTensorSpec(1),
-                    "action_smoothness": UnboundedContinuousTensorSpec(1),
                 }
             )
             .expand(self.num_envs)
@@ -471,12 +501,8 @@ class PingPongRelay(IsaacEnv):
 
         self.turn = turn_shift(self.turn, switch_turn.squeeze(-1))
 
-
         # 不能离得太近
-        safety_cost: torch.Tensor = 1.0 - self.rpos_drone[..., 0, :].norm(
-            dim=-1, keepdim=True
-        )
-        safety_cost: torch.Tensor = safety_cost.clip(0.0)
+        safety_cost = calculate_safety_cost(self.rpos_drone)  # (E,4)
 
         # 接球的无人机要离球近
         reward_pos = (turn_convert(self.turn) == 1).float() / (
@@ -488,7 +514,7 @@ class PingPongRelay(IsaacEnv):
             self.ball_pos[..., 2]
             - self.drone.pos[..., 2].max(dim=1, keepdim=True)[0].clip(1.5)
         ).clip(0.3)
-        
+
         # 击中球了获得高额奖励
         reward_score = switch_turn.float() * 50.0
         reward = torch.sum(

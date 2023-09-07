@@ -40,6 +40,7 @@ class IsaacEnv(EnvBase):
         self.num_envs = self.cfg.env.num_envs
         self.max_episode_length = self.cfg.env.max_episode_length
         self.min_episode_length = self.cfg.env.min_episode_length
+        self.substeps = self.cfg.sim.substeps
 
         torch.backends.cudnn.benchmark = True
         torch.backends.cudnn.deterministic = False
@@ -194,21 +195,24 @@ class IsaacEnv(EnvBase):
         # self.sim.step(render=False)
         self.sim._physics_sim_view.flush()
         self.progress_buf[env_ids] = 0.
-        return self._tensordict.update(self._compute_state_and_obs())
+        tensordict = TensorDict({}, self.batch_size, device=self.device)
+        tensordict.update(self._compute_state_and_obs())
+        tensordict.set("truncated", (self.progress_buf > self.max_episode_length).unsqueeze(1))
+        return tensordict
 
     @abc.abstractmethod
     def _reset_idx(self, env_ids: torch.Tensor):
         raise NotImplementedError
 
     def _step(self, tensordict: TensorDictBase) -> TensorDictBase:
-        self._pre_sim_step(tensordict)
-        for substep in range(1):
+        for substep in range(self.substeps):
+            self._pre_sim_step(tensordict)
             self.sim.step(self._should_render(substep))
         self._post_sim_step(tensordict)
         self.progress_buf += 1
-        tensordict = TensorDict({"next": {}}, self.batch_size)
-        tensordict["next"].update(self._compute_state_and_obs())
-        tensordict["next"].update(self._compute_reward_and_done())
+        tensordict = TensorDict({}, self.batch_size, device=self.device)
+        tensordict.update(self._compute_state_and_obs())
+        tensordict.update(self._compute_reward_and_done())
         return tensordict
 
     def _pre_sim_step(self, tensordict: TensorDictBase):

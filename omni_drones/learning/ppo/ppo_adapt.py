@@ -243,6 +243,43 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
                 discriminator,
                 self.adaptation_key, 
             ).to(self.device)
+        elif self.cfg.adaptation_loss == "value":
+            self.adaptation_module = TensorDictModule(
+                TConv(fake_input[self.adaptation_key].shape[-1]), 
+                [("agents", "observation_h")], [self.adaptation_key]
+            ).to(self.device)
+            self.adaptation_module(fake_input)
+            self.adaptation_loss = ValueDeviation(
+                self.encoder,
+                self.adaptation_module,
+                self.critic
+            ).to(self.device)
+        elif self.cfg.adaptation_loss == "action":
+            self.adaptation_module = TensorDictModule(
+                TConv(fake_input[self.adaptation_key].shape[-1]), 
+                [("agents", "observation_h")], [self.adaptation_key]
+            ).to(self.device)
+            self.adaptation_module(fake_input)
+            self.adaptation_loss = ActionDistDiv(
+                self.encoder,
+                self.adaptation_module,
+                self.actor
+            ).to(self.device)
+        elif self.cfg.adaptation_loss == "action_value":
+            self.adaptation_module = TensorDictModule(
+                TConv(fake_input[self.adaptation_key].shape[-1]), 
+                [("agents", "observation_h")], [self.adaptation_key]
+            ).to(self.device)
+            self.adaptation_module(fake_input)
+            self.adaptation_loss = ActionValue(
+                self.encoder,
+                self.adaptation_module,
+                self.actor,
+                self.critic
+            ).to(self.device)
+        else:
+            raise ValueError(self.cfg.adaptation_loss)
+
 
         self.encoder_opt = torch.optim.Adam(self.encoder.parameters(), lr=5e-4)
         self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=5e-4)
@@ -473,6 +510,123 @@ class LSGAN(nn.Module):
             (true_label - 1).square().mean()
         )
         return loss
+
+
+
+
+class ActionDistDiv(nn.Module):
+    def __init__(
+        self,
+        encoder: TensorDictModule,
+        adaptation_module: TensorDictModule,
+        actor: ProbabilisticActor,
+    ) -> None:
+        super().__init__()
+        self.encoder = encoder
+        self.adaptation_module = adaptation_module
+        self.actor = actor
+        self.opt = torch.optim.Adam(self.adaptation_module.parameters())
+    
+    def forward(self, tensordict: TensorDictBase):
+        with torch.no_grad():
+            td = self.encoder(tensordict.exclude("context"))
+            target = self.actor.get_dist(td)
+        with hold_out_net(self.actor):
+            td = self.adaptation_module(tensordict.exclude("context"))
+            pred = self.actor.get_dist(td)
+        loss = D.kl_divergence(pred, target).mean()
+        # loss = D.kl_divergence(target, pred).mean()
+        return loss
+    
+    def update(self, tensordict: TensorDictBase):
+        info = []
+        for epoch in range(4):
+            for batch in make_batch(tensordict, 8):
+                loss = self(batch)
+                self.opt.zero_grad()
+                loss.backward()
+                self.opt.step()
+                info.append(loss)
+        return {"adapt_loss": torch.stack(info).mean().item()}
+
+
+class ValueDeviation(nn.Module):
+    def __init__(
+        self,
+        encoder: TensorDictModule,
+        adaptation_module: TensorDictModule,
+        critic: TensorDictModule,
+    ) -> None:
+        super().__init__()
+        self.encoder = encoder
+        self.adaptation_module = adaptation_module
+        self.critic = critic
+        self.opt = torch.optim.Adam(self.adaptation_module.parameters())
+    
+    def forward(self, tensordict: TensorDictBase):
+        with torch.no_grad():
+            td = self.encoder(tensordict.exclude("context"))
+            target = self.critic(td).get("state_value")
+        
+        with hold_out_net(self.critic):
+            td = self.adaptation_module(tensordict.exclude("context"))
+            pred = self.critic(td).get("state_value")
+        loss = F.mse_loss(pred, target)
+        return loss
+    
+    def update(self, tensordict: TensorDictBase):
+        info = []
+        for epoch in range(4):
+            for batch in make_batch(tensordict, 8):
+                loss = self(batch)
+                self.opt.zero_grad()
+                loss.backward()
+                self.opt.step()
+                info.append(loss)
+        return {"adapt_loss": torch.stack(info).mean().item()}
+
+
+class ActionValue(nn.Module):
+    def __init__(
+        self,
+        encoder: TensorDictModule,
+        adaptation_module: TensorDictModule,
+        actor: ProbabilisticActor,
+        critic: TensorDictModule
+    ) -> None:
+        super().__init__()
+        self.encoder = encoder
+        self.adaptation_module = adaptation_module
+        self.actor = actor
+        self.critic = critic
+        self.opt = torch.optim.Adam(self.adaptation_module.parameters())
+    
+    def forward(self, tensordict: TensorDictBase):
+        with torch.no_grad():
+            td = self.encoder(tensordict.exclude("context"))
+            value_target = self.critic(td).get("state_value")
+            action_target = self.actor.get_dist(td)
+        
+        with hold_out_net(self.critic), hold_out_net(self.actor):
+            td = self.adaptation_module(tensordict.exclude("context"))
+            value_pred = self.critic(td).get("state_value")
+            action_pred = self.actor.get_dist(td)
+        loss = (
+            D.kl_divergence(action_pred, action_target).mean()
+            + F.mse_loss(value_pred, value_target)
+        )
+        return loss
+    
+    def update(self, tensordict: TensorDictBase):
+        info = []
+        for epoch in range(4):
+            for batch in make_batch(tensordict, 8):
+                loss = self(batch)
+                self.opt.zero_grad()
+                loss.backward()
+                self.opt.step()
+                info.append(loss)
+        return {"adapt_loss": torch.stack(info).mean().item()}
 
 
 def make_batch(tensordict: TensorDict, num_minibatches: int):

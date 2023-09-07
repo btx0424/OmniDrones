@@ -208,7 +208,7 @@ def main(cfg):
         }
         video_array = np.stack(frames).transpose(0, 3, 1, 2)
         frames.clear()
-        info["recording"] = wandb.Video(video_array, fps=0.5 / cfg.sim.dt, format="mp4")
+        info["recording"] = wandb.Video(video_array, fps=0.5 / (cfg.sim.dt * cfg.sim.substeps), format="mp4")
         returns = traj_stats[("stats", "return")]
         info["return_hist"] = wandb.Histogram(np_histogram=np.histogram(returns, bins=32))
         table = wandb.Table(columns=["return"], data=returns.unsqueeze(-1).tolist())

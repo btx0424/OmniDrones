@@ -26,7 +26,7 @@ class AgentSpec:
         if self.action_key is None:
             return self._env.action_spec
         try:
-            return self._env.input_spec["_action_spec"][self.action_key]
+            return self._env.input_spec["full_action_spec"][self.action_key]
         except:
             return self._env.action_spec[self.action_key]
     
@@ -41,7 +41,7 @@ class AgentSpec:
         if self.reward_key is None:
             return self._env.reward_spec
         try:
-            return self._env.output_spec["_reward_spec"][self.reward_key]
+            return self._env.output_spec["full_reward_spec"][self.reward_key]
         except:
             return self._env.reward_spec[self.reward_key]
 
@@ -50,7 +50,7 @@ class AgentSpec:
         if self.done_key is None:
             return self._env.done_spec
         try:
-            return self._env.output_spec["_done_spec"][self.done_key]
+            return self._env.output_spec["full_done_spec"][self.done_key]
         except:
             return self._env.done_spec[self.done_key]
 

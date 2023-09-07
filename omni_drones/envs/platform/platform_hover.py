@@ -161,6 +161,7 @@ class PlatformHover(IsaacEnv):
             observation_key=("agents", "observation"),
             action_key=("agents", "action"),
             reward_key=("agents", "reward"),
+            state_key="state"
         )
 
         stats_spec = CompositeSpec({

@@ -13,6 +13,7 @@ import omni.isaac.core.materials as materials
 import torch
 import torch.distributions as D
 import torch.functional as F
+import torch.nn.functional as NNF
 
 from pxr import UsdShade
 from typing import List
@@ -183,7 +184,7 @@ def calculate_safety_cost(drone_rpos: torch.Tensor) -> torch.Tensor:
 
     d_m, _ = torch.max(d, dim=-1)
 
-    safety_cost = 1.0 - d_m / 3
+    safety_cost = 1.0 - d_m
     safety_cost = safety_cost.clip(0.0)
     return safety_cost
 
@@ -367,6 +368,8 @@ class PingPongRelay(IsaacEnv):
                     "return": UnboundedContinuousTensorSpec(1),
                     "episode_len": UnboundedContinuousTensorSpec(1),
                     "score": UnboundedContinuousTensorSpec(1),
+                    # 0: cummulative deviation 1: count(score)
+                    "angular_deviation": UnboundedContinuousTensorSpec(2),
                 }
             )
             .expand(self.num_envs)
@@ -499,6 +502,11 @@ class PingPongRelay(IsaacEnv):
             self.turn.unsqueeze(-1) == which_drone
         )  # (E,1)
 
+        vxy_ball = self.ball_vel[:, 0, :2]  # (E,2)
+        rposxy = self.rpos_drone[torch.arange(self.num_envs), self.turn, :2]  # (E,2)
+        cosine_similarity = NNF.cosine_similarity(vxy_ball, rposxy, dim=-1)  # (E,)
+        angular_deviation = torch.acos(cosine_similarity)  # (E,)
+
         self.turn = turn_shift(self.turn, switch_turn.squeeze(-1))
 
         # 不能离得太近
@@ -534,6 +542,11 @@ class PingPongRelay(IsaacEnv):
         self.stats["return"].add_(reward[..., [0]])
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
         self.stats["score"].add_(switch_turn.float())
+
+        self.stats["angular_deviation"][switch_turn.squeeze(-1), 0] += (
+            angular_deviation[switch_turn.squeeze(-1)] / torch.pi * 180
+        )
+        self.stats["angular_deviation"][switch_turn.squeeze(-1), 1] += 1
 
         return TensorDict(
             {

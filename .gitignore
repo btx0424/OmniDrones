@@ -145,5 +145,4 @@ urdf/
 tmp
 plot/
 
-
-test.py
+policy_checkpoints/

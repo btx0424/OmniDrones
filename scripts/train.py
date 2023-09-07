@@ -7,20 +7,20 @@ import torch
 import numpy as np
 import wandb
 from functorch import vmap
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf, DictConfig
 
 from omni_drones import CONFIG_PATH, init_simulation_app
 from omni_drones.utils.torchrl import SyncDataCollector, AgentSpec
 from omni_drones.utils.torchrl.transforms import (
-    LogOnEpisode, 
-    FromMultiDiscreteAction, 
+    LogOnEpisode,
+    FromMultiDiscreteAction,
     FromDiscreteAction,
     ravel_composite,
-    History
+    History,
 )
 from omni_drones.utils.wandb import init_wandb
 from omni_drones.learning import (
-    MAPPOPolicy, 
+    MAPPOPolicy,
     HAPPOPolicy,
     QMIXPolicy,
     DQNPolicy,
@@ -30,17 +30,19 @@ from omni_drones.learning import (
     TDMPCPolicy,
     Policy,
     PPOPolicy,
-    PPOAdaptivePolicy, PPORNNPolicy
+    PPOAdaptivePolicy,
+    PPORNNPolicy,
 )
 
 from setproctitle import setproctitle
 from torchrl.envs.transforms import (
-    TransformedEnv, 
-    InitTracker, 
+    TransformedEnv,
+    InitTracker,
     Compose,
 )
 
 from tqdm import tqdm
+
 
 class Every:
     def __init__(self, func, steps):
@@ -53,8 +55,16 @@ class Every:
             self.func(*args, **kwargs)
         self.i += 1
 
+
+def angular_deviation_process_func(x: torch.Tensor) -> torch.Tensor:
+    a = torch.sum(x[..., 0])
+    b = torch.sum(x[..., 1])
+    avg_angular_deviation = (a / b).item()
+    return avg_angular_deviation
+
+
 @hydra.main(version_base=None, config_path=CONFIG_PATH, config_name="train")
-def main(cfg):
+def main(cfg: DictConfig):
     OmegaConf.register_new_resolver("eval", eval)
     OmegaConf.resolve(cfg)
     OmegaConf.set_struct(cfg, False)
@@ -64,11 +74,12 @@ def main(cfg):
     print(OmegaConf.to_yaml(cfg))
 
     from omni_drones.envs.isaac_env import IsaacEnv
+
     algos = {
         "ppo": PPOPolicy,
         "ppo_adaptive": PPOAdaptivePolicy,
         "ppo_rnn": PPORNNPolicy,
-        "mappo": MAPPOPolicy, 
+        "mappo": MAPPOPolicy,
         "happo": HAPPOPolicy,
         "qmix": QMIXPolicy,
         "dqn": DQNPolicy,
@@ -76,7 +87,7 @@ def main(cfg):
         "td3": TD3Policy,
         "matd3": MATD3Policy,
         "tdmpc": TDMPCPolicy,
-        "test": Policy
+        "test": Policy,
     }
 
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
@@ -87,33 +98,40 @@ def main(cfg):
         run.log(info)
 
     stats_keys = [
-        k for k in base_env.observation_spec.keys(True, True) 
-        if isinstance(k, tuple) and k[0]=="stats"
+        k
+        for k in base_env.observation_spec.keys(True, True)
+        if isinstance(k, tuple) and k[0] == "stats"
     ]
     logger = LogOnEpisode(
         cfg.env.num_envs,
         in_keys=stats_keys,
         log_keys=stats_keys,
         logger_func=log,
-        # process_func={"return_std": lambda x: torch.std(x).item()}
+        process_func={("stats", "angular_deviation"): angular_deviation_process_func},
     )
     transforms = [InitTracker(), logger]
 
     # a CompositeSpec is by deafault processed by a entity-based encoder
     # flatten it to use a MLP encoder instead
     if cfg.task.get("flatten_obs", False):
-        transforms.append(ravel_composite(base_env.observation_spec, ("agents", "observation")))
+        transforms.append(
+            ravel_composite(base_env.observation_spec, ("agents", "observation"))
+        )
     if cfg.task.get("flatten_state", False):
         transforms.append(ravel_composite(base_env.observation_spec, "state"))
-    if (
-        cfg.task.get("flatten_intrinsics", True)
-        and ("agents", "intrinsics") in base_env.observation_spec.keys(True)
-    ):
-        transforms.append(ravel_composite(base_env.observation_spec, ("agents", "intrinsics"), start_dim=-1))
+    if cfg.task.get("flatten_intrinsics", True) and (
+        "agents",
+        "intrinsics",
+    ) in base_env.observation_spec.keys(True):
+        transforms.append(
+            ravel_composite(
+                base_env.observation_spec, ("agents", "intrinsics"), start_dim=-1
+            )
+        )
 
     if cfg.task.get("history", False):
         transforms.append(History([("agents", "observation")]))
-    
+
     # optionally discretize the action space or use a controller
     action_transform: str = cfg.task.get("action_transform", None)
     if action_transform is not None:
@@ -128,29 +146,42 @@ def main(cfg):
         elif action_transform == "velocity":
             from omni_drones.controllers import LeePositionController
             from omni_drones.utils.torchrl.transforms import VelController
-            controller = LeePositionController(9.81, base_env.drone.params).to(base_env.device)
+
+            controller = LeePositionController(9.81, base_env.drone.params).to(
+                base_env.device
+            )
             transform = VelController(controller)
             transforms.append(transform)
         elif action_transform == "attitude":
             from omni_drones.controllers import AttitudeController as Controller
             from omni_drones.utils.torchrl.transforms import AttitudeController
+
             controller = Controller(9.81, base_env.drone.params).to(base_env.device)
             transform = AttitudeController(controller)
             transforms.append(transform)
         elif action_transform == "rate":
             from omni_drones.controllers import RateController as _RateController
             from omni_drones.utils.torchrl.transforms import RateController
-            controller = _RateController(9.81, base_env.drone.params).to(base_env.device)
+
+            controller = _RateController(9.81, base_env.drone.params).to(
+                base_env.device
+            )
             transform = RateController(controller)
             transforms.append(transform)
         elif not action_transform.lower() == "none":
             raise NotImplementedError(f"Unknown action transform: {action_transform}")
-    
+
     env = TransformedEnv(base_env, Compose(*transforms)).train()
     env.set_seed(cfg.seed)
 
     agent_spec: AgentSpec = env.agent_spec["drone"]
-    policy = algos[cfg.algo.name.lower()](cfg.algo, agent_spec=agent_spec, device="cuda")
+    policy = algos[cfg.algo.name.lower()](
+        cfg.algo, agent_spec=agent_spec, device="cuda"
+    )
+
+    if cfg.get("policy_checkpoint_path") is not None:
+        policy.load_state_dict(torch.load(cfg.policy_checkpoint_path))
+        print(f"Load policy from {cfg.policy_checkpoint_path}")
 
     frames_per_batch = env.num_envs * int(cfg.algo.train_every)
     total_frames = cfg.get("total_frames", -1) // frames_per_batch * frames_per_batch
@@ -183,7 +214,7 @@ def main(cfg):
             callback=Every(record_frame, 2),
             auto_reset=True,
             break_when_any_done=False,
-            return_contiguous=False
+            return_contiguous=False,
         )
         base_env.enable_render(not cfg.headless)
         env.reset()
@@ -217,14 +248,16 @@ def main(cfg):
         run.log(info)
         # print(OmegaConf.to_yaml({k: v for k, v in info.items() if isinstance(v, float)}))
 
-        pbar.set_postfix({
-            "rollout_fps": collector._fps,
-            "frames": collector._frames,
-        })
+        pbar.set_postfix(
+            {
+                "rollout_fps": collector._fps,
+                "frames": collector._frames,
+            }
+        )
 
         if max_iters > 0 and i >= max_iters - 1:
-            break 
-    
+            break
+
     logging.info(f"Final Eval at {collector._frames} steps.")
     info = {"env_frames": collector._frames}
     info.update(evaluate())
@@ -237,7 +270,7 @@ def main(cfg):
 
     wandb.save(os.path.join(run.dir, "checkpoint*"))
     wandb.finish()
-    
+
     simulation_app.close()
 
 

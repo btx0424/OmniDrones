@@ -11,6 +11,8 @@ eval_interval: -1
 save_interval: -1
 seed: 0
 
+policy_checkpoint_path: /home/hesicheng/OmniDrones/policy_checkpoints/baseline.pt
+
 viewer:
   resolution: [960, 720]
   eye: [8, 0., 6.]
@@ -23,7 +25,6 @@ wandb:
   entity: marl-drones
   project: omnidrones
   mode: online # set to 'disabled' when debugging locally
-  # mode: disabled
   run_id: 
   monitor_gym: True
   tags: 

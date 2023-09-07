@@ -4,9 +4,12 @@
 
 ## TO DO
 
-test 
-- turn_shift
-- safety_cost
+
+drone A passes Ball to drone B
+统计
+- 碰撞后，水平方向上球速度与位矢AB夹角
+- 球是不是被越打越快？
+- 四个无人机是不是越挨越近？
 
 对看热闹的无人机，给它的运动做惩罚
 

@@ -3,7 +3,7 @@ import logging
 import os
 
 import wandb
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf, DictConfig
 
 
 def dict_flatten(a: dict, delim="."):
@@ -31,7 +31,7 @@ def dict_flatten(a: dict, delim="."):
     return result
 
 
-def init_wandb(cfg):
+def init_wandb(cfg: DictConfig):
     """Initialize WandB.
 
     If only `run_id` is given, resume from the run specified by `run_id`.
@@ -41,7 +41,8 @@ def init_wandb(cfg):
     Otherwise, start a fresh new run.
 
     """
-    wandb_cfg = cfg.wandb
+    wandb_cfg: DictConfig = cfg.wandb
+    print(type(wandb_cfg))
     time_str = datetime.datetime.now().strftime("%m-%d_%H-%M")
     run_name = f"{wandb_cfg.run_name}/{time_str}"
     kwargs = dict(
@@ -49,7 +50,7 @@ def init_wandb(cfg):
         group=wandb_cfg.group,
         entity=wandb_cfg.entity,
         name=run_name,
-        mode=wandb_cfg.mode,
+        mode=wandb_cfg.get("mode", "disabled"),
         tags=wandb_cfg.tags,
     )
     if wandb_cfg.run_id is not None:

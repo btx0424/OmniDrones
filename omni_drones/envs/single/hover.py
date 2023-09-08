@@ -313,9 +313,9 @@ class Hover(IsaacEnv):
 
     def force_reset(self):
         env_ids = torch.arange(0,self.num_envs,1,device='cuda:0')
-        #payload_mass_ratio = self.payload_mass_dist_train.sample(env_ids.shape+(1,))
-        self.drone._reset_idx(env_ids, False,self.has_payload)
-        if False:
+        if self.has_payload:
+            payload_mass_ratio = self.payload_mass_dist_train.sample(env_ids.shape+(1,))
+            self.drone._reset_idx(env_ids, False,self.has_payload,payload_mass_ratio)
             payload_z = self.payload_z_dist_eval.sample(env_ids.shape)
             joint_indices = torch.tensor([self.drone._view._dof_indices["PrismaticJoint"]], device=self.device)
             self.drone._view.set_joint_positions(
@@ -325,9 +325,10 @@ class Hover(IsaacEnv):
             self.drone._view.set_joint_velocities(
                 torch.zeros(len(env_ids), 1, device=self.device), 
                 env_indices=env_ids, joint_indices=joint_indices)
-            
             payload_mass = payload_mass_ratio * self.drone.masses[env_ids]
-            self.payload.set_masses(payload_mass, env_indices=env_ids)      
+            self.payload.set_masses(payload_mass, env_indices=env_ids)
+        else:
+            self.drone._reset_idx(env_ids, False,self.has_payload)      
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("agents", "action")]
@@ -400,16 +401,13 @@ class Hover(IsaacEnv):
             )
         else:
             done = truncated_eval
-            if self.progress_buf[0] == 2000 or self.progress_buf[0] == 1 or self.progress_buf[0] == 1000 or self.progress_buf[0] == 3000:
+            if self.progress_buf[0] == 1000 or  self.progress_buf[0] == 2000 or self.progress_buf[0] == 3000:
                 self.force_reset()
             mse_loss=torch.nn.MSELoss(reduction='none')
             for i in range(self.num_envs):
                 mse=mse_loss(self.info['pred_context'][i,:,:].squeeze(0),self.info['true_context'][i,:,:].squeeze(0)).mean(0).item()
                 key_mse=f"mse_{i}"
                 self.stats[key_mse] = mse*torch.ones_like(reward,device=self.device_name)
-
-
-        #self.stats["pos_error"].lerp_(pos_error, (1-self.alpha))
 
 
         if self.training:

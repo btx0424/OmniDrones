@@ -94,7 +94,7 @@ def main(cfg: DictConfig):
     base_env = env_class(cfg, headless=cfg.headless)
 
     def log(info):
-        # print(OmegaConf.to_yaml(info))
+        print(OmegaConf.to_yaml(info))
         run.log(info)
 
     stats_keys = [

@@ -252,7 +252,6 @@ class PingPongRelay(IsaacEnv):
         self.turn = torch.zeros(self.num_envs, device=self.device, dtype=torch.int64)
 
         self.last_ball_vel = torch.zeros(self.num_envs, 1, 3, device=self.device)
-        self.alpha = 0.8
         self.draw = _debug_draw.acquire_debug_draw_interface()
 
     def _design_scene(self):
@@ -370,6 +369,8 @@ class PingPongRelay(IsaacEnv):
                     "score": UnboundedContinuousTensorSpec(1),
                     # 0: cummulative deviation 1: count(score)
                     "angular_deviation": UnboundedContinuousTensorSpec(2),
+                    "active_velocity": UnboundedContinuousTensorSpec(1),
+                    "inactive_velocity": UnboundedContinuousTensorSpec(3),
                 }
             )
             .expand(self.num_envs)
@@ -501,13 +502,16 @@ class PingPongRelay(IsaacEnv):
         switch_turn: torch.Tensor = hit & (
             self.turn.unsqueeze(-1) == which_drone
         )  # (E,1)
-
         vxy_ball = self.ball_vel[:, 0, :2]  # (E,2)
         rposxy = self.rpos_drone[torch.arange(self.num_envs), self.turn, :2]  # (E,2)
         cosine_similarity = NNF.cosine_similarity(vxy_ball, rposxy, dim=-1)  # (E,)
         angular_deviation = torch.acos(cosine_similarity)  # (E,)
 
         self.turn = turn_shift(self.turn, switch_turn.squeeze(-1))
+        # (E,4)
+        inactive_mask = self.turn.unsqueeze(-1) != torch.arange(
+            4, device=self.turn.device
+        )
 
         # 不能离得太近
         safety_cost = calculate_safety_cost(self.rpos_drone)  # (E,4)
@@ -525,15 +529,26 @@ class PingPongRelay(IsaacEnv):
 
         # 击中球了获得高额奖励
         reward_score = switch_turn.float() * 50.0
-        
-        # clamp at about 25 degree
+
+        # clamp at about 16 degree
         angular_penalty = (
-            switch_turn.float() * (1 - cosine_similarity).clamp(min=0.1, max=1.0) * 30.0
+            switch_turn.squeeze(-1).float()
+            * (1 - cosine_similarity).clamp(min=0.04, max=1.0)
+            * 30.0
         )
         angular_penalty = angular_penalty.unsqueeze(-1)  # (E,1)
 
+        #
+        moving_penalty = inactive_mask.float() * self.root_state[:, :, 6:9].norm(dim=-1)
+        moving_penalty *= 0.1
+
         reward = torch.sum(
-            reward_pos + reward_height + reward_score - safety_cost - angular_penalty,
+            reward_pos
+            + reward_height
+            + reward_score
+            - safety_cost
+            - angular_penalty
+            - moving_penalty,
             dim=1,
             keepdim=True,
         ).expand(-1, 4)
@@ -556,6 +571,14 @@ class PingPongRelay(IsaacEnv):
             angular_deviation[switch_turn.squeeze(-1)] / torch.pi * 180
         )
         self.stats["angular_deviation"][switch_turn.squeeze(-1), 1] += 1
+
+        self.stats["active_velocity"] = self.root_state[
+            torch.arange(self.num_envs), self.turn, 6:9
+        ].norm(dim=-1, keepdim=True)
+
+        # sele.root_state (E,4,23)
+        tmp = self.root_state[inactive_mask].view(self.num_envs, 3, -1)  # (E,3,23)
+        self.stats["inactive_velocity"] = tmp[:, :, 6:9].norm(dim=-1)
 
         return TensorDict(
             {

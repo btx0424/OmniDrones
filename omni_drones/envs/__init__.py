@@ -13,4 +13,5 @@ from .rearrange import Rearrange
 from .pinballV0 import PinballV0
 from .pinball_multiV0 import PingPongMultiV0
 from .pinball_relay import PingPongRelay
+from .pinball_2v2 import PingPong2v2
 from .isaac_env import IsaacEnv

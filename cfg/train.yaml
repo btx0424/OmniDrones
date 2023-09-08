@@ -5,13 +5,13 @@ headless: true
 sim: ${task.sim}
 env: ${task.env}
 
-total_frames: 500_000_000
+total_frames: 400_000_000
 max_iters: -1
 eval_interval: -1
 save_interval: -1
 seed: 0
 
-# policy_checkpoint_path: /home/hesicheng/OmniDrones/policy_checkpoints/baseline.pt
+# policy_checkpoint_path: /home/hesicheng/OmniDrones/policy_checkpoints/angular_deviation.pt
 
 viewer:
   resolution: [960, 720]

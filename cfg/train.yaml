@@ -11,11 +11,11 @@ eval_interval: -1
 save_interval: -1
 seed: 0
 
-policy_checkpoint_path: /home/hesicheng/OmniDrones/policy_checkpoints/baseline.pt
+# policy_checkpoint_path: /home/hesicheng/OmniDrones/policy_checkpoints/baseline.pt
 
 viewer:
   resolution: [960, 720]
-  eye: [8, 0., 6.]
+  eye: [6, 0., 4.]
   lookat: [0., 0., 1.]
 
 wandb:

@@ -181,8 +181,8 @@ def calculate_safety_cost(drone_rpos: torch.Tensor) -> torch.Tensor:
         ],
         dim=-1,
     )
-
-    d_m, _ = torch.max(d, dim=-1)
+    #
+    d_m, _ = torch.min(d, dim=-1)
 
     safety_cost = 1.0 - d_m
     safety_cost = safety_cost.clip(0.0)
@@ -525,8 +525,17 @@ class PingPongRelay(IsaacEnv):
 
         # 击中球了获得高额奖励
         reward_score = switch_turn.float() * 50.0
+        
+        # clamp at about 25 degree
+        angular_penalty = (
+            switch_turn.float() * (1 - cosine_similarity).clamp(min=0.1, max=1.0) * 30.0
+        )
+        angular_penalty = angular_penalty.unsqueeze(-1)  # (E,1)
+
         reward = torch.sum(
-            reward_pos + reward_height + reward_score - safety_cost, dim=1, keepdim=True
+            reward_pos + reward_height + reward_score - safety_cost - angular_penalty,
+            dim=1,
+            keepdim=True,
         ).expand(-1, 4)
 
         misbehave = (

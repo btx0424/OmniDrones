@@ -6,7 +6,7 @@ defaults:
   - /base/sim_base@_here_
 
 env:
-  num_envs: 4096
+  num_envs: 10
 
 drone_model: Firefly
 force_sensor: false
@@ -22,17 +22,17 @@ randomization:
       drag_coef_scale: [0, 0.62]
       rotor_offset_scale: [-0.63, 0.63]
     eval:
-      mass_scale: [0.21, 2.1]
-      inertia_scale: [0.0174, 3.658]
-      t2w_scale: [0.75, 5.593]
-      f2m_scale: [0.549, 3.167]
-      drag_coef_scale: [0, 0.74]
-      rotor_offset_scale: [-0.7,0.95]
-  payload:
-    z_train: [-0.0001, 0.0001]
-    mass_train: [0.1, 0.5]
-    z_eval: [-0.0001, 0.0001]
-    mass_eval: [0.05, 0.6]
+       mass_scale: [1.0, 1.001]
+       inertia_scale: [0.026, 1.974]
+       t2w_scale: [1.5, 1.501]
+       f2m_scale: [1, 1.001]
+       drag_coef_scale: [0, 0.002]
+       rotor_offset_scale: [-0.001,0.001]
+  #payload:
+    #z_train: [-0.0001, 0.0001]
+    #mass_train: [0.1, 0.5]
+    #z_eval: [-0.0001, 0.0001]
+    #mass_eval: [0.05, 0.6]
 
 
 reward_effort_weight: 0.1

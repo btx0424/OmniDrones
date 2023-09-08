@@ -6,7 +6,7 @@ defaults:
   - /base/sim_base@_here_
 
 env:
-  max_episode_length: 600
+  max_episode_length: 2000
 
 drone_model: Hummingbird
 force_sensor: false
@@ -25,21 +25,26 @@ randomization:
   drone:
     train:
       mass_scale: [0.26, 1.74]
-      inertia_scale: [0.026, 1.974]
-      t2w_scale: [0.8, 2.23]
+      inertia_scale: [0.5, 1.974]
+      t2w_scale: [1.0, 2.23]
       f2m_scale: [0.625, 2.5]
       drag_coef_scale: [0, 0.62]
-      rotor_offset_scale: [-0.63, 0.63]
+      rotor_offset_scale: [-0.55, 0.55]
     eval:
-      mass_scale: [0.26, 1.74]
-      inertia_scale: [0.026, 1.974]
-      t2w_scale: [0.8, 2.23]
-      f2m_scale: [0.625, 2.5]
-      drag_coef_scale: [0, 0.62]
-      rotor_offset_scale: [-0.63, 0.63]
-  payload:
-    z: [-0.001, 0.001]
-    mass: [0.01, 0.5]
+       mass_scale: [1, 1.001]
+       inertia_scale: [1, 1.004]
+       t2w_scale: [1.5, 1.501]
+       f2m_scale: [0.8, 2.23]
+       drag_coef_scale: [0, 0.002]
+       rotor_offset_scale: [-0.001,0.001]
+  #payload:
+    #z: [-0.001, 0.001]
+    #mass: [0.1, 0.5]
+
+#t2w is too low
+#inertias is to low it is the most significant factor
+#rotor offset is too high
+
 
 
 reset_thres: 0.5

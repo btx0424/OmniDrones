@@ -7,6 +7,8 @@ import omni.isaac.core.utils.prims as prim_utils
 import torch
 import torch.distributions as D
 
+import numpy as np
+
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.robots.drone import MultirotorBase
 from omni_drones.views import RigidPrimView
@@ -97,6 +99,8 @@ class TrackV1(IsaacEnv):
                 torch.tensor([payload_cfg["mass"][0]], device=self.device),
                 torch.tensor([payload_cfg["mass"][1]], device=self.device)
             )
+            self.low=torch.tensor([payload_cfg["mass"][0]], device=self.device)
+            self.high=torch.tensor([payload_cfg["mass"][1]], device=self.device)
             self.payload = RigidPrimView(
                 f"/World/envs/env_*/{self.drone.name}_*/payload",
                 reset_xform_properties=False,
@@ -165,7 +169,7 @@ class TrackV1(IsaacEnv):
         self.observation_spec = CompositeSpec({
             "agents": CompositeSpec({
                 "observation": UnboundedContinuousTensorSpec((1, drone_obs_dim), device=self.device),
-                "observation_h": UnboundedContinuousTensorSpec((1, drone_obs_dim, 50), device=self.device),
+                "observation_h": UnboundedContinuousTensorSpec((1, 27, 50), device=self.device),
                 "intrinsics": self.drone.intrinsics_spec.unsqueeze(0).to(self.device)
             })
         }).expand(self.num_envs)
@@ -187,19 +191,22 @@ class TrackV1(IsaacEnv):
             state_key=("agents", "intrinsics")
         )
 
-        stats_spec = CompositeSpec({
+        stats_key={
             "return": UnboundedContinuousTensorSpec(1),
             "episode_len": UnboundedContinuousTensorSpec(1),
             "tracking_error": UnboundedContinuousTensorSpec(1),
             "heading_alignment": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(1),
-            "mse": UnboundedContinuousTensorSpec(1),
             "dist_one":UnboundedContinuousTensorSpec(1),
             "dist_two":UnboundedContinuousTensorSpec(1),
             "dist_three":UnboundedContinuousTensorSpec(1),
             "dist_four":UnboundedContinuousTensorSpec(1),
             "dist_five":UnboundedContinuousTensorSpec(1),
-        }).expand(self.num_envs).to(self.device)
+        }
+        for i in range(self.num_envs):
+            mse_key=f"mse_{i}"
+            stats_key[mse_key]=UnboundedContinuousTensorSpec(1)
+        stats_spec = CompositeSpec(stats_key).expand(self.num_envs).to(self.device)
         context_dims=64
         info_spec = CompositeSpec({
             "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13), device=self.device),
@@ -287,6 +294,23 @@ class TrackV1(IsaacEnv):
             self.info["pred_context"][:] = tensordict['context']
             self.info["true_context"][:] = tensordict['context_target']
 
+    def force_reset(self):
+        env_ids = torch.arange(0,self.num_envs,1,device='cuda:0')
+        self.drone._reset_idx(env_ids,False)
+        if False:
+            payload_z = self.payload_z_dist.sample(env_ids.shape)
+            joint_indices = torch.tensor([self.drone._view._dof_indices["PrismaticJoint"]], device=self.device)
+            self.drone._view.set_joint_positions(
+                payload_z, env_indices=env_ids, joint_indices=joint_indices)
+            self.drone._view.set_joint_position_targets(
+                payload_z, env_indices=env_ids, joint_indices=joint_indices)
+            self.drone._view.set_joint_velocities(
+                torch.zeros(len(env_ids), 1, device=self.device), 
+                env_indices=env_ids, joint_indices=joint_indices)
+            
+            payload_mass = self.payload_mass_dist.sample(env_ids.shape+(1,)) * self.drone.masses[env_ids]
+            self.payload.set_masses(payload_mass, env_indices=env_ids)   
+
     def _compute_state_and_obs(self):
         self.root_state = self.drone.get_state()
         self.info["drone_state"][:] = self.root_state[..., :13]
@@ -301,11 +325,16 @@ class TrackV1(IsaacEnv):
             self.root_state[..., 3:],
             self.info["prev_action"]
         ]
+        obs_h = [
+            self.root_state[..., :],
+            self.info["prev_action"]   
+        ]
         if self.time_encoding:
             obs.append(self.time_encoding.encode(self.progress_buf).unsqueeze(1))
 
         obs = torch.cat(obs, dim=-1)
-        self.observation_h[..., -1] = obs
+        obs_h = torch.cat(obs_h, dim=-1)
+        self.observation_h[..., -1] = obs_h
 
         return TensorDict({
             "agents": {
@@ -342,10 +371,16 @@ class TrackV1(IsaacEnv):
         if self.training:
             self.stats["return"] += reward
         else:
-            #reward=self.check_nan(reward)
+            if self.progress_buf[0] == 1000 :
+                self.force_reset()
+            if self.progress_buf[0] == 1 :
+                self.force_reset()
             mse_loss=torch.nn.MSELoss(reduction='none')
-            mse=mse_loss(self.info['pred_context'],self.info['true_context']).mean(-1)
-            self.stats["mse"] = mse
+            for i in range(self.num_envs):
+                mse_key=f"mse_{i}"
+                mse=mse_loss(self.info['pred_context'][i,:,:].squeeze(0),self.info['true_context'][i,:,:].squeeze(0)).mean(0).item()
+                self.stats[mse_key] = mse*torch.ones_like(reward,device=self.device_name)
+            #self.stats["mse"] = self.info['pred_context'][0,0,1].item()*torch.ones_like(reward,device=self.device_name)
             reward_weight=torch.where((self.progress_buf > self.warmup_phase_steps * torch.ones_like(self.progress_buf)), 1, 0)[0].item()
             self.stats["return"] += reward_weight * reward
             range_nums_one = ( ( pos_error < 0.1 ) == True ).sum().item()
@@ -358,6 +393,13 @@ class TrackV1(IsaacEnv):
             self.stats["dist_three"] = range_nums_three / self.num_envs * torch.ones([self.num_envs,1],device=self.device_name)
             self.stats["dist_four"] = range_nums_four / self.num_envs * torch.ones([self.num_envs,1],device=self.device_name)
             self.stats["dist_five"] = range_nums_five / self.num_envs * torch.ones([self.num_envs,1],device=self.device_name)
+                        
+            for i in range(self.num_envs):
+                title=f"sample_{i}"            
+                sample=self.info['pred_context'][i,:,:]
+                sample_data=sample.data.cpu()
+                with open(title,"a") as f:
+                    np.savetxt(f,sample_data,delimiter=',',fmt="%f")
 
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
 

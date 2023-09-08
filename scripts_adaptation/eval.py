@@ -169,7 +169,7 @@ def main(cfg):
     
     env.train()
 
-    for i in range(25):
+    for i in range(3):
         info={}
         logging.info(f"Eval at {i} steps.")
         info.update(evaluate())

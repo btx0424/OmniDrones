@@ -209,22 +209,25 @@ class Hover(IsaacEnv):
             reward_key=("agents", "reward"),
             state_key=("agents", "intrinsics")
         )
-
-        stats_spec = CompositeSpec({
+        
+        stats_tensordict={
             "return": UnboundedContinuousTensorSpec(1),
             "episode_len": UnboundedContinuousTensorSpec(1),
             "pos_error": UnboundedContinuousTensorSpec(1),
             "heading_alignment": UnboundedContinuousTensorSpec(1),
             "uprightness": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(1),
-            "mse": UnboundedContinuousTensorSpec(1),
             #"success_rate":UnboundedContinuousTensorSpec(1),
             "dist_one":UnboundedContinuousTensorSpec(1),
             "dist_two":UnboundedContinuousTensorSpec(1),
             "dist_three":UnboundedContinuousTensorSpec(1),
             "dist_four":UnboundedContinuousTensorSpec(1),
             "dist_five":UnboundedContinuousTensorSpec(1),
-        }).expand(self.num_envs).to(self.device)
+        }
+        for i in range(self.num_envs):
+            key_mse=f"mse_{i}"
+            stats_tensordict[key_mse]=UnboundedContinuousTensorSpec(1)
+        stats_spec = CompositeSpec(stats_tensordict).expand(self.num_envs).to(self.device)
         context_dims = 64
         info_spec = CompositeSpec({
             "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13), device=self.device),
@@ -249,9 +252,11 @@ class Hover(IsaacEnv):
             train_judge=True
         self.training=train_judge
 
-        payload_mass_ratio = self.payload_mass_dist_train.sample(env_ids.shape+(1,))
-
-        self.drone._reset_idx(env_ids, train_judge,self.has_payload, payload_mass_ratio)
+        if self.has_payload and train_judge:
+            payload_mass_ratio = self.payload_mass_dist_train.sample(env_ids.shape+(1,))
+            self.drone._reset_idx(env_ids, train_judge,self.has_payload, payload_mass_ratio)
+        else:
+            self.drone._reset_idx(env_ids, train_judge,self.has_payload)
         
         pos = self.init_pos_dist.sample((*env_ids.shape, 1))
         rpy = self.init_rpy_dist.sample((*env_ids.shape, 1))
@@ -308,13 +313,9 @@ class Hover(IsaacEnv):
 
     def force_reset(self):
         env_ids = torch.arange(0,self.num_envs,1,device='cuda:0')
-        point = self.low + self.interval * self.index
-        print(point)
-        self.payload_mass_dist_eval = D.Uniform(
-                point,
-                1.0001 * point
-        )
-        if True:
+        #payload_mass_ratio = self.payload_mass_dist_train.sample(env_ids.shape+(1,))
+        self.drone._reset_idx(env_ids, False,self.has_payload)
+        if False:
             payload_z = self.payload_z_dist_eval.sample(env_ids.shape)
             joint_indices = torch.tensor([self.drone._view._dof_indices["PrismaticJoint"]], device=self.device)
             self.drone._view.set_joint_positions(
@@ -325,7 +326,7 @@ class Hover(IsaacEnv):
                 torch.zeros(len(env_ids), 1, device=self.device), 
                 env_indices=env_ids, joint_indices=joint_indices)
             
-            payload_mass = self.payload_mass_dist_eval.sample(env_ids.shape+(1,)) * self.drone.masses[env_ids]
+            payload_mass = payload_mass_ratio * self.drone.masses[env_ids]
             self.payload.set_masses(payload_mass, env_indices=env_ids)      
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
@@ -399,14 +400,13 @@ class Hover(IsaacEnv):
             )
         else:
             done = truncated_eval
-            if self.progress_buf[0] == 1 or self.progress_buf[0] == 150 or self.progress_buf[0] == 300 or self.progress_buf[0] == 450 :
-                #self.force_reset()
-                print(self.progress_buf[0])
-                self.index += 1
-                if self.index==4:
-                    self.index=0
-            #mse_loss=torch.nn.MSELoss(reduction='none')
-            #mse=mse_loss(self.info['pred_context'],self.info['true_context']).mean(-1)
+            if self.progress_buf[0] == 2000 or self.progress_buf[0] == 1 or self.progress_buf[0] == 1000 or self.progress_buf[0] == 3000:
+                self.force_reset()
+            mse_loss=torch.nn.MSELoss(reduction='none')
+            for i in range(self.num_envs):
+                mse=mse_loss(self.info['pred_context'][i,:,:].squeeze(0),self.info['true_context'][i,:,:].squeeze(0)).mean(0).item()
+                key_mse=f"mse_{i}"
+                self.stats[key_mse] = mse*torch.ones_like(reward,device=self.device_name)
 
 
         #self.stats["pos_error"].lerp_(pos_error, (1-self.alpha))
@@ -426,7 +426,6 @@ class Hover(IsaacEnv):
             range_nums_three = ( ( self.stats['pos_error'] < 1 ) == True ).sum().item()
             range_nums_four = ( ( self.stats['pos_error'] < 5 ) == True ).sum().item()
             range_nums_five = ( (self.stats['pos_error'] >= 5) == True ).sum().item()
-            self.stats["mse"] = self.stats["pos_error"]
             self.stats["dist_one"] = range_nums_one / self.num_envs * torch.ones([self.num_envs,1],device=self.device_name)
             self.stats["dist_two"] = range_nums_two / self.num_envs * torch.ones([self.num_envs,1],device=self.device_name)
             self.stats["dist_three"] = range_nums_three / self.num_envs * torch.ones([self.num_envs,1],device=self.device_name)
@@ -436,23 +435,12 @@ class Hover(IsaacEnv):
             self.stats["uprightness"].lerp_(self.root_state[..., 18], (1-self.alpha))
             self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
 
-            sample_1=self.info['pred_context'][0,:,:]
-            sample_1_data=sample_1.data.cpu()
-            title_1="sample_1"
-            with open(title_1,"a") as f:
-                np.savetxt(f,sample_1_data,delimiter=',',fmt="%f")
-
-            sample_2=self.info['pred_context'][50,:,:]
-            sample_2_data=sample_2.data.cpu()
-            title_2="sample_2"
-            with open(title_2,"a") as g:
-                np.savetxt(g,sample_2_data,delimiter=',',fmt="%f")
-
-            sample_3=self.info['pred_context'][100,:,:]
-            sample_3_data=sample_3.data.cpu()
-            title_3="sample_3"
-            with open(title_3,"a") as h:
-                np.savetxt(h,sample_3_data,delimiter=',',fmt="%f")
+            for i in range(10):
+                title=f"sample_{i}"            
+                sample=self.info['pred_context'][i,:,:]
+                sample_data=sample.data.cpu()
+                with open(title,"a") as f:
+                    np.savetxt(f,sample_data,delimiter=',',fmt="%f")
 
             self.stats["action_smoothness"] = self.info['pred_context'][:,:,0]
             self.stats["heading_alignment"] = self.info['pred_context'][:,:,5]

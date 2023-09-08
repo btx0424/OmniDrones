@@ -1,6 +1,6 @@
 env:
-  num_envs: 4096
+  num_envs: 10
   env_spacing: 8
-  max_episode_length: 600
+  max_episode_length: 4000
   min_episode_length: 50
-  warmup_phase_steps: 100
+  warmup_phase_steps: 1

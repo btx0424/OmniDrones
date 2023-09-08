@@ -412,14 +412,19 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
         """
         Computes the changes of the adaptation loss in an episode. Not for training.
         """
-        traj = traj.exclude(self.adaptation_key)
-        target = self.critic(self.encoder(traj.clone()))
-        pred = self.critic(self.adaptation_module(traj.clone()))
-        mse = ((target.get(self.adaptation_key) - pred.get(self.adaptation_key))**2).mean(-1)
-        value_error = (
-            (self.value_norm.denormalize(target.get("state_value")) 
-             - self.value_norm.denormalize(pred.get("state_value")))**2
-            ).mean(-1)
+        
+        td_target = self.critic(self.encoder(traj.exclude(self.adaptation_key)))
+        td_pred = self.critic(self.adaptation_module(traj.exclude(self.adaptation_key)))
+        mse = F.mse_loss(
+            td_target.get(self.adaptation_key),
+            td_pred.get(self.adaptation_key),
+            reduction="none"
+        ).mean((1, 2))
+        value_error = F.mse_loss(
+            td_target.get("state_value"),
+            td_pred.get("state_value"),
+            reduction="none"
+        ).mean((1, 2))
         return {"mse": mse.cpu(), "value_error": value_error.cpu()}
 
 

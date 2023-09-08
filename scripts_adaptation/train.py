@@ -5,6 +5,7 @@ import time
 import hydra
 import torch
 import numpy as np
+import pandas as pd
 import wandb
 from functorch import vmap
 from omegaconf import OmegaConf
@@ -179,6 +180,7 @@ def main(cfg):
             frames.append(frame)
 
         base_env.enable_render(True)
+        base_env.eval()
         env.eval()
         env.set_seed(seed)
         trajs = env.rollout(
@@ -209,18 +211,20 @@ def main(cfg):
         video_array = np.stack(frames).transpose(0, 3, 1, 2)
         frames.clear()
         info["recording"] = wandb.Video(video_array, fps=0.5 / (cfg.sim.dt * cfg.sim.substeps), format="mp4")
-        returns = traj_stats[("stats", "return")]
-        info["return_hist"] = wandb.Histogram(np_histogram=np.histogram(returns, bins=32))
-        table = wandb.Table(columns=["return"], data=returns.unsqueeze(-1).tolist())
-        info["eval/return_dist"] = wandb.plot.histogram(table, "return")
+        
+        df = pd.DataFrame(traj_stats["stats"].to_dict())
+        table = wandb.Table(dataframe=df)
+        info["eval/return"] = wandb.plot.histogram(table, "return")
+        info["eval/episode_len"] = wandb.plot.histogram(table, "episode_len")
         
         if hasattr(policy, "adaptation_loss_traj"):
             import matplotlib.pyplot as plt
-            fig, axes = plt.subplots(2, 1)
+            fig, axes = plt.subplots(5, 1, sharex=True)
             for i in range(5):
                 traj_loss = policy.adaptation_loss_traj(trajs[i, :first_done[i].item()].to(policy.device))
-                axes[0].plot(traj_loss["mse"])
-                axes[1].plot(traj_loss["value_error"])
+                axes[i].plot(traj_loss["mse"], label="mse")
+                axes[i].plot(traj_loss["value_error"], label="value_error")
+                axes[i].legend()
             info["eval/adaptation_loss_traj"] = fig
         
         return info
@@ -244,6 +248,7 @@ def main(cfg):
             logging.info(f"Eval at {collector._frames} steps.")
             info.update(evaluate())
             env.train()
+            base_env.train()
 
         if save_interval > 0 and i % save_interval == 0:
             try:

@@ -233,3 +233,15 @@ def quat_mul(a: torch.Tensor, b: torch.Tensor):
     quat = torch.stack([w, x, y, z], dim=-1).view(shape)
 
     return quat
+
+
+def symlog(x: torch.Tensor):
+    """
+    The symlog transformation described in https://arxiv.org/pdf/2301.04104v1.pdf
+    """
+    return torch.sign(x) * torch.log(torch.abs(x) + 1)
+
+
+def symexp(x: torch.Tensor):
+    return torch.sign(x) * (torch.exp(torch.abs(x)) - 1)
+

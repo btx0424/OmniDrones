@@ -1,7 +1,6 @@
 import logging
 from typing import Type, Dict
 
-import omni.isaac.core.utils.torch as torch_utils
 import torch
 import torch.distributions as D
 import yaml
@@ -15,7 +14,9 @@ from omni_drones.actuators.rotor_group import RotorGroup
 from omni_drones.controllers import LeePositionController
 
 from omni_drones.robots import RobotBase, RobotCfg
-from omni_drones.utils.torch import normalize, off_diag, quat_rotate_inverse
+from omni_drones.utils.torch import (
+    normalize, off_diag, quat_rotate, quat_rotate_inverse, quat_axis, symlog
+)
 
 from dataclasses import dataclass
 from collections import defaultdict
@@ -60,7 +61,7 @@ class MultirotorBase(RobotBase):
         
         if self.cfg.force_sensor:
             self.use_force_sensor = True
-            state_dim = 19 + self.num_rotors + 3
+            state_dim = 19 + self.num_rotors + 6
         else:
             self.use_force_sensor = False
             state_dim = 19 + self.num_rotors
@@ -218,9 +219,7 @@ class MultirotorBase(RobotBase):
         )
 
         rotor_pos, rotor_rot = self.rotors_view.get_world_poses()
-        torque_axis = torch_utils.quat_axis(
-            rotor_rot.flatten(end_dim=-2), axis=2
-        ).unflatten(0, (*self.shape, self.num_rotors))
+        torque_axis = quat_axis(rotor_rot.flatten(end_dim=-2), axis=2).unflatten(0, (*self.shape, self.num_rotors))
 
         self.thrusts[..., 2] = thrusts
         self.torques[:] = (moments.unsqueeze(-1) * torque_axis).sum(-2)
@@ -233,7 +232,7 @@ class MultirotorBase(RobotBase):
             self.forces[:] += vmap(self.downwash)(
                 self.pos,
                 self.pos,
-                vmap(torch_utils.quat_rotate)(self.rot, self.thrusts.sum(-2)),
+                quat_rotate(self.rot, self.thrusts.sum(-2)),
                 kz=0.3
             ).sum(-2)
         self.forces[:] += (self.drag_coef * self.masses) * self.vel[..., :3]
@@ -262,16 +261,22 @@ class MultirotorBase(RobotBase):
         # self.jerk[:] = jerk
         self.acc[:] = acc
         self.vel[:] = vel
-        self.heading[:] = vmap(torch_utils.quat_axis)(self.rot, axis=0)
-        self.up[:] = vmap(torch_utils.quat_axis)(self.rot, axis=2)
+        self.heading[:] = quat_axis(self.rot, axis=0)
+        self.up[:] = quat_axis(self.rot, axis=2)
         state = [self.pos, self.rot, self.vel, self.heading, self.up, self.throttle * 2 - 1]
         if self.use_force_sensor:
             self.force_readings, self.torque_readings = self.get_force_sensor_forces().chunk(2, -1)
             # normalize by mass and inertia
-            force_readings = self.force_readings / self.gravity.unsqueeze(-2)
-            # torque_readings = self.torque_readings / self.INERTIA_0.unsqueeze(-2)
+            force_reading_norms = self.force_readings.norm(dim=-1, keepdim=True)
+            force_readings = (
+                self.force_readings
+                / force_reading_norms
+                * symlog(force_reading_norms)
+                / self.gravity.unsqueeze(-2)
+            )
+            torque_readings = self.torque_readings / self.INERTIA_0.unsqueeze(-2)
             state.append(force_readings.flatten(-2))
-            # state.append(torque_readings.flatten(-2))
+            state.append(torque_readings.flatten(-2))
         state = torch.cat(state, dim=-1)
         if check_nan:
             assert not torch.isnan(state).any()

@@ -2,7 +2,7 @@ from functorch import vmap
 
 import omni.isaac.core.utils.torch as torch_utils
 import omni_drones.utils.kit as kit_utils
-from omni_drones.utils.torch import euler_to_quaternion, normalize
+from omni_drones.utils.torch import euler_to_quaternion, normalize, quat_axis
 import omni.isaac.core.utils.prims as prim_utils
 import torch
 import torch.distributions as D
@@ -80,10 +80,14 @@ class TrackV1(IsaacEnv):
         self.wind = cfg.task.wind
         self.randomization = cfg.task.get("randomization", {})
         self.has_payload = "payload" in self.randomization.keys()
+        # time at which the mass of the payload changes
+        self.mass_change_interval = cfg.task.mass_change_interval
 
         super().__init__(cfg, headless)
         
         self.drone.initialize()
+        self.intrinsics = self.drone.intrinsics
+
         if "drone" in self.randomization:
             self.drone.setup_randomization(self.randomization["drone"])
         if "payload" in self.randomization:
@@ -131,6 +135,8 @@ class TrackV1(IsaacEnv):
         self.ref_heading = torch.zeros(self.num_envs, 2, device=self.device)
 
         self.alpha = 0.8
+        
+        # debug visualizations
         self.draw = _debug_draw.acquire_debug_draw_interface()
 
     def _design_scene(self):
@@ -160,12 +166,15 @@ class TrackV1(IsaacEnv):
             self.time_encoding = Fraction(self.max_episode_length)
             drone_obs_dim += self.time_encoding.dim
         
+        intrinsics_spec = self.drone.intrinsics_spec.to(self.device)
+        intrinsics_spec["payload_mass"] = UnboundedContinuousTensorSpec(1, device=self.device)
+        intrinsics_spec["payload_z"] = UnboundedContinuousTensorSpec(1, device=self.device)
         # TODO@btx0424: observe history through a Transform
         self.observation_spec = CompositeSpec({
             "agents": CompositeSpec({
                 "observation": UnboundedContinuousTensorSpec((1, drone_obs_dim), device=self.device),
                 "observation_h": UnboundedContinuousTensorSpec((1, drone_obs_dim, 32), device=self.device),
-                "intrinsics": self.drone.intrinsics_spec.unsqueeze(0).to(self.device)
+                "intrinsics": intrinsics_spec.unsqueeze(0)
             }),
             "truncated": BinaryDiscreteTensorSpec(1, dtype=bool, device=self.device)
         }).expand(self.num_envs)
@@ -193,6 +202,7 @@ class TrackV1(IsaacEnv):
             "tracking_error": UnboundedContinuousTensorSpec(1),
             "heading_alignment": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(1),
+            "success": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
         info_spec = CompositeSpec({
             "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13), device=self.device),
@@ -231,6 +241,19 @@ class TrackV1(IsaacEnv):
         self.drone.set_world_poses(
             pos_0 + self.envs_positions[env_ids], rot, env_ids
         )
+        # pos_0, pos_1 =self._compute_traj(steps=2, env_ids=env_ids, step_size=5).unbind(1)
+        # ref_heading = normalize((pos_1 - pos_0)[..., :2])
+        # rpy = torch.stack([
+        #     torch.zeros(len(env_ids), device=self.device),
+        #     torch.zeros(len(env_ids), device=self.device),
+        #     torch.arctan2(ref_heading[:, 1], ref_heading[:, 0])
+        # ], dim=-1)
+        # rot = euler_to_quaternion(rpy)
+
+        # vel = torch.zeros(len(env_ids), 1, 6, device=self.device)
+        # self.drone.set_world_poses(
+        #     pos_0 + self.envs_positions[env_ids], rot.unsqueeze(1), env_ids
+        # )
         self.drone.set_velocities(vel, env_ids)
 
         if self.has_payload:
@@ -246,8 +269,14 @@ class TrackV1(IsaacEnv):
                 torch.zeros(len(env_ids), 1, device=self.device), 
                 env_indices=env_ids, joint_indices=joint_indices)
             
-            payload_mass = self.payload_mass_dist.sample(env_ids.shape+(1,)) * self.drone.masses[env_ids]
-            self.payload.set_masses(payload_mass, env_indices=env_ids)
+            payload_mass = self.payload_mass_dist.sample(env_ids.shape) 
+            self.payload.set_masses(
+                payload_mass * self.drone.masses[env_ids].squeeze(1), 
+                env_indices=env_ids
+            )
+
+            self.intrinsics["payload_mass"][env_ids] = payload_mass.unsqueeze(1)
+            self.intrinsics["payload_z"][env_ids] = payload_z.unsqueeze(1)
 
         self.stats[env_ids] = 0.
         self.info["prev_action"][env_ids] = 0.
@@ -269,6 +298,13 @@ class TrackV1(IsaacEnv):
         actions = tensordict[("agents", "action")]
         self.effort = self.drone.apply_action(actions)
         self.info["prev_action"][:] = actions
+
+    def _post_sim_step(self, tensordict: TensorDictBase):
+        if self.has_payload and self.mass_change_interval > 0:
+            change_mass = (((self.progress_buf+1) % self.mass_change_interval) == 0).nonzero().squeeze(-1)
+            payload_mass = self.payload_mass_dist.sample(change_mass.shape)
+            self.intrinsics["payload_mass"][change_mass] = payload_mass.unsqueeze(1)
+            self.payload.set_masses(payload_mass * self.drone.masses[change_mass].squeeze(1), change_mass)
 
     def _compute_state_and_obs(self):
         self.root_state = self.drone.get_state()
@@ -295,7 +331,7 @@ class TrackV1(IsaacEnv):
                 "observation": obs,
                 # "observation": self.observation_h[..., -1],
                 "observation_h": self.observation_h,
-                "intrinsics": self.drone.intrinsics
+                "intrinsics": self.intrinsics
             },
             "stats": self.stats,
             "info": self.info
@@ -319,14 +355,16 @@ class TrackV1(IsaacEnv):
             + reward_effort
             + reward_action_smoothness
         )
-        self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
-        self.stats["tracking_error"].add_(pos_error)
-        self.stats["heading_alignment"].add_(heading_alignment)
-        self.stats["return"] += reward
-        self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
 
         truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
         done = (self.drone.pos[..., 2] < 0.1) | (pos_error > self.reset_thres)
+
+        self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
+        self.stats["tracking_error"].add_(pos_error)
+        self.stats["heading_alignment"].add_(heading_alignment)
+        self.stats["return"].add_(reward)
+        self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
+        self.stats["success"][:] = truncated.float()
         
         self.observation_h[..., :-1] = self.observation_h[..., 1:]
         return TensorDict(
@@ -355,8 +393,8 @@ class TrackV1(IsaacEnv):
     def train(self, mode: bool = True):
         super().train(mode)
         if mode:
-            self.max_episode_length = self.cfg.max_episode_length
+            self.max_episode_length = self.cfg.env.max_episode_length
         else:
-            self.max_episode_length = int(self.cfg.max_episode_length * 1.6)
+            self.max_episode_length = int(self.cfg.env.max_episode_length * 2)
         return self
 

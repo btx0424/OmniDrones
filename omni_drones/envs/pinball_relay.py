@@ -540,7 +540,7 @@ class PingPongRelay(IsaacEnv):
 
         #
         moving_penalty = inactive_mask.float() * self.root_state[:, :, 6:9].norm(dim=-1)
-        moving_penalty *= 0.1
+        moving_penalty *= 0.3
 
         reward = torch.sum(
             reward_pos

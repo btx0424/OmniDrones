@@ -13,3 +13,8 @@ from .rearrange import Rearrange
 from .pinballV0 import PinballV0
 from .pinball_multiV0 import PingPongMultiV0
 from .isaac_env import IsaacEnv
+
+try:
+    from .velocity import VelocityEnv
+except:
+    pass

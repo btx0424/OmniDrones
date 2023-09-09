@@ -219,12 +219,13 @@ def main(cfg):
         
         if hasattr(policy, "adaptation_loss_traj"):
             import matplotlib.pyplot as plt
-            fig, axes = plt.subplots(5, 1, sharex=True)
+            fig, axes = plt.subplots(5, 2, sharex=True)
             for i in range(5):
-                traj_loss = policy.adaptation_loss_traj(trajs[i, :first_done[i].item()].to(policy.device))
-                axes[i].plot(traj_loss["mse"], label="mse")
-                axes[i].plot(traj_loss["value_error"], label="value_error")
-                axes[i].legend()
+                traj = trajs[i, :first_done[i].item()]
+                traj_loss = policy.adaptation_loss_traj(traj.to(policy.device))
+                axes[i, 0].plot(traj_loss["mse"], label="mse")
+                axes[i, 0].plot(traj_loss["value_error"], label="value_discrepancy")
+                axes[i, 1].plot(traj[("stats", "tracking_error")], label="tracking_error")
             info["eval/adaptation_loss_traj"] = fig
         
         return info

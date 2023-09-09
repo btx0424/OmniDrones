@@ -61,7 +61,7 @@ class IsaacEnv(EnvBase):
         self.sim = SimulationContext(
             stage_units_in_meters=1.0,
             physics_dt=self.cfg.sim.dt,
-            rendering_dt=self.cfg.sim.dt * self.cfg.sim.substeps,
+            rendering_dt=self.cfg.sim.dt, # * self.cfg.sim.substeps,
             backend="torch",
             sim_params=sim_params,
             physics_prim_path="/physicsScene",

@@ -333,7 +333,7 @@ class TrackV1(IsaacEnv):
                 "observation_h": self.observation_h,
                 "intrinsics": self.intrinsics
             },
-            "stats": self.stats,
+            "stats": self.stats.clone(),
             "info": self.info
         }, self.batch_size)
 

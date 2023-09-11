@@ -20,15 +20,15 @@ from ..modules.distributions import IndependentNormal
 @dataclass
 class PPOConfig:
     name: str = "ppo_adaptive"
-    train_every: int = 400
+    train_every: int = 64
     ppo_epochs: int = 4
     num_minibatches: int = 16
     
 
     checkpoint_path: Union[str, None] = None
-    phase: str = "adaptation"
-    #phase: str = "encoder"
-    checkpoint_path: str = "/home/liyitong/OmniDrones/wandb/run-20230907_235958-o1eynwuw/files/checkpoint_final.pt"
+    #phase: str = "adaptation"
+    phase: str = "encoder"
+    #checkpoint_path: str = "/home/liyitong/OmniDrones/wandb/run-20230907_235958-o1eynwuw/files/checkpoint_final.pt"
     condition_mode: str = "cat"
 
     # what the adaptation module learns to predict

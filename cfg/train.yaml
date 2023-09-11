@@ -6,7 +6,7 @@ sim: ${task.sim}
 env: ${task.env}
 
 total_frames: 250_000_000
-max_iters: 300
+max_iters: 6
 eval_interval: -1
 save_interval: -1 
 seed: 0
@@ -28,6 +28,6 @@ wandb:
   tags: 
 
 defaults:
-  - task: HoverRand
+  - task: TrackRand
   - algo: ppo_adapt
   - _self_

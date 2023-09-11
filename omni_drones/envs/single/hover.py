@@ -281,13 +281,6 @@ class Hover(IsaacEnv):
             payload_mass =  payload_mass_ratio* self.drone.masses[env_ids]
             self.payload.set_masses(payload_mass, env_indices=env_ids)
         elif self.has_payload:
-            '''self.index = 0
-            point = self.low + self.interval * self.index
-            print(point)
-            self.payload_mass_dist_eval = D.Uniform(
-                point,
-                1.0001 * point
-            )'''
             payload_z = self.payload_z_dist_eval.sample(env_ids.shape)
             joint_indices = torch.tensor([self.drone._view._dof_indices["PrismaticJoint"]], device=self.device)
             self.drone._view.set_joint_positions(

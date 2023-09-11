@@ -203,9 +203,9 @@ class TrackV1(IsaacEnv):
             "dist_four":UnboundedContinuousTensorSpec(1),
             "dist_five":UnboundedContinuousTensorSpec(1),
         }
-        for i in range(self.num_envs):
+        '''for i in range(self.num_envs):
             mse_key=f"mse_{i}"
-            stats_key[mse_key]=UnboundedContinuousTensorSpec(1)
+            stats_key[mse_key]=UnboundedContinuousTensorSpec(1)'''
         stats_spec = CompositeSpec(stats_key).expand(self.num_envs).to(self.device)
         context_dims=64
         info_spec = CompositeSpec({
@@ -229,7 +229,10 @@ class TrackV1(IsaacEnv):
         else:
             train_judge=True
         self.training=train_judge
-        self.drone._reset_idx(env_ids,train_judge)
+
+        payload_mass_ratio = self.payload_mass_dist.sample(env_ids.shape+(1,))
+        self.drone._reset_idx(env_ids, train_judge,self.has_payload, payload_mass_ratio)
+
         self.traj_c[env_ids] = self.traj_c_dist.sample(env_ids.shape)
         self.traj_rot[env_ids] = euler_to_quaternion(self.traj_rpy_dist.sample(env_ids.shape))
         self.traj_scale[env_ids] = self.traj_scale_dist.sample(env_ids.shape)
@@ -267,7 +270,7 @@ class TrackV1(IsaacEnv):
                 torch.zeros(len(env_ids), 1, device=self.device), 
                 env_indices=env_ids, joint_indices=joint_indices)
             
-            payload_mass = self.payload_mass_dist.sample(env_ids.shape+(1,)) * self.drone.masses[env_ids]
+            payload_mass = payload_mass_ratio * self.drone.masses[env_ids]
             self.payload.set_masses(payload_mass, env_indices=env_ids)
 
         self.stats[env_ids] = 0.
@@ -296,9 +299,10 @@ class TrackV1(IsaacEnv):
 
     def force_reset(self):
         env_ids = torch.arange(0,self.num_envs,1,device='cuda:0')
-        self.drone._reset_idx(env_ids,False)
-        if False:
-            payload_z = self.payload_z_dist.sample(env_ids.shape)
+        if self.has_payload:
+            payload_mass_ratio = self.payload_mass_dist.sample(env_ids.shape+(1,))
+            self.drone._reset_idx(env_ids, False,self.has_payload,payload_mass_ratio)
+            payload_z = self.payload_z_dist_eval.sample(env_ids.shape)
             joint_indices = torch.tensor([self.drone._view._dof_indices["PrismaticJoint"]], device=self.device)
             self.drone._view.set_joint_positions(
                 payload_z, env_indices=env_ids, joint_indices=joint_indices)
@@ -307,9 +311,10 @@ class TrackV1(IsaacEnv):
             self.drone._view.set_joint_velocities(
                 torch.zeros(len(env_ids), 1, device=self.device), 
                 env_indices=env_ids, joint_indices=joint_indices)
-            
-            payload_mass = self.payload_mass_dist.sample(env_ids.shape+(1,)) * self.drone.masses[env_ids]
-            self.payload.set_masses(payload_mass, env_indices=env_ids)   
+            payload_mass = payload_mass_ratio * self.drone.masses[env_ids]
+            self.payload.set_masses(payload_mass, env_indices=env_ids)
+        else:
+            self.drone._reset_idx(env_ids, False, self.has_payload)     
 
     def _compute_state_and_obs(self):
         self.root_state = self.drone.get_state()
@@ -371,15 +376,15 @@ class TrackV1(IsaacEnv):
         if self.training:
             self.stats["return"] += reward
         else:
-            if self.progress_buf[0] == 1000 :
+            '''if self.progress_buf[0] == 1000 :
                 self.force_reset()
             if self.progress_buf[0] == 1 :
-                self.force_reset()
-            mse_loss=torch.nn.MSELoss(reduction='none')
-            for i in range(self.num_envs):
+                self.force_reset()'''
+            #mse_loss=torch.nn.MSELoss(reduction='none')
+            '''for i in range(self.num_envs):
                 mse_key=f"mse_{i}"
                 mse=mse_loss(self.info['pred_context'][i,:,:].squeeze(0),self.info['true_context'][i,:,:].squeeze(0)).mean(0).item()
-                self.stats[mse_key] = mse*torch.ones_like(reward,device=self.device_name)
+                self.stats[mse_key] = mse*torch.ones_like(reward,device=self.device_name)'''
             #self.stats["mse"] = self.info['pred_context'][0,0,1].item()*torch.ones_like(reward,device=self.device_name)
             reward_weight=torch.where((self.progress_buf > self.warmup_phase_steps * torch.ones_like(self.progress_buf)), 1, 0)[0].item()
             self.stats["return"] += reward_weight * reward
@@ -394,12 +399,12 @@ class TrackV1(IsaacEnv):
             self.stats["dist_four"] = range_nums_four / self.num_envs * torch.ones([self.num_envs,1],device=self.device_name)
             self.stats["dist_five"] = range_nums_five / self.num_envs * torch.ones([self.num_envs,1],device=self.device_name)
                         
-            for i in range(self.num_envs):
+            '''for i in range(self.num_envs):
                 title=f"sample_{i}"            
                 sample=self.info['pred_context'][i,:,:]
                 sample_data=sample.data.cpu()
                 with open(title,"a") as f:
-                    np.savetxt(f,sample_data,delimiter=',',fmt="%f")
+                    np.savetxt(f,sample_data,delimiter=',',fmt="%f")'''
 
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
 

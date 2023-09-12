@@ -75,7 +75,7 @@ def main(cfg):
         if isinstance(k, tuple) and k[0]=="stats"
     ]
     logger = LogOnEpisode(
-        cfg.env.num_envs/8,
+        cfg.env.num_envs,
         in_keys=stats_keys,
         log_keys=stats_keys,
         logger_func=log,

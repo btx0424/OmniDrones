@@ -26,9 +26,10 @@ class PPOConfig:
     
 
     checkpoint_path: Union[str, None] = None
+    phase: str = "regularize"
     #phase: str = "adaptation"
-    phase: str = "encoder"
-    #checkpoint_path: str = "/home/liyitong/OmniDrones/wandb/run-20230907_235958-o1eynwuw/files/checkpoint_final.pt"
+    #phase: str = "encoder"
+    checkpoint_path: str = "/home/liyitong/OmniDrones/wandb/run-20230911_211530-twe5h4qm/files/checkpoint_final.pt"
     condition_mode: str = "cat"
 
     # what the adaptation module learns to predict
@@ -110,6 +111,8 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
         super().__init__()
         self.cfg = cfg
         self.device = device
+
+        self.step=1
 
         self.entropy_coef = 0.001
         self.clip_param = 0.1
@@ -206,15 +209,26 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
             tensordict = self.actor(tensordict)
             tensordict = self.critic(tensordict)
             tensordict.exclude("_feature", "loc", "scale", inplace=True)
+        elif self.phase == "regularize":
+            tensordict = self.encoder(tensordict)
+            tensordict.rename_key_(
+                self.cfg.adaptation_key, f"{self.cfg.adaptation_key}_target")
+            tensordict = self.adaptation(tensordict)
+            tensordict = self.actor(tensordict)
+            tensordict = self.critic(tensordict)
+            tensordict.exclude("_feature", "loc", "scale", inplace=True)
         else:
             raise RuntimeError
         return tensordict
 
     def train_op(self, tensordict: TensorDict):
+        self.step+=1
         if self.phase == "encoder":
             info = self._train_policy(tensordict)
         elif self.phase == "adaptation":
             info = self._train_adaptation(tensordict)
+        elif self.phase == "regularize":
+            info = self._train_regularize(tensordict)
         else:
             raise RuntimeError()
         return info
@@ -253,6 +267,45 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
         infos: TensorDict = torch.stack(infos).to_tensordict()
         infos = infos.apply(torch.mean, batch_size=[])
         return {k: v.item() for k, v in infos.items()}
+    
+    def _train_regularize(self, tensordict: TensorDict):
+
+        next_tensordict = tensordict["next"][:, -1]
+        with torch.no_grad():
+            self.encoder(next_tensordict)
+            next_values = self.critic(next_tensordict)["state_value"]
+        rewards = tensordict[("next", "agents", "reward")]
+        dones = (
+            tensordict[("next", "done")]
+            .expand(-1, -1, self.n_agents)
+            .unsqueeze(-1)
+        )
+        values = tensordict["state_value"]
+        values = self.value_norm.denormalize(values)
+        next_values = self.value_norm.denormalize(next_values)
+
+        adv, ret = compute_gae(rewards, dones, values, next_values)
+        adv_mean = adv.mean()
+        adv_std = adv.std()
+        adv = (adv - adv_mean) / adv_std.clip(1e-7)
+        self.value_norm.update(ret)
+        ret = self.value_norm.normalize(ret)
+
+        tensordict.set("adv", adv)
+        tensordict.set("ret", ret)
+        infos = []
+        for epoch in range(self.cfg.ppo_epochs):
+            batch = make_batch(tensordict, self.cfg.num_minibatches)
+            for minibatch in batch:
+                infos.append(self._update_regularize(minibatch))
+        
+        infos: TensorDict = torch.stack(infos).to_tensordict()
+        infos = infos.apply(torch.mean, batch_size=[])
+        '''params_adapt=list(self.adaptation.parameters())
+        print(params_adapt[0])
+        params_encoder=list(self.encoder.parameters())
+        print(params_encoder[0])'''
+        return {k: v.item() for k, v in infos.items()}
 
     def _update(self, tensordict: TensorDict):
         self.encoder(tensordict)
@@ -287,6 +340,72 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
         self.actor_opt.step()
         self.critic_opt.step()
         self.encoder_opt.step()
+        explained_var = 1 - F.mse_loss(values, b_returns) / b_returns.var()
+        return TensorDict({
+            "policy_loss": policy_loss,
+            "value_loss": value_loss,
+            "entropy": entropy,
+            "actor_grad_norm": actor_grad_norm,
+            "critic_grad_norm": critic_grad_norm,
+            "explained_var": explained_var
+        }, [])
+
+    def _update_regularize(self, tensordict: TensorDict):
+        
+
+
+        self.encoder(tensordict)
+        tensordict.rename_key_(
+                self.cfg.adaptation_key, f"{self.cfg.adaptation_key}_target")
+        tensordict = self.adaptation(tensordict)
+        dist = self.actor.get_dist(tensordict)
+        log_probs = dist.log_prob(tensordict[("agents", "action")])
+        entropy = dist.entropy()
+
+        regularize_target=tensordict["context_target"]
+        regularize_item=tensordict["context"]
+        
+        regularize_target_no_grad=regularize_target.clone().detach()
+        regularize_item_no_grad=regularize_item.clone().detach()
+        mse_loss=torch.nn.MSELoss(reduction='none')
+        mse_fixed_target=mse_loss(regularize_item,regularize_target_no_grad).mean(-1)
+        mse_fixed_item=mse_loss(regularize_item_no_grad,regularize_target).mean(-1)
+        lam=1/600 * self.step
+
+        regularize_loss = (lam  * mse_fixed_item + mse_fixed_target).squeeze(-1).mean(-1)
+
+        adv = tensordict["adv"]
+        ratio = torch.exp(log_probs - tensordict["sample_log_prob"]).unsqueeze(-1)
+        surr1 = adv * ratio
+        surr2 = adv * ratio.clamp(1.-self.clip_param, 1.+self.clip_param)
+        policy_loss = - torch.mean(torch.min(surr1, surr2)) * self.action_dim
+        entropy_loss = - self.entropy_coef * torch.mean(entropy)
+
+        b_values = tensordict["state_value"]
+        b_returns = tensordict["ret"]
+
+
+        values = self.critic(tensordict)["state_value"]
+        values_clipped = b_values + (values - b_values).clamp(
+            -self.clip_param, self.clip_param
+        )
+        value_loss_clipped = self.critic_loss_fn(b_returns, values_clipped)
+        value_loss_original = self.critic_loss_fn(b_returns, values)
+        value_loss = torch.max(value_loss_original, value_loss_clipped)
+
+        
+        loss = policy_loss + entropy_loss + value_loss + regularize_loss
+        self.actor_opt.zero_grad()
+        self.critic_opt.zero_grad()
+        self.encoder_opt.zero_grad()
+        self.adapt_opt.zero_grad()
+        loss.backward()
+        actor_grad_norm = nn.utils.clip_grad.clip_grad_norm_(self.actor.parameters(), 5)
+        critic_grad_norm = nn.utils.clip_grad.clip_grad_norm_(self.critic.parameters(), 5)
+        self.actor_opt.step()
+        self.critic_opt.step()
+        self.encoder_opt.step()
+        self.adapt_opt.step()
         explained_var = 1 - F.mse_loss(values, b_returns) / b_returns.var()
         return TensorDict({
             "policy_loss": policy_loss,

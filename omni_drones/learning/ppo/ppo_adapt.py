@@ -210,9 +210,9 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
             tensordict = self.critic(tensordict)
             tensordict.exclude("_feature", "loc", "scale", inplace=True)
         elif self.phase == "regularize":
-            tensordict = self.encoder(tensordict)
+            tensordict = self.adaptation(tensordict)
             tensordict.rename_key_(
-                self.cfg.adaptation_key, f"{self.cfg.adaptation_key}_target")
+                self.cfg.adaptation_key, f"{self.cfg.adaptation_key}_item")
             tensordict = self.encoder(tensordict)
             tensordict = self.actor(tensordict)
             tensordict = self.critic(tensordict)
@@ -354,16 +354,16 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
         
 
 
-        self.encoder(tensordict)
+        self.adaptation(tensordict)
         tensordict.rename_key_(
-                self.cfg.adaptation_key, f"{self.cfg.adaptation_key}_target")
-        tensordict = self.adaptation(tensordict)
+                self.cfg.adaptation_key, f"{self.cfg.adaptation_key}_item")
+        tensordict = self.encoder(tensordict)
         dist = self.actor.get_dist(tensordict)
         log_probs = dist.log_prob(tensordict[("agents", "action")])
         entropy = dist.entropy()
 
-        regularize_target=tensordict["context_target"]
-        regularize_item=tensordict["context"]
+        regularize_target=tensordict["context"]
+        regularize_item=tensordict["context_item"]
         
         regularize_target_no_grad=regularize_target.clone().detach()
         regularize_item_no_grad=regularize_item.clone().detach()

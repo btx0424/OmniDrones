@@ -29,7 +29,7 @@ class PPOConfig:
     phase: str = "regularize"
     #phase: str = "adaptation"
     #phase: str = "encoder"
-    checkpoint_path: str = "/home/liyitong/OmniDrones/wandb/run-20230911_211530-twe5h4qm/files/checkpoint_final.pt"
+    #checkpoint_path: str = "/home/liyitong/OmniDrones/wandb/run-20230911_211530-twe5h4qm/files/checkpoint_final.pt"
     condition_mode: str = "cat"
 
     # what the adaptation module learns to predict
@@ -213,7 +213,7 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
             tensordict = self.encoder(tensordict)
             tensordict.rename_key_(
                 self.cfg.adaptation_key, f"{self.cfg.adaptation_key}_target")
-            tensordict = self.adaptation(tensordict)
+            tensordict = self.encoder(tensordict)
             tensordict = self.actor(tensordict)
             tensordict = self.critic(tensordict)
             tensordict.exclude("_feature", "loc", "scale", inplace=True)
@@ -370,7 +370,7 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
         mse_loss=torch.nn.MSELoss(reduction='none')
         mse_fixed_target=mse_loss(regularize_item,regularize_target_no_grad).mean(-1)
         mse_fixed_item=mse_loss(regularize_item_no_grad,regularize_target).mean(-1)
-        lam=1/600 * self.step
+        lam=1/900 * self.step
 
         regularize_loss = (lam  * mse_fixed_item + mse_fixed_target).squeeze(-1).mean(-1)
 

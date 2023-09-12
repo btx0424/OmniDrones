@@ -11,7 +11,7 @@ eval_interval: -1
 save_interval: -1
 seed: 0
 
-# policy_checkpoint_path: /home/hesicheng/OmniDrones/policy_checkpoints/angular_deviation.pt
+policy_checkpoint_path: /home/hesicheng/OmniDrones/policy_checkpoints/large.pt
 
 viewer:
   resolution: [960, 720]

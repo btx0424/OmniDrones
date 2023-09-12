@@ -538,9 +538,9 @@ class PingPongRelay(IsaacEnv):
         )
         angular_penalty = angular_penalty.unsqueeze(-1)  # (E,1)
 
-        #
+        # 0.1/0.3/0.5
         moving_penalty = inactive_mask.float() * self.root_state[:, :, 6:9].norm(dim=-1)
-        moving_penalty *= 0.3
+        moving_penalty *= 0.1
 
         reward = torch.sum(
             reward_pos

@@ -21,7 +21,7 @@ actor:
   lr_scheduler_kwargs: 
   
   # mlp
-  hidden_units: [256, 128, 128]
+  hidden_units: [256, 512, 256, 128] #[256, 128, 128]
   layer_norm: true
 
   weight_decay: 0.0
@@ -49,7 +49,7 @@ critic:
   lr_scheduler_kwargs: 
 
   # mlp
-  hidden_units: [256, 128, 128]
+  hidden_units: [256, 512, 256, 128] #[256, 128, 128]
   layer_norm: true
 
   weight_decay: 0.0

@@ -30,13 +30,9 @@ class PingPong2v2(IsaacEnv):
         super().__init__(cfg, headless)
 
         self.time_encoding: bool = self.cfg.task.get("time_encoding", False)
-
+        
         self.drone.initialize()
-        randomization = self.cfg.task.get("randomization", None)
-        if randomization is not None:
-            if "drone" in self.cfg.task.randomization:
-                self.drone.setup_randomization(self.cfg.task.randomization["drone"])
-
+        
         self.ball = RigidPrimView(
             "/World/envs/env_*/ball",
             reset_xform_properties=False,

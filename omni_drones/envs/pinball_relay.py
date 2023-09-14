@@ -557,8 +557,8 @@ class PingPongRelay(IsaacEnv):
             (self.drone.pos[..., 2] < 0.3).any(-1, keepdim=True)
             | (self.ball_pos[..., 2] < 0.2)
             | (self.ball_pos[..., 2] > 5.0)
-            | (self.ball_pos[..., 0].abs() > 2)
-            | (self.ball_pos[..., 1].abs() > 2)
+            | (self.ball_pos[..., 0].abs() > 5)
+            | (self.ball_pos[..., 1].abs() > 5)
         )  # [E, 1]
 
         done = (self.progress_buf >= self.max_episode_length).unsqueeze(-1) | misbehave

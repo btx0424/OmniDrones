@@ -10,6 +10,26 @@ env:
   num_envs: 768
   max_episode_length: 1600
 
+# https://www.dimensions.com/element/badminton-court
+court:
+  L: 13.40
+  W: 6.10
+  NET_HEIGHT: 1.55
+  short_service_line: 1.98
+  multiplier: 0.6
+
+initial:
+  ball_offset_dist:
+    low: [-0.3, -0.3, 1.6]
+    high: [0.3, 0.3, 2.0]
+
+  drone_xyz_dist: # position distribution of the drone in the first quadrant
+    low: [0.5, 0.5]
+
+  drone_rpy_dist: # unit: \pi
+    low: [-0.1, -0.1, 0.0]
+    high: [0.1, 0.1, 2.0]
+
 drone_model: Iris
 force_sensor: false
 time_encoding: true

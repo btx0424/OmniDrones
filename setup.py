@@ -12,6 +12,7 @@ setup(
         "moviepy",
         "imageio",
         "plotly",
+        "multielo @ git+https://github.com/djcunningham0/multielo.git@v0.4.0"
         # "torchinfo",
         # "torchopt"
     ],

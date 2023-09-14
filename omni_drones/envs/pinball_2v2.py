@@ -46,10 +46,6 @@ class PingPong2v2(IsaacEnv):
 
         self.ball.initialize()
 
-        self.ball_mass_dist = D.Uniform(
-            torch.tensor([0.01], device=self.device),
-            torch.tensor([0.05], device=self.device),
-        )
         self.init_ball_offset_dist = D.Uniform(
             torch.tensor([-0.3, -0.3, 1.6], device=self.device),
             torch.tensor([0.3, 0.3, 2.0], device=self.device),

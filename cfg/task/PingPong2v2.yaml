@@ -14,7 +14,7 @@ env:
 court:
   L: 13.40
   W: 6.10
-  NET_HEIGHT: 1.55
+  # NET_HEIGHT: 1.55
   short_service_line: 1.98
   multiplier: 0.6
 
@@ -24,7 +24,8 @@ initial:
     high: [0.3, 0.3, 2.0]
 
   drone_xyz_dist: # position distribution of the drone in the first quadrant
-    low: [0.5, 0.5]
+    low: [0.5, 0.5, 1.4]
+    high: [1.7, 1.7, 1.6]
 
   drone_rpy_dist: # unit: \pi
     low: [-0.1, -0.1, 0.0]

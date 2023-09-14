@@ -12,6 +12,6 @@ env:
 
 drone_model: Iris
 force_sensor: false
-time_encoding: true
+time_encoding: false
 
 action_transform: null

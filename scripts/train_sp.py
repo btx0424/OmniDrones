@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 
 import hydra
 import torch
@@ -149,8 +150,8 @@ def get_transforms(
 def train(
     cfg: DictConfig, simulation_app: SimulationApp, env: TransformedEnv, wandb_run
 ):
-    agent_spec: AgentSpec = env.agent_spec["drone"]
-    policy = get_policy(cfg, agent_spec)
+    # agent_spec: AgentSpec = env.agent_spec["drone"]
+    # policy = get_policy(cfg, agent_spec)
 
     if cfg.get("resume_ckpt_path") is not None:
         policy.load_state_dict(torch.load(cfg.resume_ckpt_path))
@@ -162,86 +163,18 @@ def train(
     eval_interval = cfg.get("eval_interval", -1)
     save_interval = cfg.get("save_interval", -1)
 
+    start_time = time.time()
     collector = SyncDataCollector(
         env,
-        policy=policy,
+        policy=None,
         frames_per_batch=frames_per_batch,
         total_frames=total_frames,
         device=cfg.sim.device,
         return_same_td=True,
     )
+    end_time = time.time()
 
-    @torch.no_grad()
-    def evaluate():
-        frames = []
-
-        def record_frame(*args, **kwargs):
-            frame = env.base_env.render(mode="rgb_array")
-            frames.append(frame)
-
-        env.base_env.enable_render(True)
-        env.eval()
-        env.rollout(
-            max_steps=env.base_env.max_episode_length,
-            policy=policy,
-            callback=Every(record_frame, 2),
-            auto_reset=True,
-            break_when_any_done=False,
-            return_contiguous=False,
-        )
-        env.base_env.enable_render(not cfg.headless)
-        env.reset()
-        env.train()
-
-        if len(frames):
-            # video_array = torch.stack(frames)
-            video_array = np.stack(frames).transpose(0, 3, 1, 2)
-            info["recording"] = wandb.Video(
-                video_array, fps=0.5 / cfg.sim.dt, format="mp4"
-            )
-        frames.clear()
-        return info
-
-    pbar = tqdm(collector)
-    env.train()
-    for i, data in enumerate(pbar):
-        info = {"env_frames": collector._frames, "rollout_fps": collector._fps}
-        info.update(policy.train_op(data.to_tensordict()))
-
-        if eval_interval > 0 and i % eval_interval == 0:
-            logging.info(f"Eval at {collector._frames} steps.")
-            info.update(evaluate())
-
-        if save_interval > 0 and i % save_interval == 0:
-            if hasattr(policy, "state_dict"):
-                ckpt_path = os.path.join(
-                    wandb_run.dir, f"checkpoint_{collector._frames}.pt"
-                )
-                logging.info(f"Save checkpoint to {str(ckpt_path)}")
-                torch.save(policy.state_dict(), ckpt_path)
-
-        wandb_run.log(info)
-        # print(OmegaConf.to_yaml({k: v for k, v in info.items() if isinstance(v, float)}))
-
-        pbar.set_postfix(
-            {
-                "rollout_fps": collector._fps,
-                "frames": collector._frames,
-            }
-        )
-
-        if max_iters > 0 and i >= max_iters - 1:
-            break
-
-    logging.info(f"Final Eval at {collector._frames} steps.")
-    info = {"env_frames": collector._frames}
-    info.update(evaluate())
-    wandb_run.log(info)
-
-    if hasattr(policy, "state_dict"):
-        ckpt_path = os.path.join(wandb_run.dir, "checkpoint_final.pt")
-        logging.info(f"Save checkpoint to {str(ckpt_path)}")
-        torch.save(policy.state_dict(), ckpt_path)
+    print(f"{start_time-end_time}s")
 
 
 @hydra.main(version_base=None, config_path=CONFIG_PATH, config_name="train_sp")

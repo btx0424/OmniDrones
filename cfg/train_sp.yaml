@@ -10,8 +10,16 @@ env: ${task.env}
 total_frames: 400_000_000
 max_iters: -1
 eval_interval: -1
-save_interval: -1
+
 seed: 12345
+
+# self-play hyperparameters
+# see https://github.com/Unity-Technologies/ml-agents/blob/release-0.14.0/docs/Training-Self-Play.md
+
+save_interval: 10000
+swap_interval: 10000
+play_against_current_self_ratio: 0.0
+sp_sliding_window: 5
 
 viewer:
   resolution: [960, 720]

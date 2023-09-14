@@ -5,7 +5,7 @@ import torch.distributions as D
 
 from torchrl.data import CompositeSpec, TensorSpec, UnboundedContinuousTensorSpec
 from torchrl.modules import ProbabilisticActor
-from torchrl.envs import TensorDictPrimer
+from torchrl.envs import TensorDictPrimer, CatTensors
 from tensordict import TensorDict
 from tensordict.nn import TensorDictModule, TensorDictSequential
 
@@ -129,6 +129,9 @@ class PPOConfig:
     num_minibatches: int = 16
     seq_len: int = 16
 
+    # whether to take in priviledged infomation
+    priv: bool = False
+
     rnn: str = "gru"
     skip_conn: Union[str, None] = None
     hidden_size: int = 128
@@ -158,44 +161,52 @@ class PPORNNPolicy:
         self.n_agents, self.action_dim = action_spec.shape[-2:]
 
         fake_input = observation_spec.zero()
+
+        if cfg.priv:
+            self.intrinsics_dim = observation_spec[("agents", "intrinsics")].shape[-1]
+            def make_encoder():
+                return [
+                    TensorDictModule(make_mlp([256, 256]), [("agents", "observation")], ["feature"]),
+                    TensorDictModule(
+                        nn.Sequential(nn.LayerNorm(self.intrinsics_dim), make_mlp([64, 64])), 
+                        [("agents", "intrinsics")], ["context"]
+                    ),
+                    CatTensors(["feature", "context"], "feature"),
+                ]
+        else:
+            def make_encoder():
+                return [
+                    TensorDictModule(make_mlp([256, 256]), [("agents", "observation")], ["feature"]),
+                ]
         
-        if self.cfg.rnn.lower() == "gru":
-            actor = TensorDictSequential(
-                TensorDictModule(make_mlp([256, 256]), [("agents", "observation")], ["feature"]),
-                TensorDictModule(
+        if cfg.rnn == "gru":
+            def make_rnn(branch: str):
+                return TensorDictModule(
                     GRU(256, self.cfg.hidden_size, self.cfg.skip_conn), 
-                    ["feature", "is_init", "actor_hx"], 
-                    ["feature", ("next", "actor_hx")]),
-                TensorDictModule(Actor(self.action_dim), ["feature"], ["loc", "scale"])
-            ).to(self.device)
-            self.critic = TensorDictSequential(
-                TensorDictModule(make_mlp([256, 256]), [("agents", "observation")], ["feature"]),
-                TensorDictModule(
-                    GRU(256, self.cfg.hidden_size, self.cfg.skip_conn), 
-                    ["feature", "is_init", "critic_hx"], 
-                    ["feature", ("next", "critic_hx")]),
-                TensorDictModule(nn.LazyLinear(1), ["feature"], ["state_value"])
-            ).to(self.device)
-        elif self.cfg.rnn.lower() == "lstm":
-            actor = TensorDictSequential(
-                TensorDictModule(make_mlp([256, 256]), [("agents", "observation")], ["feature"]),
-                TensorDictModule(
+                    ["feature", "is_init", f"{branch}_hx"], 
+                    ["feature", ("next", f"{branch}_hx")]
+                )
+        elif cfg.rnn == "lstm":
+            def make_rnn(branch: str):
+                return TensorDictModule(
                     LSTM(256, self.cfg.hidden_size, self.cfg.skip_conn), 
-                    ["feature", "is_init", "actor_hx", "actor_cx"], 
-                    ["feature", ("next", "actor_hx"), ("next", "actor_cx")]),
-                TensorDictModule(Actor(self.action_dim), ["feature"], ["loc", "scale"])
-            ).to(self.device)
-            self.critic = TensorDictSequential(
-                TensorDictModule(make_mlp([256, 256]), [("agents", "observation")], ["feature"]),
-                TensorDictModule(
-                    LSTM(256, self.cfg.hidden_size, self.cfg.skip_conn), 
-                    ["feature", "is_init", "critic_hx", "critic_cx"], 
-                    ["feature", ("next", "critic_hx"), ("next", "critic_cx")]),
-                TensorDictModule(nn.LazyLinear(1), ["feature"], ["state_value"])
-            ).to(self.device)
+                    ["feature", "is_init", f"{branch}_hx", f"{branch}_cx"], 
+                    ["feature", ("next", f"{branch}_hx"), ("next", f"{branch}_cx")]
+                )
         else:
             raise NotImplementedError(self.cfg.rnn)
-            
+
+        actor = TensorDictSequential(
+            *make_encoder(),
+            make_rnn(branch="actor"),
+            TensorDictModule(Actor(self.action_dim), ["feature"], ["loc", "scale"])
+        ).to(self.device)
+        self.critic = TensorDictSequential(
+            *make_encoder(),
+            make_rnn(branch="critic"),
+            TensorDictModule(nn.LazyLinear(1), ["feature"], ["state_value"])
+        ).to(self.device)
+        
         self.actor: ProbabilisticActor = ProbabilisticActor(
             module=actor,
             in_keys=["loc", "scale"],

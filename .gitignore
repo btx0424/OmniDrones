@@ -144,3 +144,5 @@ urdf/
 *.pth
 tmp
 plot/
+
+test*.ipynb

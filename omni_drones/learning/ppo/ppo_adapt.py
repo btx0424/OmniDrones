@@ -135,6 +135,8 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
         self.clip_param = 0.1
         self.critic_loss_fn = nn.HuberLoss(delta=10)
         self.adaptation_key = self.cfg.adaptation_key
+        self.phase = self.cfg.phase
+
         if not isinstance(self.adaptation_key, str):
             self.adaptation_key = tuple(self.adaptation_key)
         self.gae = GAE(0.99, 0.95)
@@ -199,93 +201,91 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
             self.critic.apply(init_)
             self.encoder.apply(init_)
 
-
-        if self.cfg.adaptation_loss == "mse":
-            self.adaptation_module = TensorDictModule(
-                TConv(fake_input[self.adaptation_key].shape[-1]), 
-                [("agents", "observation_h")], [self.adaptation_key]
-            ).to(self.device)
-            self.adaptation_module(fake_input)
-            self.adaptation_loss = MSE(
-                self.adaptation_module, 
-                self.adaptation_key, 
-            ).to(self.device)
-        elif self.cfg.adaptation_loss == "gan":
-            self.adaptation_module = TensorDictModule(
-                TConvG(fake_input[self.adaptation_key].shape[-1]), 
-                [("agents", "observation_h")], [self.adaptation_key]
-            ).to(self.device)
-            self.adaptation_module(fake_input)
-            discriminator = TensorDictSequential(
-                TensorDictModule(TConv(128), [("agents", "observation_h")], ["condition"]),
-                CatTensors([self.adaptation_key, "condition"], "condition", del_keys=False),
-                TensorDictModule(
-                    nn.Sequential(make_mlp([256]), nn.LazyLinear(1)),
-                    ["condition"], ["label"]
+        if self.phase in ("adpatation", "finetune"):
+            if self.cfg.adaptation_loss == "mse":
+                self.adaptation_module = TensorDictModule(
+                    TConv(fake_input[self.adaptation_key].shape[-1]), 
+                    [("agents", "observation_h")], [self.adaptation_key]
+                ).to(self.device)
+                self.adaptation_module(fake_input)
+                self.adaptation_loss = MSE(
+                    self.adaptation_module, 
+                    self.adaptation_key, 
+                ).to(self.device)
+            elif self.cfg.adaptation_loss == "gan":
+                self.adaptation_module = TensorDictModule(
+                    TConvG(fake_input[self.adaptation_key].shape[-1]), 
+                    [("agents", "observation_h")], [self.adaptation_key]
+                ).to(self.device)
+                self.adaptation_module(fake_input)
+                discriminator = TensorDictSequential(
+                    TensorDictModule(TConv(128), [("agents", "observation_h")], ["condition"]),
+                    CatTensors([self.adaptation_key, "condition"], "condition", del_keys=False),
+                    TensorDictModule(
+                        nn.Sequential(make_mlp([256]), nn.LazyLinear(1)),
+                        ["condition"], ["label"]
+                    )
                 )
-            )
-            self.adaptation_loss = GAN(
-                self.adaptation_module, 
-                discriminator,
-                self.adaptation_key, 
-            ).to(self.device)
-        elif self.cfg.adaptation_loss == "lsgan":
-            discriminator = TensorDictSequential(
-                TensorDictModule(TConv(128), [("agents", "observation_h")], ["condition"]),
-                CatTensors([self.adaptation_key, "condition"], "condition", del_keys=False),
-                TensorDictModule(
-                    nn.Sequential(make_mlp([256]), nn.LazyLinear(1)),
-                    ["condition"], ["label"]
+                self.adaptation_loss = GAN(
+                    self.adaptation_module, 
+                    discriminator,
+                    self.adaptation_key, 
+                ).to(self.device)
+            elif self.cfg.adaptation_loss == "lsgan":
+                discriminator = TensorDictSequential(
+                    TensorDictModule(TConv(128), [("agents", "observation_h")], ["condition"]),
+                    CatTensors([self.adaptation_key, "condition"], "condition", del_keys=False),
+                    TensorDictModule(
+                        nn.Sequential(make_mlp([256]), nn.LazyLinear(1)),
+                        ["condition"], ["label"]
+                    )
                 )
-            )
-            self.adaptation_loss = LSGAN(
-                self.adaptation_module, 
-                discriminator,
-                self.adaptation_key, 
-            ).to(self.device)
-        elif self.cfg.adaptation_loss == "value":
-            self.adaptation_module = TensorDictModule(
-                TConv(fake_input[self.adaptation_key].shape[-1]), 
-                [("agents", "observation_h")], [self.adaptation_key]
-            ).to(self.device)
-            self.adaptation_module(fake_input)
-            self.adaptation_loss = ValueDeviation(
-                self.encoder,
-                self.adaptation_module,
-                self.critic
-            ).to(self.device)
-        elif self.cfg.adaptation_loss == "action":
-            self.adaptation_module = TensorDictModule(
-                TConv(fake_input[self.adaptation_key].shape[-1]), 
-                [("agents", "observation_h")], [self.adaptation_key]
-            ).to(self.device)
-            self.adaptation_module(fake_input)
-            self.adaptation_loss = ActionDistDiv(
-                self.encoder,
-                self.adaptation_module,
-                self.actor
-            ).to(self.device)
-        elif self.cfg.adaptation_loss == "action_value":
-            self.adaptation_module = TensorDictModule(
-                TConv(fake_input[self.adaptation_key].shape[-1]), 
-                [("agents", "observation_h")], [self.adaptation_key]
-            ).to(self.device)
-            self.adaptation_module(fake_input)
-            self.adaptation_loss = ActionValue(
-                self.encoder,
-                self.adaptation_module,
-                self.actor,
-                self.critic
-            ).to(self.device)
-        else:
-            raise ValueError(self.cfg.adaptation_loss)
+                self.adaptation_loss = LSGAN(
+                    self.adaptation_module, 
+                    discriminator,
+                    self.adaptation_key, 
+                ).to(self.device)
+            elif self.cfg.adaptation_loss == "value":
+                self.adaptation_module = TensorDictModule(
+                    TConv(fake_input[self.adaptation_key].shape[-1]), 
+                    [("agents", "observation_h")], [self.adaptation_key]
+                ).to(self.device)
+                self.adaptation_module(fake_input)
+                self.adaptation_loss = ValueDeviation(
+                    self.encoder,
+                    self.adaptation_module,
+                    self.critic
+                ).to(self.device)
+            elif self.cfg.adaptation_loss == "action":
+                self.adaptation_module = TensorDictModule(
+                    TConv(fake_input[self.adaptation_key].shape[-1]), 
+                    [("agents", "observation_h")], [self.adaptation_key]
+                ).to(self.device)
+                self.adaptation_module(fake_input)
+                self.adaptation_loss = ActionDistDiv(
+                    self.encoder,
+                    self.adaptation_module,
+                    self.actor
+                ).to(self.device)
+            elif self.cfg.adaptation_loss == "action_value":
+                self.adaptation_module = TensorDictModule(
+                    TConv(fake_input[self.adaptation_key].shape[-1]), 
+                    [("agents", "observation_h")], [self.adaptation_key]
+                ).to(self.device)
+                self.adaptation_module(fake_input)
+                self.adaptation_loss = ActionValue(
+                    self.encoder,
+                    self.adaptation_module,
+                    self.actor,
+                    self.critic
+                ).to(self.device)
+            else:
+                raise ValueError(self.cfg.adaptation_loss)
 
 
         self.encoder_opt = torch.optim.Adam(self.encoder.parameters(), lr=5e-4)
         self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=5e-4)
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=5e-4)
-
-        self.phase = self.cfg.phase
     
     def forward(self, tensordict: TensorDict):
         self._get_context(tensordict)

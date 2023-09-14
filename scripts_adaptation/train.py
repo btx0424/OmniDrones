@@ -7,6 +7,8 @@ import torch
 import numpy as np
 import pandas as pd
 import wandb
+import matplotlib.pyplot as plt
+
 from functorch import vmap
 from omegaconf import OmegaConf
 
@@ -23,7 +25,7 @@ from omni_drones.utils.torchrl.transforms import (
 )
 from omni_drones.utils.wandb import init_wandb
 from omni_drones.learning import (
-    PPOAdaptivePolicy, PPORNNPolicy, PPOPolicy, PPOTConvPolicy
+    PPOAdaptivePolicy, PPORNNPolicy, PPOPolicy, PPOTConvPolicy, PPOSDFNavPolicy
 )
 
 from setproctitle import setproctitle
@@ -94,6 +96,7 @@ def main(cfg):
         "ppo_adaptive": PPOAdaptivePolicy,
         "ppo_rnn": PPORNNPolicy,
         "ppo_tconv": PPOTConvPolicy,
+        "ppo_sdf_nav": PPOSDFNavPolicy,
     }
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
     base_env = env_class(cfg, headless=cfg.headless)
@@ -175,9 +178,13 @@ def main(cfg):
     def evaluate(seed: int=0):
         frames = []
 
+        from tqdm import tqdm
+        t = tqdm(total=base_env.max_episode_length)
+
         def record_frame(*args, **kwargs):
             frame = env.base_env.render(mode="rgb_array")
             frames.append(frame)
+            t.update(2)
 
         base_env.enable_render(True)
         base_env.eval()
@@ -217,17 +224,27 @@ def main(cfg):
         info["eval/return"] = wandb.plot.histogram(table, "return")
         info["eval/episode_len"] = wandb.plot.histogram(table, "episode_len")
         
-        if hasattr(policy, "adaptation_loss_traj"):
-            import matplotlib.pyplot as plt
+        if (
+            hasattr(policy, "adaptation_loss_traj")
+            and policy.phase == "adaptation"
+        ):
             fig, axes = plt.subplots(5, 2, sharex=True)
             for i in range(5):
-                traj = trajs[i, :first_done[i].item()]
                 traj_loss = policy.adaptation_loss_traj(traj.to(policy.device))
                 axes[i, 0].plot(traj_loss["mse"], label="mse")
                 axes[i, 0].plot(traj_loss["value_error"], label="value_discrepancy")
-                axes[i, 1].plot(traj[("stats", "tracking_error")], label="tracking_error")
+
             info["eval/adaptation_loss_traj"] = fig
         
+        fig, axes = plt.subplots(5, 2, sharex=True)
+        for i in range(5):
+            traj = trajs[i, :first_done[i].item()]
+            # axes[i, 0].set_title("tracking_error")
+            # axes[i, 0].plot(traj[("stats", "tracking_error")])
+            axes[i, 1].set_title("action")
+            axes[i, 1].plot(traj[("agents", "action")].squeeze(1))
+        info["eval/traj_logs"] = fig
+
         return info
 
     pbar = tqdm(collector)
@@ -254,8 +271,8 @@ def main(cfg):
         if save_interval > 0 and i % save_interval == 0:
             try:
                 ckpt_path = os.path.join(run.dir, f"checkpoint_{collector._frames}.pt")
-                logging.info(f"Save checkpoint to {str(ckpt_path)}")
                 torch.save(policy.state_dict(), ckpt_path)
+                logging.info(f"Saved checkpoint to {str(ckpt_path)}")
             except AttributeError:
                 logging.warning(f"Policy {policy} does not implement `.state_dict()`")
 
@@ -277,8 +294,8 @@ def main(cfg):
 
     try:
         ckpt_path = os.path.join(run.dir, "checkpoint_final.pt")
-        logging.info(f"Save checkpoint to {str(ckpt_path)}")
         torch.save(policy.state_dict(), ckpt_path)
+        logging.info(f"Saved checkpoint to {str(ckpt_path)}")
     except AttributeError:
         logging.warning(f"Policy {policy} does not implement `.state_dict()`")
         

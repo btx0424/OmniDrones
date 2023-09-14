@@ -182,6 +182,9 @@ def main(cfg):
         info = {"env_frames": collector._frames, "rollout_fps": collector._fps}
         info.update(policy.train_op(data.to_tensordict()))
 
+        if i % 100 ==0 and i > 0:
+            print("a")
+
         if eval_interval > 0 and i % eval_interval == 0 and i != 0:
             for i in range(25):
                 info={}
@@ -208,11 +211,11 @@ def main(cfg):
         if max_iters > 0 and i >= max_iters - 1:
             break 
         
-    for i in range(4):
+    '''for i in range(4):
         logging.info(f"Final Eval at {collector._frames} steps.")
         info = {"env_frames": collector._frames}
         info.update(evaluate())
-        run.log(info)
+        run.log(info)'''
 
     try:
         ckpt_path = os.path.join(run.dir, "checkpoint_final.pt")

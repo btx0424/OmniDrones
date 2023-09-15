@@ -20,6 +20,7 @@ from torchrl.data import (
 )
 
 from omni_drones.utils.torchrl.env import AgentSpec
+from omni_drones.utils.tensordict import print_td_shape
 
 from .utils import valuenorm
 from .utils.gae import compute_gae

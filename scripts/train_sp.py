@@ -14,7 +14,6 @@ from omni_drones import CONFIG_PATH, init_simulation_app
 from omni_drones.utils.torchrl import SyncDataCollector, AgentSpec
 from omni_drones.utils.wandb import init_wandb
 
-from omni_drones.envs import IsaacEnv
 from setproctitle import setproctitle
 from torchrl.envs.transforms import (
     TransformedEnv,
@@ -40,7 +39,7 @@ class Every:
 
 
 def get_policy(cfg: DictConfig, agent_spec: AgentSpec):
-    from omni_drones.learning.mappo_sp import MAPPOSPPolicy
+    from omni_drones.learning import MAPPOSPPolicy
 
     algos = {
         "mappo_sp": MAPPOSPPolicy,
@@ -54,7 +53,7 @@ def get_policy(cfg: DictConfig, agent_spec: AgentSpec):
 
 def get_transforms(
     cfg: DictConfig,
-    base_env: IsaacEnv,
+    base_env,
     logger_func: Callable[
         [
             Dict,
@@ -152,10 +151,9 @@ def train(
 ):
     # agent_spec: AgentSpec = env.agent_spec["drone"]
     # policy = get_policy(cfg, agent_spec)
-
-    if cfg.get("resume_ckpt_path") is not None:
-        policy.load_state_dict(torch.load(cfg.resume_ckpt_path))
-        print(f"resume policy from {cfg.resume_ckpt_path}")
+    # if cfg.get("resume_ckpt_path") is not None:
+    #     policy.load_state_dict(torch.load(cfg.resume_ckpt_path))
+    #     print(f"resume policy from {cfg.resume_ckpt_path}")
 
     frames_per_batch = env.num_envs * int(cfg.algo.train_every)
     total_frames = cfg.get("total_frames", -1) // frames_per_batch * frames_per_batch
@@ -174,7 +172,7 @@ def train(
     )
     end_time = time.time()
 
-    print(f"{start_time-end_time}s")
+    print(f"{end_time-start_time}s")
 
 
 @hydra.main(version_base=None, config_path=CONFIG_PATH, config_name="train_sp")

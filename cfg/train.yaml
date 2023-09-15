@@ -24,7 +24,7 @@ wandb:
   job_type: train
   entity: marl-drones
   project: omnidrones
-  mode: online # set to 'disabled' when debugging locally
+  # mode: online # set to 'disabled' when debugging locally
   run_id: 
   monitor_gym: True
   tags: 

@@ -7,9 +7,9 @@ from omni_drones.learning.mappo_sp.actor import make_actor
 
 if __name__ == "__main__":
     actor_in_keys = ["observation"]
-    actor_out_keys = ["action"]
+    actor_out_keys = [("agent", "action")]
     actor_spec = UnboundedContinuousTensorSpec(
-        shape=(4, 4),
+        shape=(4,),
     )
     actor = make_actor(
         hidden_units=[128, 256, 128],
@@ -19,11 +19,11 @@ if __name__ == "__main__":
     )
 
     td = TensorDict(
-        {"observation": torch.randn(768, 4)},
+        {"observation": torch.randn(768, 4, 57)},
         [
             768,
         ],
     )
 
-    td = actor(td)
-    print(td)
+    output_td = actor(td)
+    print(output_td)

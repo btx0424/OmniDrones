@@ -1,10 +1,23 @@
+from tensordict.nn import TensorDictModule
+from tensordict.utils import NestedKey
+from torchrl.data.tensor_specs import TensorSpec
 import torch
 
 import torch.nn as nn
 from numbers import Number
-from typing import Tuple
-
+from typing import Sequence, Tuple, Optional, Union, List
+from tensordict import TensorDictBase
 from torchrl.modules.utils import mappings
+from torchrl.modules import ProbabilisticActor
+
+
+def make_mlp(num_units: Sequence[int]):
+    layers = []
+    for n in num_units:
+        layers.append(nn.LazyLinear(n))
+        layers.append(nn.ELU())
+        layers.append(nn.LayerNorm(n))
+    return nn.Sequential(*layers)
 
 
 class MyNormalParamWrapper(nn.Module):
@@ -34,3 +47,31 @@ class MyNormalParamWrapper(nn.Module):
             .clamp_min(self.scale_lb)
         )
         return (loc, scale, *others)
+
+
+class MyProbabilisticActor(ProbabilisticActor):
+    def __init__(
+        self,
+        module: TensorDictModule,
+        in_keys: Union[NestedKey, Sequence[NestedKey]],
+        out_keys: Union[Sequence[NestedKey], None] = None,
+        *,
+        log_prob_key: Optional[NestedKey] = None,
+        spec: Union[TensorSpec, None] = None,
+        **kwargs,
+    ):
+        super().__init__(
+            module, in_keys, out_keys, log_prob_key=log_prob_key, spec=spec, **kwargs
+        )
+        self.wanted_keys = self.in_keys + self.out_keys
+
+        self.wanted_keys = [k for k in self.wanted_keys if k not in module.out_keys]
+
+    def forward(
+        self,
+        tensordict: TensorDictBase,
+        tensordict_out: Optional[TensorDictBase] = None,
+        **kwargs,
+    ):
+        td: TensorDictBase = super().forward(tensordict, tensordict_out, **kwargs)
+        return td.select(*self.wanted_keys)

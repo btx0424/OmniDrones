@@ -16,4 +16,5 @@
 - SyncDataCollector.__init__ costs about 0.1s
 
 ## To Do
-先测试一下SyncDataCollector构造的开销。目测不是很大。那样就可以写个policy wrapper套住两个team的policy，一个fixed一个要训。每次更换对手重新构造一个即可。
+
+参考mappo.py MAPPOPolicy.__call__的方式让tensordict变整洁

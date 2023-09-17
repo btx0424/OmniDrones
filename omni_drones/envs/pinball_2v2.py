@@ -187,7 +187,7 @@ def turn_convert(t: torch.Tensor):
 class PingPong2v2(IsaacEnv):
     def __init__(self, cfg: DictConfig, headless: bool):
         super().__init__(cfg, headless)
-
+        print("喵喵喵")
         self.time_encoding: bool = self.cfg.task.get("time_encoding", False)
 
         self.drone.initialize()

@@ -157,9 +157,9 @@ def train(
 
     frames_per_batch = env.num_envs * int(cfg.algo.train_every)
     total_frames = cfg.get("total_frames", -1) // frames_per_batch * frames_per_batch
-    max_iters:int = cfg.get("max_iters", -1)
-    eval_interval:int = cfg.get("eval_interval", -1)
-    save_interval:int = cfg.get("save_interval", -1)
+    max_iters: int = cfg.get("max_iters", -1)
+    eval_interval: int = cfg.get("eval_interval", -1)
+    save_interval: int = cfg.get("save_interval", -1)
 
     collector = SyncDataCollector(
         env,
@@ -170,7 +170,7 @@ def train(
         return_same_td=True,
     )
 
-    pbar = tqdm(collector)
+    pbar = tqdm(collector, total=total_frames // frames_per_batch)
     env.train()
     for i, data in enumerate(pbar):
         pass

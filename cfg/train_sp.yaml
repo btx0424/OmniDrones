@@ -6,7 +6,7 @@ headless: true
 sim: ${task.sim}
 env: ${task.env}
 
-total_frames: 400_000_000
+total_frames: 10_000_000
 max_iters: -1
 eval_interval: -1
 

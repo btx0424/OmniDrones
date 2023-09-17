@@ -183,12 +183,69 @@ def turn_convert(t: torch.Tensor):
     return table[t.long()]
 
 
+def calculate_safety_cost(drone_rpos: torch.Tensor) -> torch.Tensor:
+    """_summary_
+
+    Args:
+        drone_rpos (torch.Tensor): (E,4,9)
+
+    Returns:
+        torch.Tensor: (E,4)
+    """
+    # r (E,4,3)
+    r1, r2, r3 = torch.split(drone_rpos, [3, 3, 3], dim=-1)
+
+    # d (E,4,3)
+    d = torch.stack(
+        [
+            torch.norm(r1, dim=-1),
+            torch.norm(r2, dim=-1),
+            torch.norm(r3, dim=-1),
+        ],
+        dim=-1,
+    )
+    #
+    d_m, _ = torch.min(d, dim=-1)
+
+    safety_cost = 1.0 - d_m
+    safety_cost = safety_cost.clip(0.0)
+    return safety_cost
+
+
+def out_of_bounds(pos: torch.Tensor, L: float, W: float) -> torch.Tensor:
+    return (
+        pos[..., 0]
+        < -L / 2 | pos[..., 0]
+        > L / 2 | pos[..., 1]
+        < -W / 2 | pos[..., 1]
+        > W / 2
+    )
+
+
+def in_half_court_0(pos: torch.Tensor, L: float, W: float) -> torch.Tensor:
+    return (
+        pos[..., 0]
+        > -L / 2 & pos[..., 0]
+        < 0 & pos[..., 1]
+        > -W / 2 & pos[..., 1]
+        < W / 2
+    )
+
+
+def in_half_court_1(pos: torch.Tensor, L: float, W: float) -> torch.Tensor:
+    return (
+        pos[..., 0]
+        > 0 & pos[..., 0]
+        < L / 2 & pos[..., 1]
+        > -W / 2 & pos[..., 1]
+        < W / 2
+    )
+
 
 class PingPong2v2(IsaacEnv):
     def __init__(self, cfg: DictConfig, headless: bool):
+        self.time_encoding: bool = cfg.task.get("time_encoding", False)
         super().__init__(cfg, headless)
-        print("喵喵喵")
-        self.time_encoding: bool = self.cfg.task.get("time_encoding", False)
 
         self.drone.initialize()
         self.ball = RigidPrimView(
@@ -217,7 +274,7 @@ class PingPong2v2(IsaacEnv):
             task_cfg.initial.drone_rpy_dist, device=self.device
         )  # unit: \pi
 
-        # (n_envs,) indicating whether it's team 0's turn to toss the ball
+        # (n_envs,) False/True(or 0/1) indicating team # needs to toss the ball to the other team
         self.team_turn = torch.zeros(
             self.num_envs, device=self.device, dtype=torch.bool
         )
@@ -379,10 +436,11 @@ class PingPong2v2(IsaacEnv):
         # reset the ball
 
         team_turn = torch.randint_like(env_ids, low=0, high=2) == 0
+        # team_turn = torch.zeros_like(env_ids)
         self.team_turn[env_ids] = team_turn
 
         drone_to_toss_ball_index = team_turn.long() * 2 + torch.randint(
-            low=0, high=2, size=(self.num_envs,)
+            low=0, high=2, size=(self.num_envs,), device=self.device
         )
         ball_pos_offset = self.init_ball_offset_dist.sample(env_ids.shape)
         ball_pos = (
@@ -411,6 +469,25 @@ class PingPong2v2(IsaacEnv):
         self.effort = self.drone.apply_action(actions)
 
     def _compute_state_and_obs(self):
+        """Comment on observation
+
+        For each drone, the observation vector is of the following format:
+
+        root_state(23)
+
+        relative position of the teammate(3)
+
+        relative position of the two opponents(6)
+
+        velocity of the teammate(6)
+
+        velocity of the two opponents(12)
+
+        relative position of the ball(3)
+
+        turn(1)
+
+        """
         self.root_state = self.drone.get_state()  # (n_envs, 4, 23)
         self.info["drone_state"][:] = self.root_state[..., :13]
         self.ball_pos, ball_rot = self.get_env_poses(self.ball.get_world_poses())
@@ -434,7 +511,7 @@ class PingPong2v2(IsaacEnv):
             encoded_drone_vel,  # (E,4,18)
             self.rpos_ball,  # [E, A, 3]  (E,4,3)
             self.ball_vel.expand(-1, 4, 3),  # [E, 1, 3] -> [E, A, 3] , (E,4,3)
-            turn_convert(self.team_turn),  # (E,4,1)
+            turn_convert(self.team_turn).unsqueeze(-1),  # (E,4,1)
         ]
 
         state = [
@@ -462,95 +539,48 @@ class PingPong2v2(IsaacEnv):
             self.batch_size,
         )
 
-    
     def _compute_reward_and_done(self):
         hit = self.ball.get_net_contact_forces().any(-1)  # (E,1)
-        which_drone = self.rpos_ball.norm(dim=-1).argmin(dim=1, keepdim=True)  # (E,1)
+
+        drone_ball_dist: torch.Tensor = self.rpos_ball.norm(dim=-1)  # (E,4)
+        which_drone = drone_ball_dist.argmin(dim=1, keepdim=True)  # (E,1)
+        which_team = which_drone / 2  # (E,1)
+
+        # drone of the correct team hit the ball
         switch_turn: torch.Tensor = hit & (
-            self.turn.unsqueeze(-1) == which_drone
+            self.team_turn.unsqueeze(-1).long() == which_team
         )  # (E,1)
-        vxy_ball = self.ball_vel[:, 0, :2]  # (E,2)
-        rposxy = self.rpos_drone[torch.arange(self.num_envs), self.turn, :2]  # (E,2)
-        cosine_similarity = NNF.cosine_similarity(vxy_ball, rposxy, dim=-1)  # (E,)
-        angular_deviation = torch.acos(cosine_similarity)  # (E,)
+        self.team_turn = torch.logical_xor(self.team_turn, switch_turn.squeeze(-1))
+        
 
-        self.turn = turn_shift(self.turn, switch_turn.squeeze(-1))
-        # (E,4)
-        inactive_mask = self.turn.unsqueeze(-1) != torch.arange(
-            4, device=self.turn.device
+        ball_too_low = self.ball_pos[..., 2] < 0.2  # (E,1)
+        ball_out_of_bounds = out_of_bounds(self.ball_pos, self.L, self.W)  # (E,1)
+
+        # 把球打到了对方的半场，或者对方没有打到自己半场
+        # 目前没有考虑打到网上！！！因为触网逻辑比较复杂
+        # 目前没有考虑队友之间传球
+        team_0_win = ball_too_low & (
+            (
+                in_half_court_1(self.ball_pos, self.L, self.W)
+                & self.team_turn.unsqueeze(-1)
+            )
+            | (
+                torch.logical_not(in_half_court_0(self.ball_pos, self.L, self.W))
+                & torch.logical_not(self.team_turn).unsqueeze(-1)
+            )
         )
 
-        # 不能离得太近
-        safety_cost = calculate_safety_cost(self.rpos_drone)  # (E,4)
-
-        # 接球的无人机要离球近
-        reward_pos = (turn_convert(self.turn) == 1).float() / (
-            1 + torch.norm(self.rpos_ball[..., :2], dim=-1)
-        )  # (E,4)
-
-        # 无人机要在球下面
-        reward_height = 0.8 * (
-            self.ball_pos[..., 2]
-            - self.drone.pos[..., 2].max(dim=1, keepdim=True)[0].clip(1.5)
-        ).clip(0.3)
-
-        # 击中球了获得高额奖励
-        reward_score = switch_turn.float() * 50.0
-
-        # clamp at about 16 degree
-        angular_penalty = (
-            switch_turn.squeeze(-1).float()
-            * (1 - cosine_similarity).clamp(min=0.04, max=1.0)
-            * 30.0
+        team_1_win = ball_too_low & (
+            (
+                in_half_court_0(self.ball_pos, self.L, self.W)
+                & self.team_turn.unsqueeze(-1)
+            )
+            | (
+                torch.logical_not(in_half_court_1(self.ball_pos, self.L, self.W))
+                & torch.logical_not(self.team_turn).unsqueeze(-1)
+            )
         )
-        angular_penalty = angular_penalty.unsqueeze(-1)  # (E,1)
 
-        # 0.1/0.3/0.5
-        moving_penalty = inactive_mask.float() * self.root_state[:, :, 6:9].norm(dim=-1)
-        moving_penalty *= 0.1
-
-        reward = torch.sum(
-            reward_pos
-            + reward_height
-            + reward_score
-            - safety_cost
-            - angular_penalty
-            - moving_penalty,
-            dim=1,
-            keepdim=True,
-        ).expand(-1, 4)
-
-        misbehave = (
-            (self.drone.pos[..., 2] < 0.3).any(-1, keepdim=True)
-            | (self.ball_pos[..., 2] < 0.2)
-            | (self.ball_pos[..., 2] > 5.0)
-            | (self.ball_pos[..., 0].abs() > 5)
-            | (self.ball_pos[..., 1].abs() > 5)
-        )  # [E, 1]
-
-        done = (self.progress_buf >= self.max_episode_length).unsqueeze(-1) | misbehave
-
-        self.stats["return"].add_(reward[..., [0]])
-        self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
-        self.stats["score"].add_(switch_turn.float())
-
-        self.stats["angular_deviation"][switch_turn.squeeze(-1), 0] += (
-            angular_deviation[switch_turn.squeeze(-1)] / torch.pi * 180
-        )
-        self.stats["angular_deviation"][switch_turn.squeeze(-1), 1] += 1
-
-        self.stats["active_velocity"] = self.root_state[
-            torch.arange(self.num_envs), self.turn, 6:9
-        ].norm(dim=-1, keepdim=True)
-
-        # sele.root_state (E,4,23)
-        tmp = self.root_state[inactive_mask].view(self.num_envs, 3, -1)  # (E,3,23)
-        self.stats["inactive_velocity"] = tmp[:, :, 6:9].norm(dim=-1)
-
-        return TensorDict(
-            {
-                "agents": {"reward": reward.unsqueeze(-1)},
-                "done": done,
-            },
-            self.batch_size,
-        )
+        # 击中球了
+        reward_hit = switch_turn.float() * 50.0
+        

@@ -8,7 +8,7 @@ defaults:
 
 env:
   num_envs: 64
-  max_episode_length: 1600
+  max_episode_length: 400
 
 # https://www.dimensions.com/element/badminton-court
 court:

@@ -2,7 +2,6 @@
 
 headless: true
 
-resume_ckpt_path: /home/hesicheng/OmniDrones/policy_checkpoints/large.pt
 
 sim: ${task.sim}
 env: ${task.env}

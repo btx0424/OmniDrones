@@ -157,11 +157,10 @@ def train(
 
     frames_per_batch = env.num_envs * int(cfg.algo.train_every)
     total_frames = cfg.get("total_frames", -1) // frames_per_batch * frames_per_batch
-    max_iters = cfg.get("max_iters", -1)
-    eval_interval = cfg.get("eval_interval", -1)
-    save_interval = cfg.get("save_interval", -1)
+    max_iters:int = cfg.get("max_iters", -1)
+    eval_interval:int = cfg.get("eval_interval", -1)
+    save_interval:int = cfg.get("save_interval", -1)
 
-    start_time = time.time()
     collector = SyncDataCollector(
         env,
         policy=None,
@@ -170,9 +169,11 @@ def train(
         device=cfg.sim.device,
         return_same_td=True,
     )
-    end_time = time.time()
 
-    print(f"{end_time-start_time}s")
+    pbar = tqdm(collector)
+    env.train()
+    for i, data in enumerate(pbar):
+        pass
 
 
 @hydra.main(version_base=None, config_path=CONFIG_PATH, config_name="train_sp")

@@ -7,7 +7,7 @@ defaults:
   # - /base/randomization_base@_here_
 
 env:
-  num_envs: 768
+  num_envs: 64
   max_episode_length: 1600
 
 # https://www.dimensions.com/element/badminton-court

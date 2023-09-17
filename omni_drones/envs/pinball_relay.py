@@ -433,7 +433,7 @@ class PingPongRelay(IsaacEnv):
         self.effort = self.drone.apply_action(actions)
 
     def _compute_state_and_obs(self):
-        self.root_state = self.drone.get_state()  # (,23)
+        self.root_state = self.drone.get_state()  # (n_envs, 4, 23)
         self.info["drone_state"][:] = self.root_state[..., :13]
         self.ball_pos, ball_rot = self.get_env_poses(self.ball.get_world_poses())
         self.ball_vel = self.ball.get_velocities()[..., :3]

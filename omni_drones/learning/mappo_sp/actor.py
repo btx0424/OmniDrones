@@ -18,9 +18,9 @@ def make_actor(
     actor_in_keys: List[NestedKey],
     actor_out_keys: List[NestedKey],
     action_spec: TensorSpec,
-):
+) -> TensorDictModule:
     assert isinstance(action_spec, UnboundedContinuousTensorSpec)
-    
+
     module = MyNormalParamWrapper(make_mlp(hidden_units), action_spec.shape[-1])
     td_module = TensorDictModule(
         module,

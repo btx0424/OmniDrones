@@ -5,7 +5,7 @@ import torch
 
 import torch.nn as nn
 from numbers import Number
-from typing import Sequence, Tuple, Optional, Union, List
+from typing import Callable, Dict, Sequence, Tuple, Optional, Union, List, Any
 from tensordict import TensorDictBase
 from torchrl.modules.utils import mappings
 from torchrl.modules import ProbabilisticActor
@@ -50,6 +50,13 @@ class MyNormalParamWrapper(nn.Module):
 
 
 class MyProbabilisticActor(ProbabilisticActor):
+    """
+
+    The purpose of this class is to remove unwanted ["loc","scale"] keys in the tensordict
+    
+    But there seem to be some side effects
+    """
+
     def __init__(
         self,
         module: TensorDictModule,
@@ -75,3 +82,5 @@ class MyProbabilisticActor(ProbabilisticActor):
     ):
         td: TensorDictBase = super().forward(tensordict, tensordict_out, **kwargs)
         return td.select(*self.wanted_keys)
+
+

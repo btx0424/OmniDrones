@@ -17,7 +17,6 @@ if __name__ == "__main__":
         actor_out_keys=actor_out_keys,
         action_spec=actor_spec,
     )
-
     td = TensorDict(
         {"observation": torch.randn(768, 4, 57)},
         [

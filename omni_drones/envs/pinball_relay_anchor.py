@@ -388,6 +388,7 @@ class PingPongRelayAnchor(IsaacEnv):
                     "angular_deviation": UnboundedContinuousTensorSpec(2),
                     "active_velocity": UnboundedContinuousTensorSpec(1),
                     "inactive_velocity": UnboundedContinuousTensorSpec(3),
+                    "anchor_offset": UnboundedContinuousTensorSpec(1),
                 }
             )
             .expand(self.num_envs)
@@ -546,9 +547,11 @@ class PingPongRelayAnchor(IsaacEnv):
         moving_penalty = inactive_mask.float() * self.root_state[:, :, 6:9].norm(dim=-1)
         moving_penalty *= 0.1
 
-        penalty_offset_drone = 1.5 - torch.norm(
-            self.drone.pos - self.anchor, p=2, dim=-1
-        ).sum(dim=-1, keepdim=True)
+        anchor_offset = torch.norm(self.drone.pos - self.anchor, p=2, dim=-1).sum(
+            dim=-1, keepdim=True
+        )  # (E,1)
+        self.stats["anchor_offset"] = anchor_offset
+        penalty_offset_drone = 0.5 * anchor_offset
 
         reward = torch.sum(
             reward_pos

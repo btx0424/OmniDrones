@@ -42,7 +42,6 @@ def init_wandb(cfg: DictConfig):
 
     """
     wandb_cfg: DictConfig = cfg.wandb
-    print(type(wandb_cfg))
     time_str = datetime.datetime.now().strftime("%m-%d_%H-%M")
     run_name = f"{wandb_cfg.run_name}/{time_str}"
     kwargs = dict(

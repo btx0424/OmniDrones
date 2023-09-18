@@ -229,7 +229,7 @@ def main(cfg: DictConfig):
         frames.clear()
         return info
 
-    pbar = tqdm(collector)
+    pbar = tqdm(collector, total=total_frames // frames_per_batch)
     env.train()
     for i, data in enumerate(pbar):
         info = {"env_frames": collector._frames, "rollout_fps": collector._fps}

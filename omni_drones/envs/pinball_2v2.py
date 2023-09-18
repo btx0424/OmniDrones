@@ -214,31 +214,28 @@ def calculate_safety_cost(drone_rpos: torch.Tensor) -> torch.Tensor:
 
 def out_of_bounds(pos: torch.Tensor, L: float, W: float) -> torch.Tensor:
     return (
-        pos[..., 0]
-        < -L / 2 | pos[..., 0]
-        > L / 2 | pos[..., 1]
-        < -W / 2 | pos[..., 1]
-        > W / 2
+        (pos[..., 0] < (-L / 2))
+        | (pos[..., 0] > (L / 2))
+        | (pos[..., 1] < (-W / 2))
+        | (pos[..., 1] > (W / 2))
     )
 
 
 def in_half_court_0(pos: torch.Tensor, L: float, W: float) -> torch.Tensor:
     return (
-        pos[..., 0]
-        > -L / 2 & pos[..., 0]
-        < 0 & pos[..., 1]
-        > -W / 2 & pos[..., 1]
-        < W / 2
+        (pos[..., 0] > (-L / 2))
+        & (pos[..., 0] < 0)
+        & (pos[..., 1] > (-W / 2))
+        & (pos[..., 1] < (W / 2))
     )
 
 
 def in_half_court_1(pos: torch.Tensor, L: float, W: float) -> torch.Tensor:
     return (
-        pos[..., 0]
-        > 0 & pos[..., 0]
-        < L / 2 & pos[..., 1]
-        > -W / 2 & pos[..., 1]
-        < W / 2
+        (pos[..., 0] > 0)
+        & (pos[..., 0] < (L / 2))
+        & (pos[..., 1] > (-W / 2))
+        & (pos[..., 1] < (W / 2))
     )
 
 
@@ -440,7 +437,7 @@ class PingPong2v2(IsaacEnv):
         self.team_turn[env_ids] = team_turn
 
         drone_to_toss_ball_index = team_turn.long() * 2 + torch.randint(
-            low=0, high=2, size=(self.num_envs,), device=self.device
+            low=0, high=2, size=(len(env_ids),), device=self.device
         )
         ball_pos_offset = self.init_ball_offset_dist.sample(env_ids.shape)
         ball_pos = (
@@ -551,7 +548,13 @@ class PingPong2v2(IsaacEnv):
             self.team_turn.unsqueeze(-1).long() == which_team
         )  # (E,1)
         self.team_turn = torch.logical_xor(self.team_turn, switch_turn.squeeze(-1))
-        
+
+        self.stats["team_0_score"].add_(
+            (self.team_turn.unsqueeze(-1) & switch_turn).float()
+        )
+        self.stats["team_1_score"].add_(
+            ((~self.team_turn.unsqueeze(-1)) & switch_turn).float()
+        )
 
         ball_too_low = self.ball_pos[..., 2] < 0.2  # (E,1)
         ball_out_of_bounds = out_of_bounds(self.ball_pos, self.L, self.W)  # (E,1)
@@ -582,5 +585,27 @@ class PingPong2v2(IsaacEnv):
         )
 
         # 击中球了
-        reward_hit = switch_turn.float() * 50.0
-        
+        reward_hit = switch_turn.float() * 20.0
+
+        reward_game = team_0_win.float() * torch.tensor(
+            [[1.0, 1.0, -1.0, -1.0]], device=self.device
+        ) + team_1_win.float() * torch.tensor(
+            [[-1.0, -1.0, 1.0, 1.0]], device=self.device
+        )
+        reward_game *= 50.0
+
+        reward = reward_game + reward_hit
+
+        misbehave = ball_too_low
+
+        done = (self.progress_buf >= self.max_episode_length).unsqueeze(-1) | misbehave
+
+        self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
+
+        return TensorDict(
+            {
+                "agents": {"reward": reward.unsqueeze(-1)},
+                "done": done,
+            },
+            self.batch_size,
+        )

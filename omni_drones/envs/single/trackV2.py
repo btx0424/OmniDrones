@@ -39,7 +39,7 @@ import omni_drones.utils.kit as kit_utils
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.robots.drone import MultirotorBase
-from omni_drones.utils.torch import euler_to_quaternion, normalize, quat_axis
+from omni_drones.utils.torch import euler_to_quaternion, normalize, quat_rotate_inverse
 from omni_drones.views import RigidPrimView
 
 from ..utils import lemniscate, scale_time
@@ -67,7 +67,7 @@ def attach_payload(parent_path):
     joint.GetAttribute("drive:linear:physics:stiffness").Set(10000.0)
 
 
-class TrackV1(IsaacEnv):
+class TrackV2(IsaacEnv):
     """
     The UAV need to track a reference trajectory while keeping its heading direction aligned with the flight direction.
 
@@ -363,7 +363,8 @@ class TrackV1(IsaacEnv):
         self.ref_pos[:] = self._compute_traj(self.future_traj_steps, step_size=5)
         self.ref_heading[:] = normalize(self.ref_pos[:, 1, :2] - self.ref_pos[:, 0, :2])
 
-        self.rpos = self.ref_pos - self.root_state[..., :3]
+        self.rpos = quat_rotate_inverse(self.drone.rot, self.ref_pos - self.root_state[..., :3])
+        
         obs = [
             self.rpos.flatten(1).unsqueeze(1),
             self.ref_heading.unsqueeze(1) - normalize(self.drone.heading[..., :2]),

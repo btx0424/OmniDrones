@@ -18,7 +18,7 @@ For usage and more details, please refer to the [documentation](https://omnidron
 
 ## Citation
 
-Please cite [this paper](https://arxiv.org/abs/2301.04195) if you use *OmniDrones* in your work:
+Please cite [this paper]() if you use *OmniDrones* in your work:
 
 ```
 

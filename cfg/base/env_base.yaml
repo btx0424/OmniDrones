@@ -1,0 +1,5 @@
+env:
+  num_envs: 4096
+  env_spacing: 8
+  max_episode_length: 500
+  min_episode_length: 50

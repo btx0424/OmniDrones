@@ -4,8 +4,6 @@ from torchrl.data import BoundedTensorSpec, UnboundedContinuousTensorSpec
 
 from omni_drones.robots.drone import MultirotorBase
 from omni_drones.robots.robot import ASSET_PATH
-import omni.isaac.core.utils.torch as torch_utils
-from typing import Optional
 
 class Omav(MultirotorBase):
 
@@ -33,26 +31,7 @@ class Omav(MultirotorBase):
     
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
         rotor_cmds, tilt_cmds = actions.expand(*self.shape, 18).split([12, 6], dim=-1)
-
-        thrusts, moments = vmap(
-            vmap(self.rotors, randomness="different"), randomness="same"
-        )(rotor_cmds, self.rotor_params_and_states)
-
-        _, rotor_rot = self.rotors_view.get_world_poses()
-        torque_axis = torch_utils.quat_axis(
-            rotor_rot.flatten(end_dim=-2), axis=2
-        ).unflatten(0, (*self.shape, self.num_rotors))
-
-        self.forces[..., 2] = thrusts # local z axis
-        self.torques[:] = (moments.unsqueeze(-1) * torque_axis).sum(-2) # world x, y, z axis
-
-        self.rotors_view.apply_forces(
-            self.forces.reshape(-1, 3), is_global=False
-        )
-
-        self.base_link.apply_forces_and_torques_at_pos(
-            None, self.torques.reshape(-1, 3), is_global=True
-        )
+        super().apply_action(rotor_cmds)
 
         velocity_targets = tilt_cmds.clamp(-1, 1) * self.max_tilt_velocity
         self._view.set_joint_velocity_targets(
@@ -61,8 +40,8 @@ class Omav(MultirotorBase):
 
         return self.throttle.sum(-1)
 
-    def _reset_idx(self, env_ids: Optional[torch.Tensor]=None):
-        env_ids = super()._reset_idx(env_ids)
+    def _reset_idx(self, env_ids: torch.Tensor, train: bool=True):
+        env_ids = super()._reset_idx(env_ids, train)
         self._view.set_joint_positions(
             self.init_joint_positions[env_ids],
             env_indices=env_ids,

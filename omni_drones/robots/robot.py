@@ -27,9 +27,10 @@ TEMPLATE_PRIM_PATH = "/World/envs/env_0"
 class RobotBase(abc.ABC):
 
     usd_path: str
+    cfg_cls = RobotCfg
 
     _robots = {}
-    _envs_positions: torch.Tensor = None
+    _envs_positions: torch.Tensor
 
     REGISTRY: Dict[str, Type["RobotBase"]] = {}
 
@@ -40,7 +41,8 @@ class RobotBase(abc.ABC):
             raise RuntimeError
         RobotBase._robots[name] = self
         if cfg is None:
-            cfg = RobotCfg()
+            cfg = self.cfg_cls()
+        
         self.name = name
         self.is_articulation = is_articulation
         self.rigid_props: RigidBodyPropertiesCfg = cfg.rigid_props
@@ -51,10 +53,12 @@ class RobotBase(abc.ABC):
         if SimulationContext._instance is None:
             raise RuntimeError("The SimulationContext is not created.")
 
+        self.cfg = cfg
         self.device = SimulationContext.instance()._device
         self.dt = SimulationContext.instance().get_physics_dt()
         self.state_spec: TensorSpec
         self.action_spec: TensorSpec
+        self.initialized = False
 
     @classmethod
     def __init_subclass__(cls, **kwargs):
@@ -64,15 +68,24 @@ class RobotBase(abc.ABC):
         RobotBase.REGISTRY[cls.__name__] = cls
         RobotBase.REGISTRY[cls.__name__.lower()] = cls
 
-    def spawn(self, translations=[(0.0, 0.0, 0.5)], prim_paths: Sequence[str] = None):
+    def spawn(
+        self, 
+        translations=[(0.0, 0.0, 0.5)], 
+        orientations=None,
+        prim_paths: Sequence[str] = None
+    ):
         if SimulationContext.instance()._physics_sim_view is not None:
             raise RuntimeError(
                 "Cannot spawn robots after simulation_context.reset() is called."
             )
+        
         translations = torch.atleast_2d(
             torch.as_tensor(translations, device=self.device)
         )
         n = translations.shape[0]
+
+        if orientations is None:
+            orientations = [None for _ in range(n)]
 
         if prim_paths is None:
             prim_paths = [f"{TEMPLATE_PRIM_PATH}/{self.name}_{i}" for i in range(n)]
@@ -81,21 +94,17 @@ class RobotBase(abc.ABC):
             raise ValueError
 
         prims = []
-        for prim_path, translation in zip(prim_paths, translations):
+        for prim_path, translation, orientation in zip(prim_paths, translations, orientations):
             if prim_utils.is_prim_path_valid(prim_path):
                 raise RuntimeError(f"Duplicate prim at {prim_path}.")
-            prim = prim_utils.create_prim(
-                prim_path,
-                usd_path=self.usd_path,
-                translation=translation,
-            )
+            prim = self._create_prim(prim_path, translation, orientation)
             # apply rigid body properties
             kit_utils.set_nested_rigid_body_properties(
                 prim_path,
                 linear_damping=self.rigid_props.linear_damping,
                 angular_damping=self.rigid_props.angular_damping,
-                max_linear_velocity=50, #self.rigid_props.max_linear_velocity,
-                max_angular_velocity=50, # self.rigid_props.max_angular_velocity,
+                max_linear_velocity=self.rigid_props.max_linear_velocity,
+                max_angular_velocity=self.rigid_props.max_angular_velocity,
                 max_depenetration_velocity=self.rigid_props.max_depenetration_velocity,
                 enable_gyroscopic_forces=True,
                 disable_gravity=self.rigid_props.disable_gravity,
@@ -113,6 +122,15 @@ class RobotBase(abc.ABC):
 
         self.n += n
         return prims
+
+    def _create_prim(self, prim_path, translation, orientation):
+        prim = prim_utils.create_prim(
+            prim_path,
+            usd_path=self.usd_path,
+            translation=translation,
+            orientation=orientation,
+        )
+        return prim
 
     def initialize(
         self,
@@ -135,6 +153,7 @@ class RobotBase(abc.ABC):
                 reset_xform_properties=False,
                 shape=(-1, self.n)
             )
+            self.articulation = self
         else:
             self._view = RigidPrimView(
                 self.prim_paths_expr, 
@@ -142,6 +161,8 @@ class RobotBase(abc.ABC):
                 shape=(-1, self.n),
                 # track_contact_forces=True
             )
+            self.articulation = None
+            self.articulation_indices = None
 
         self._view.initialize()
         # set the default state
@@ -149,13 +170,14 @@ class RobotBase(abc.ABC):
         self.shape = torch.arange(self._view.count).reshape(-1, self.n).shape
         
         self.prim_paths = self._view.prim_paths
+        self.initialized = True
 
     @abc.abstractmethod
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
 
     @abc.abstractmethod
-    def _reset_idx(self, env_ids: torch.Tensor):
+    def _reset_idx(self, env_ids: torch.Tensor, train: bool=True):
         raise NotImplementedError
 
     def get_world_poses(self, clone: bool=False):
@@ -171,10 +193,19 @@ class RobotBase(abc.ABC):
         return self._view.set_velocities(velocities, env_indices=env_indices)
 
     def get_joint_positions(self, clone: bool=False):
+        if not self.is_articulation:
+            raise NotImplementedError
         return self._view.get_joint_positions(clone=clone)
 
     def set_joint_positions(self, pos: torch.Tensor, env_indices: torch.Tensor = None):
+        if not self.is_articulation:
+            raise NotImplementedError
         return self._view.set_joint_positions(pos, env_indices=env_indices)
+
+    def set_joint_position_targets(self, pos: torch.Tensor, env_indices: torch.Tensor = None):
+        if not self.is_articulation:
+            raise NotImplementedError
+        self._view.set_joint_position_targets(pos, env_indices=env_indices)
 
     def get_joint_velocities(self, clone: bool=False):
         return self._view.get_joint_velocities(clone=clone)
@@ -182,6 +213,15 @@ class RobotBase(abc.ABC):
     def set_joint_velocities(self, vel: torch.Tensor, env_indices: torch.Tensor = None):
         return self._view.set_joint_velocities(vel, env_indices=env_indices)
 
+    def get_force_sensor_forces(self, clone: bool=False):
+        if self.is_articulation:
+            forces = self._view.get_force_sensor_forces(clone=clone)
+        else:
+            forces = self.articulation._view.get_force_sensor_forces(clone=clone)
+            forces = forces[..., self.articulation_indices, :]
+            forces = forces.reshape(*self.shape, 1, 6)
+        return forces
+    
     def get_state(self):
         raise NotImplementedError
 

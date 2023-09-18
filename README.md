@@ -72,6 +72,8 @@ python -c "from omni.isaac.kit import SimulationApp"
 python -c "import torch; print(torch.__path__)"
 # then
 printenv > .vscode/.python.env
+# to explore the code under current workspace
+ln -s ${ISAACSIM_PATH} _isaac_sim
 ```
 And edit `.vscode/settings.json`:
 ```json

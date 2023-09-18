@@ -1,3 +1,4 @@
+name: firefly
 inertia:
   xx: 0.0347563
   xy: 0.0
@@ -6,6 +7,8 @@ inertia:
   yz: 0.0
   zz: 0.0977
 mass: 1.56779
+l: 0.43
+drag_coef: 0.3
 rotor_configuration:
   arm_lengths:
   - 0.215

@@ -1,3 +1,5 @@
+.devcontainer
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -141,3 +143,6 @@ urdf/
 *.pkl
 *.pth
 tmp
+plot/
+
+policy_checkpoints/

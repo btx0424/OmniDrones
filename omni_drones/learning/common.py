@@ -49,6 +49,9 @@ class MyBuffer:
         )
         return sub_trajs
 
+    def __len__(self):
+        return self.storage._len
+
 def sample_sub_traj(traj, seq_len):
     t = torch.randint(0, traj.shape[0] - seq_len, (1,))
     t = t + torch.arange(seq_len)
@@ -56,7 +59,7 @@ def sample_sub_traj(traj, seq_len):
 
 
 from torchrl.data import BoundedTensorSpec, UnboundedContinuousTensorSpec, CompositeSpec, TensorSpec
-from .modules.networks import MLP, ENCODERS_MAP
+from .modules.networks import MLP, ENCODERS_MAP, VISION_ENCODER_MAP, MixedEncoder
 from functools import partial
 
 def make_encoder(cfg, input_spec: TensorSpec) -> nn.Module:
@@ -74,12 +77,45 @@ def make_encoder(cfg, input_spec: TensorSpec) -> nn.Module:
             init = getattr(nn.init, cfg.init.type)
             init = partial(init, **cfg.init.get("kwargs", {}))
             encoder.apply(lambda m: init_linear(m, init))
-    elif isinstance(input_spec, CompositeSpec):
-        encoder_cls = ENCODERS_MAP[cfg.attn_encoder]
-        encoder = encoder_cls(input_spec)
+    elif isinstance(input_spec, CompositeSpec): # FIXME: add logic for composite spec with visual input and other inputs
+        state_spec_dict = {}
+        vision_spec_dict = {}
+        for spec_name in input_spec.keys():
+            if input_spec[spec_name].ndim < 5:
+                state_spec_dict[spec_name] = input_spec[spec_name]
+            elif input_spec[spec_name].ndim == 5:
+                vision_spec_dict[spec_name] = input_spec[spec_name]
+            else:
+                raise ValueError
+            
+        # create state encoder
+        if len(state_spec_dict) > 0:
+            encoder_cls = ENCODERS_MAP[cfg.attn_encoder]
+            state_encoder = encoder_cls(CompositeSpec(state_spec_dict))
+        else:
+            state_encoder = None
+            print("No state encoder requried.")
+
+        # create vision encoder
+        if len(vision_spec_dict) == 0:
+            assert state_encoder is not None
+            encoder = state_encoder
+        elif len(vision_spec_dict) == 1:
+            vision_encoder_cls = VISION_ENCODER_MAP[cfg.vision_encoder]
+            vision_shape = list(vision_spec_dict.values())[0].shape
+            vision_encoder = vision_encoder_cls(vision_shape)
+            encoder = MixedEncoder(
+                cfg,
+                vision_obs_names=vision_spec_dict.keys(),
+                vision_encoder=vision_encoder,
+                state_encoder=state_encoder
+            )
+        else:
+            import pdb; pdb.set_trace()
+            raise NotImplementedError("Multiple visual inputs are not supported for now (cuz this author is lazy)")
     else:
         raise NotImplementedError(input_spec)
-
+        
     return encoder
 
 @torch.no_grad()

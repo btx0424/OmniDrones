@@ -1,18 +1,22 @@
 name: Formation
 
 defaults:
-  - /env_base
-  - /sim_base
+  # see https://hydra.cc/docs/advanced/overriding_packages/
+  - /base/env_base@_here_
+  - /base/sim_base@_here_
+  # - /base/randomization_base@_here_
 
-envs: 
+env: 
   num_envs: 1024
+  max_episode_length: 600
 
-drone_model: Crazyflie
+drone_model: Hummingbird
+force_sensor: false
+time_encoding: true
 
-formation: tetragon
+safe_distance: 0.4
+formation: hexagon # tetragon
 
-multidiscrete_action:
-  nbins: 4
+flatten_state: false
 
-# discrete_action:
-#   nbins: 2
+action_transform: null

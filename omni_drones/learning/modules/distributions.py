@@ -55,62 +55,63 @@ class DiagGaussian(nn.Module):
     def forward(self, x):
         action_mean = self.fc_mean(x)
         action_std = torch.broadcast_to(torch.exp(self.log_std), action_mean.shape)
-        dist = D.Independent(D.Normal(action_mean, action_std), 1)
+        dist = D.Independent(D.Normal(action_mean, action_std), 1) 
         return dist
 
 
-class SafeTanhTransform(D.TanhTransform):
-    """Safe version of TanhTransform that avoids NaNs."""
+# class SafeTanhTransform(D.TanhTransform):
+#     """Safe version of TanhTransform that avoids NaNs."""
 
-    def _inverse(self, y: torch.Tensor):
-        eps = torch.finfo(y.dtype).eps
-        y = y.clamp(-1 + eps, 1 - eps)
-        return torch.atanh(y)
+#     def _inverse(self, y: torch.Tensor):
+#         eps = torch.finfo(y.dtype).eps
+#         y = y.clamp(-1 + eps, 1 - eps)
+#         return torch.atanh(y)
 
 
-class TanhIndependentNormal(D.TransformedDistribution):
-    arg_constraints = {"loc": constraints.real, "scale": constraints.positive}
+# class TanhIndependentNormal(D.TransformedDistribution):
+#     arg_constraints = {"loc": constraints.real, "scale": constraints.positive}
 
-    def __init__(
-        self,
-        loc: torch.Tensor,
-        scale: torch.Tensor,
-        min: Union[torch.Tensor, Number] = -1.0,
-        max: Union[torch.Tensor, Number] = 1.0,
-        event_dims=1,
-    ):
-        self.min = torch.as_tensor(min, device=loc.device).broadcast_to(loc.shape)
-        self.max = torch.as_tensor(max, device=loc.device).broadcast_to(loc.shape)
-        self._loc = (self.min + self.max) / 2
-        self._scale = (self.max - self.min) / 2
-        self.eps = torch.finfo(loc.dtype).eps
-        base_dist = D.Independent(D.Normal(loc, scale), event_dims)
-        t = SafeTanhTransform()
+#     def __init__(
+#         self,
+#         loc: torch.Tensor,
+#         scale: torch.Tensor,
+#         min: Union[torch.Tensor, Number] = -1.0,
+#         max: Union[torch.Tensor, Number] = 1.0,
+#         event_dims=1,
+#     ):
+#         self.min = torch.as_tensor(min, device=loc.device).broadcast_to(loc.shape)
+#         self.max = torch.as_tensor(max, device=loc.device).broadcast_to(loc.shape)
+#         self._loc = (self.min + self.max) / 2
+#         self._scale = (self.max - self.min) / 2
+#         self.eps = torch.finfo(loc.dtype).eps
+#         base_dist = D.Independent(D.Normal(loc, scale), event_dims)
+#         t = SafeTanhTransform()
 
-        super().__init__(base_dist, t)
+#         super().__init__(base_dist, t)
 
-    def sample(self, sample_shape: torch.Size = torch.Size()):
-        return super().sample(sample_shape) * self._scale + self._loc
+#     def sample(self, sample_shape: torch.Size = torch.Size()):
+#         return super().sample(sample_shape) * self._scale + self._loc
 
-    def rsample(self, sample_shape: torch.Size = torch.Size()):
-        return super().rsample(sample_shape) * self._scale + self._loc
+#     def rsample(self, sample_shape: torch.Size = torch.Size()):
+#         return super().rsample(sample_shape) * self._scale + self._loc
 
-    def log_prob(self, value: torch.Tensor):
-        return super().log_prob(
-            ((value - self._loc) / self._scale).clamp(-1 + self.eps, 1 - self.eps)
-        )
+#     def log_prob(self, value: torch.Tensor):
+#         return super().log_prob(
+#             ((value - self._loc) / self._scale).clamp(-1 + self.eps, 1 - self.eps)
+#         )
 
-    @property
-    def mode(self):
-        m = self.base_dist.mode
-        return torch.tanh(m)
+#     @property
+#     def mode(self):
+#         m = self.base_dist.mode
+#         return torch.tanh(m)
 
-    @property
-    def mean(self):
-        return self.mode
+#     @property
+#     def mean(self):
+#         return self.mode
 
-    def entropy(self):
-        return -self.log_prob(self.rsample(self.batch_shape))
+#     def entropy(self):
+#         return -self.log_prob(self.rsample(self.batch_shape))
+from torchrl.modules.distributions import TanhNormal
 
 
 class IndependentNormal(D.Independent):
@@ -185,19 +186,30 @@ class IndependentNormalModule(nn.Module):
         return IndependentNormal(loc, scale)
 
 
+class TanhNormalWithEntropy(TanhNormal):
+    def entropy(self):
+        return -self.log_prob(self.sample())
+
+
 class TanhIndependentNormalModule(nn.Module):
     def __init__(
         self,
         input_dim: int,
         output_dim: int,
-        scale_mapping: str = "exp",
+        scale_mapping: str = "softplus",
+        state_dependent_std: bool = True,
         scale_lb: float = 1e-4,
         min: Union[torch.Tensor, Number] = -1.0,
         max: Union[torch.Tensor, Number] = 1.0,
         event_dims=1,
     ):
         super().__init__()
-        self.operator = nn.Linear(input_dim, output_dim * 2)
+        self.state_dependent_std = state_dependent_std
+        if self.state_dependent_std:
+            self.operator = nn.Linear(input_dim, output_dim * 2)
+        else:
+            self.operator = nn.Linear(input_dim, output_dim)
+            self.log_std = nn.Parameter(torch.zeros(output_dim))
         if isinstance(scale_mapping, str):
             self.scale_mapping = _mappings[scale_mapping]
         elif callable(self.scale_mapping):
@@ -206,12 +218,16 @@ class TanhIndependentNormalModule(nn.Module):
             raise ValueError("scale_mapping must be a string or a callable function.")
         self.scale_lb = scale_lb
         self.dist_cls = functools.partial(
-            TanhIndependentNormal, min=min, max=max, event_dims=event_dims
+            TanhNormalWithEntropy, min=min, max=max, event_dims=event_dims
         )
 
     def forward(self, tensor: torch.Tensor) -> Tuple[torch.Tensor]:
-        loc, scale = self.operator(tensor).chunk(2, -1)
-        scale = self.scale_mapping(scale).clamp_min(self.scale_lb)
+        if self.state_dependent_std:
+            loc, scale = self.operator(tensor).chunk(2, -1)
+            scale = self.scale_mapping(scale).clamp_min(self.scale_lb)
+        else:
+            loc = self.operator(tensor)
+            scale = self.scale_mapping(self.log_std).clamp_min(self.scale_lb)
         return self.dist_cls(loc, scale)
 
 
@@ -304,10 +320,11 @@ class MultiCategorical(D.Distribution):
 class MultiCategoricalModule(nn.Module):
     def __init__(
         self,
+        input_dim: int,
         output_dims: Union[List[int], torch.Tensor],
     ):
         super().__init__()
-        self.operator = nn.LazyLinear(sum(output_dims))
+        self.operator = nn.Linear(input_dim, sum(output_dims))
         self.output_dims = (
             output_dims.tolist()
             if isinstance(output_dims, torch.Tensor)
@@ -318,3 +335,69 @@ class MultiCategoricalModule(nn.Module):
         logits = self.operator(tensor)
         logits = logits.split(self.output_dims, dim=-1)
         return MultiCategorical(logits=logits)
+
+
+class MultiOneHotCategorical(D.Independent):
+    def __init__(
+        self,
+        logits: torch.Tensor = None,
+        probs: torch.Tensor = None,
+        unimix: float = 0.01,
+    ):
+        if (probs is None) == (logits is None):
+            raise ValueError(
+                "Either `probs` or `logits` must be specified, but not both."
+            )
+
+        if logits is not None:
+            probs = F.softmax(logits, dim=-1)
+
+        probs = probs * (1.0 - unimix) + unimix / probs.shape[-1]
+        super().__init__(D.OneHotCategoricalStraightThrough(probs=probs), 1)
+
+
+class TwoHot(D.Distribution):
+    def __init__(
+        self,
+        logits: torch.Tensor,
+        low=-20.0,
+        high=20.0,
+    ):
+        super().__init__(batch_shape=logits.shape[:-1])
+        self.logits = logits
+        self.probs = torch.softmax(logits, -1)
+        self.buckets = torch.linspace(low, high, steps=logits.shape[-1]).to(
+            logits.device
+        )
+
+    @property
+    def mean(self):
+        return torch.sum(self.probs * self.buckets, -1, keepdim=True)
+
+    @property
+    def mode(self):
+        return self.mean
+
+    def log_prob(self, x):
+        # x(time, batch, 1)
+        below = torch.sum((self.buckets <= x[..., None]).to(torch.int32), dim=-1) - 1
+        above = len(self.buckets) - torch.sum(
+            (self.buckets > x[..., None]).to(torch.int32), dim=-1
+        )
+        below = torch.clip(below, 0, len(self.buckets) - 1)
+        above = torch.clip(above, 0, len(self.buckets) - 1)
+        equal = below == above
+
+        dist_to_below = torch.where(equal, 1, torch.abs(self.buckets[below] - x))
+        dist_to_above = torch.where(equal, 1, torch.abs(self.buckets[above] - x))
+        total = dist_to_below + dist_to_above
+        weight_below = dist_to_above / total
+        weight_above = dist_to_below / total
+        target = (
+            F.one_hot(below, num_classes=len(self.buckets)) * weight_below[..., None]
+            + F.one_hot(above, num_classes=len(self.buckets)) * weight_above[..., None]
+        )
+        log_pred = self.logits - torch.logsumexp(self.logits, -1, keepdim=True)
+        target = target.squeeze(-2)
+
+        return (target * log_pred).sum(-1)

@@ -12,7 +12,6 @@ from torchrl.data.replay_buffers.samplers import RandomSampler
 
 import copy
 from tqdm import tqdm
-from omni_drones.envs.isaac_env import AgentSpec
 from tensordict import TensorDict
 from .common import soft_update, make_encoder
 
@@ -75,11 +74,11 @@ class EpsilonGreedyActionSelector(nn.Module):
         )
         return actions, epsilon
     
-class DQN:
+class DQNPolicy:
 
     def __init__(self,
         cfg,
-        agent_spec: AgentSpec,
+        agent_spec,
         device: str="cuda",
     ) -> None:
         self.cfg = cfg
@@ -124,7 +123,8 @@ class DQN:
         
         self.replay_buffer = TensorDictReplayBuffer(
             batch_size=self.batch_size,
-            storage=LazyTensorStorage(max_size=self.cfg.buffer_size, device="cpu")
+            storage=LazyTensorStorage(max_size=self.cfg.buffer_size, device=self.device),
+            sampler=RandomSampler()
         )
         self.t = 0
         self.epsilon = 0
@@ -179,7 +179,8 @@ class DQN:
                 
                 infos.append(TensorDict({
                     "q_loss": loss,
-                    "q_taken": q.mean(),
+                    "q_taken_mean": q.mean(),
+                    "q_taken_max": q.max(),
                     "grad_norm": grad_norm,
                 }, []))
                 t.set_postfix({"q_loss": loss.item()})

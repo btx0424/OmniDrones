@@ -1,0 +1,29 @@
+name: InvPendulumFlyThrough
+
+defaults:
+  # see https://hydra.cc/docs/advanced/overriding_packages/
+  - /base/env_base@_here_
+  - /base/sim_base@_here_
+  # - /base/randomization_base@_here_
+
+sim:
+  gpu_max_rigid_contact_count: 524288
+  gpu_max_rigid_patch_count: 524288
+
+drone_model: Hummingbird
+time_encoding: true
+force_sensor: false
+
+reward_effort_weight: 0.1
+reward_action_smoothness_weight: 0.0
+reward_distance_scale: 1.2
+
+payload_mass_scale: [0.2, 0.3]
+bar_mass_min: 0.01
+bar_mass_max: 0.04
+
+bar_length: 1.
+obstacle_spacing: [1.0, 1.0]
+reset_on_collision: false
+
+action_transform: null

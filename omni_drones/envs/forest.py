@@ -59,6 +59,7 @@ class Forest(IsaacEnv):
         self.target_pos = torch.zeros(self.num_envs, self.drone.n, 3, device=self.device)
 
         info_spec = CompositeSpec(
+            drone_state=UnboundedContinuousTensorSpec((self.drone.n, 13)),
             trees_pos=UnboundedContinuousTensorSpec((self.trees_pos.shape[1], 2)),
             target_pos=UnboundedContinuousTensorSpec((self.drone.n, 3)),
             time=UnboundedContinuousTensorSpec(1),
@@ -109,7 +110,7 @@ class Forest(IsaacEnv):
         if self.visual_obs:
             camera_cfg = PinholeCameraCfg(
                 sensor_tick=0,
-                resolution=(320, 240),
+                resolution=(240, 180),
                 data_types=["rgb", "distance_to_camera"],
                 usd_params=PinholeCameraCfg.UsdCameraCfg(
                     focal_length=24.0,
@@ -157,12 +158,13 @@ class Forest(IsaacEnv):
         obs = TensorDict({"state": self.root_state}, [self.num_envs, self.drone.n])
         if self.visual_obs:
             images = self.camera.get_images()
-            images = images.unsqueeze(1)
+            images = images.reshape(self.num_envs, self.drone.n)
             obs.update(images)
 
         tensordict = TensorDict({
             "drone.obs": obs,
             "info":{
+                "drone_state": self.root_state[..., :13],
                 "target_pos": self.target_pos.clone(),
                 "trees_pos": self.trees_pos[..., :2].clone(),
                 "time": (self.progress_buf * self.dt).unsqueeze(-1),
@@ -181,13 +183,13 @@ class Forest(IsaacEnv):
         tiltage = torch.abs(1 - ups[..., 2])
         up_reward = 1.0 / (1.0 + torch.square(tiltage))
         # effort
-        effort_reward = 0.05 * torch.exp(-0.5 * self.effort)
+        reward_effort = 0.05 * torch.exp(-0.5 * self.effort)
         # spin reward
         spin = torch.square(vels[..., -1])
-        spin_reward = 1.0 / (1.0 + torch.square(spin))
+        reward_spin = 1.0 / (1.0 + torch.square(spin))
 
-        assert pos_reward.shape == up_reward.shape == spin_reward.shape
-        reward = pos_reward + pos_reward * (up_reward + spin_reward)  # + effort_reward
+        assert pos_reward.shape == up_reward.shape == reward_spin.shape
+        reward = pos_reward + pos_reward * (up_reward + reward_spin)  # + reward_effort
 
         done = (
             (self.progress_buf >= self.max_episode_length).unsqueeze(-1)

@@ -1,0 +1,65 @@
+program: train_offpolicy.py
+name: SweepHoverSAC
+project: gpu-onpolicy
+entity: marl-drones
+method: bayes
+
+metric:
+  name: train/return
+  goal: maximize
+
+parameters:
+
+  task: 
+    value: Hover
+
+  task.env.num_envs:
+    value: 512
+
+  algo:
+    value: sac
+  
+  total_frames: 
+    value: 10_000_000
+
+  headless:
+    value: true
+  
+  task.drone_model:
+    values: [Firefly, Hummingbird]
+
+  algo.buffer_size:
+    distribution: log_uniform_values
+    max: 1000000
+    min: 100000
+  
+  algo.train_every:
+    distribution: log_uniform_values
+    max: 100
+    min: 10
+  
+  algo.gradient_steps:
+    distribution: log_uniform_values
+    max: 2048
+    min: 256
+
+  # algo.actor.lr:
+  #   distribution: log_uniform_values
+  #   max: 0.01
+  #   min: 0.0001
+  
+  # algo.critic.lr:
+  #   distribution: log_uniform_values
+  #   max: 0.01
+  #   min: 0.0001
+
+  algo.alpha_lr:
+    distribution: log_uniform_values
+    max: 0.01
+    min: 0.0001
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args_no_hyphens}

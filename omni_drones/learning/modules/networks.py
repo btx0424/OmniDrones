@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Dict, Optional, Sequence, Union
+from typing import Dict, List, Optional, Sequence, Union
 
 import torch
 import torch.nn as nn
@@ -139,6 +139,7 @@ class SplitEmbedding(nn.Module):
         return embeddings
 
 
+################################## Attn Encoders ##################################
 ENCODERS_MAP = {}
 
 
@@ -284,4 +285,119 @@ class PartialAttentionEncoder(nn.Module):
     def _ff_block(self, x: Tensor):
         x = self.linear2(self.activation(self.linear1(x)))
         return x
+    
 
+################################## Vision Encoders ##################################
+def get_output_shape(net, input_size):
+    _x = torch.zeros(input_size).unsqueeze(0)
+    _out = net(_x)
+    return _out.shape
+
+class MixedEncoder(nn.Module):
+    def __init__(
+        self,
+        cfg,
+        vision_obs_names: List[str] = [],
+        vision_encoder: nn.Module = None,
+        state_encoder: Optional[nn.Module] = None,
+        combine_mode: str = "concat",
+    ):
+        super().__init__()
+        self.vision_obs_names = vision_obs_names
+        self.vision_encoder = vision_encoder
+        self.state_encoder = state_encoder
+        self.combine_mode = combine_mode
+
+        input_dim = self.vision_encoder.output_shape.numel()
+        if self.state_encoder is not None:
+            input_dim += self.state_encoder.output_shape.numel()
+
+        self.mlp = nn.Sequential(
+            nn.LayerNorm(input_dim),
+            MLP(
+                num_units=[input_dim] + cfg.hidden_units, 
+                normalization=nn.LayerNorm if cfg.get("layer_norm", False) else None
+            ),
+        )
+
+        self.output_shape = torch.Size((cfg.hidden_units[-1],))
+
+    def forward(self, x: TensorDict):
+        feats = [
+            self.vision_encoder(x[obs_name]) for obs_name in x.keys() 
+            if obs_name in self.vision_obs_names
+        ]
+        if self.state_encoder is not None:
+            # TODO: attn_encoder with TensorDict input
+            feats += [
+                self.state_encoder(x[obs_name]) for obs_name in x.keys() 
+                if obs_name not in self.vision_obs_names
+            ]
+        if self.combine_mode == "concat":
+            feats = torch.cat(feats, dim=-1)
+        else:
+            raise NotImplementedError
+        return self.mlp(feats)
+
+
+VISION_ENCODER_MAP = {}
+
+@register(VISION_ENCODER_MAP)
+class MobileNetV3Small(nn.Module):
+    def __init__(
+        self,
+        input_size: torch.Size,
+    ) -> None:
+        super().__init__()
+        self.input_size = input_size[2:]
+        assert self.input_size[0] in [1, 3]
+
+        self._setup_backbone()
+        self.output_shape = get_output_shape(self.forward, self.input_size)
+
+    def _backbone_fn(self, x):
+        x = self._backbone_transform(x)
+        x = self._backbone(x)
+        return x
+
+    def _setup_backbone(self):
+        from torchvision.models import mobilenet_v3_small, MobileNet_V3_Small_Weights
+        _transform = MobileNet_V3_Small_Weights.IMAGENET1K_V1.transforms
+
+        full_backbone = mobilenet_v3_small(weights="IMAGENET1K_V1")
+        for module in full_backbone.modules():
+            if isinstance(module, nn.modules.batchnorm.BatchNorm2d):
+                module.track_running_stats = False
+
+        self._backbone = nn.Sequential(
+            full_backbone.features,
+            full_backbone.avgpool
+        )
+        self._backbone_transform = _transform()
+
+    def forward(self, x: torch.Tensor):
+        assert isinstance(x, torch.Tensor)
+        if x.shape[1] == 1:
+            x = x.repeat(1, 3, 1, 1)
+        x = self._backbone_fn(x)
+        x = x.flatten(1)
+        return x
+    
+
+@register(VISION_ENCODER_MAP)
+class MobilNetV3Large(MobileNetV3Small):
+    def _setup_backbone(self):
+        from torchvision.models import mobilenet_v3_large, MobileNet_V3_Large_Weights
+        _transform = MobileNet_V3_Large_Weights.IMAGENET1K_V1.transforms
+
+        full_backbone = mobilenet_v3_large(weights="IMAGENET1K_V1")
+        for module in full_backbone.modules():
+            if isinstance(module, nn.modules.batchnorm.BatchNorm2d):
+                module.track_running_stats = False
+
+        self._backbone = nn.Sequential(
+            full_backbone.features,
+            full_backbone.avgpool
+        )
+        self._backbone_transform = _transform()
+        

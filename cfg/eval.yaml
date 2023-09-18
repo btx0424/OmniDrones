@@ -1,0 +1,20 @@
+headless: true
+
+sim: ${task.sim}
+env: ${task.env}
+
+total_frames: -1
+total_episodes: ${eval:2 * ${env.num_envs}}
+seed: 0
+
+viewer:
+  eye: [7.5, 7.5, 7.5]
+  lookat: [0., 0., 0.]
+  resolution: [960, 720]
+
+policy_ckpt_path: /home/hesicheng/OmniDrones/wandb/run-20230905_181848-cdzus2eg/files/checkpoint_final.pt
+
+defaults:
+  - task: PingPongRelay
+  - algo: mappo
+  - _self_

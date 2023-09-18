@@ -1,0 +1,33 @@
+name: Hover
+
+defaults:
+  # see https://hydra.cc/docs/advanced/overriding_packages/
+  - /base/env_base@_here_
+  - /base/sim_base@_here_
+
+env:
+  num_envs: 4096
+
+drone_model: Firefly
+force_sensor: false
+time_encoding: true
+
+randomization:
+  drone:
+    train:
+      mass_scale: [0.26, 1.74]
+      inertia_scale: [0.026, 1.974]
+      t2w_scale: [0.5556, 2.23]
+      f2m_scale: [0.625, 2.5]
+      drag_coef_scale: [0, 0.62]
+      rotor_offset_scale: [-0.63, 0.63]
+  payload:
+    z: [-0.1, 0.1]
+    mass: [0.01, 0.4]
+
+
+reward_effort_weight: 0.1
+reward_action_smoothness_weight: 0.0
+reward_distance_scale: 1.2
+
+action_transform: null

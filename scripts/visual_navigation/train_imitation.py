@@ -31,7 +31,7 @@ from torchvision.models import mobilenet_v3_small
 from torchvision.io import write_video
 
 from omni_drones import CONFIG_PATH, init_simulation_app
-from omni_drones.utils.envs.transforms import LogOnEpisode, DepthImageNorm
+from omni_drones.utils.torchrl.transforms import LogOnEpisode, DepthImageNorm
 from omni_drones.utils.wandb import init_wandb
 from omni_drones.utils.math import quaternion_to_euler
 from omni_drones.learning.utils.distributions import IndependentNormal

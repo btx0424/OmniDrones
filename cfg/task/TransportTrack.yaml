@@ -1,0 +1,32 @@
+name: TransportTrack
+
+defaults:
+  # see https://hydra.cc/docs/advanced/overriding_packages/
+  - /base/env_base@_here_
+  - /base/sim_base@_here_
+  # - /base/randomization_base@_here_
+
+env:
+  num_envs: 2048
+  max_episode_length: 600
+
+drone_model: Hummingbird
+num_drones: 4
+force_sensor: false
+time_encoding: true
+
+payload_mass_scale: [0.5, 0.8]
+reset_thres: 0.7
+future_traj_steps: 4
+
+reward_effort_weight: 0.1
+reward_spin_weight: 0.8
+reward_swing_weight: 0.8
+reward_action_smoothness_weight: 0.0
+reward_distance_scale: 1.2
+safe_distance: 0.5
+
+ravel_obs: true
+flatten_state: true
+
+action_transform: null

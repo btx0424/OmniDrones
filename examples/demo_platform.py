@@ -19,6 +19,7 @@ def main(cfg):
     import omni_drones.utils.scene as scene_utils
     from omni.isaac.core.simulation_context import SimulationContext
     from omni_drones.robots.drone import MultirotorBase
+    from omni_drones.envs.platform.utils import create_frame
 
     sim = SimulationContext(
         stage_units_in_meters=1.0,
@@ -55,7 +56,7 @@ def main(cfg):
 
     arm_angles = [torch.pi * 2 / n * i for i in range(n)]
     arm_lengths = [1.0 for _ in range(n)]
-    scene_utils.create_frame(
+    create_frame(
         "/World/envs/env_0/platform/frame",
         arm_angles,
         arm_lengths,
@@ -72,10 +73,11 @@ def main(cfg):
         if not sim.is_playing():
             sim.step()
             continue
-        root_state = drone.get_state()[..., :13].squeeze(0)
+        root_state = drone.get_state(env=False)[..., :13].squeeze(0)
         action, controller_state = functorch.vmap(controller)(
             root_state, control_target, controller_state
         )
+        action[:] = -1
         drone.apply_action(action)
         sim.step()
 

@@ -1,0 +1,62 @@
+program: train.py
+name: ActionSpace
+project: gpu-onpolicy
+entity: marl-drones
+method: grid
+
+metric:
+  name: train/return
+  goal: maximize
+
+parameters:
+
+  # single-agent
+  task: 
+    values: 
+    - InvPendulumHover
+    - PayloadTrack
+  total_frames: 
+    value: 105_000_000
+
+  # # multi-agent
+  # task: 
+  #   values: 
+  #   - PlatformHover
+  #   - TransportHover
+  # total_frames: 
+  #   value: 155_000_000
+
+  # algo.actor.hidden_units:
+  #   value: [256, 128, 128]
+
+  # algo.critic.hidden_units:
+  #   value: [256, 128, 128]
+
+  # algo.critic_input:
+  #   value: state
+
+  headless:
+    value: true
+  
+  seed:
+    values: [0, 42, 81] #57, 127]
+
+  task.drone_model:
+    values: [Firefly, Hummingbird]
+
+  task.action_transform:
+    values:
+      # - None # sweep does not support passing "null"
+      - multidiscrete:2
+      - multidiscrete:5
+      - discrete:2
+
+  
+  algo.train_every:
+    value: 128
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args_no_hyphens}

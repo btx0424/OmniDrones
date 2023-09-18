@@ -1,0 +1,17 @@
+name: PingPongMultiV0
+
+defaults:
+  # see https://hydra.cc/docs/advanced/overriding_packages/
+  - /base/env_base@_here_
+  - /base/sim_base@_here_
+  # - /base/randomization_base@_here_
+
+env:
+  num_envs: 2048
+  max_episode_length: 800
+
+drone_model: Iris
+force_sensor: false
+time_encoding: true
+
+action_transform: null

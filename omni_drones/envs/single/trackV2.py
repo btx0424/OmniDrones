@@ -363,8 +363,12 @@ class TrackV2(IsaacEnv):
         self.ref_pos[:] = self._compute_traj(self.future_traj_steps, step_size=5)
         self.ref_heading[:] = normalize(self.ref_pos[:, 1, :2] - self.ref_pos[:, 0, :2])
 
-        self.rpos = quat_rotate_inverse(self.drone.rot, self.ref_pos - self.root_state[..., :3])
-        
+        # rotate ref_pos to drone frame
+        self.rpos = quat_rotate_inverse(
+            self.drone.rot.expand(-1, self.future_traj_steps, -1),
+            self.ref_pos - self.root_state[..., :3]
+        )
+
         obs = [
             self.rpos.flatten(1).unsqueeze(1),
             self.ref_heading.unsqueeze(1) - normalize(self.drone.heading[..., :2]),

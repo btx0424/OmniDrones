@@ -6,7 +6,28 @@
 Welcome to OmniDrones's documentation!
 ======================================
 
-.. image:: _static/overview.pdf
+**OmniDrones** is an open-source platform designed for reinforcement learning research on multi-rotor drone systems. 
+Built on `Nvidia Isaac Sim <https://docs.omniverse.nvidia.com/app_isaacsim/app_isaacsim/overview.html>`__, 
+**OmniDrones** features highly efficient and flxeible simulation that can be adopted for various research purposes. 
+
+.. image:: _static/visualization.jpg
+   :align: center
+
+
+The platform, as released with `our paper <>`__, currently focus on end-to-end learning of agile controllers for drones. 
+It offers a suite of benchmark tasks and algorithm baselines to provide preliminary results for subsequent works. 
+
+An overview of the platform is shown below:
+
+.. image:: _static/overview.png
+
+
+If you use **OmniDrones** in your research, please cite the paper with the following bibtex entry:
+
+.. code-block:: bibtex
+
+   @article{
+   }
 
 .. toctree::
    :caption: Getting Started
@@ -17,10 +38,11 @@ Welcome to OmniDrones's documentation!
 
 .. toctree::
    :caption: Tutorials
-   :maxdepth: 1
+   :maxdepth: 2
    
    drone
    environment
+   controller
    tips
 
 .. .. toctree::

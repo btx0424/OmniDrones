@@ -24,6 +24,5 @@
 from .hover import Hover
 from .track import Track
 from .trackV1 import TrackV1
-from .trackV2 import TrackV2
 from .fly_through import FlyThrough
 from .nav import SDFNav

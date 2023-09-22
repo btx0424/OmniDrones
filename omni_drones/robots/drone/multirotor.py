@@ -143,8 +143,11 @@ class MultirotorBase(RobotBase):
         self.throttle_difference = torch.zeros(self.throttle.shape[:-1], device=self.device)
         self.heading = torch.zeros(*self.shape, 3, device=self.device)
         self.up = torch.zeros(*self.shape, 3, device=self.device)
-        self.vel = torch.zeros(*self.shape, 6, device=self.device)
-        self.acc = torch.zeros(*self.shape, 6, device=self.device)
+        self.vel = self.vel_w = torch.zeros(*self.shape, 6, device=self.device)
+        self.vel_b = torch.zeros_like(self.vel_w)
+        self.acc = self.acc_w = torch.zeros(*self.shape, 6, device=self.device)
+        self.acc_b = torch.zeros_like(self.acc_w)
+
         # self.jerk = torch.zeros(*self.shape, 6, device=self.device)
         self.alpha = 0.9
 
@@ -277,13 +280,17 @@ class MultirotorBase(RobotBase):
         self.pos[:], self.rot[:] = self.get_world_poses(True)
         if hasattr(self, "_envs_positions"):
             self.pos.sub_(self._envs_positions)
-        vel = self.get_velocities(True)
-        vel[..., 3:] = quat_rotate_inverse(self.rot, vel[..., 3:])
-        acc = self.acc.lerp((vel - self.vel) / self.dt, self.alpha)
-        # jerk = self.jerk.lerp((acc - self.acc) / self.dt, self.alpha)
-        # self.jerk[:] = jerk
-        self.acc[:] = acc
-        self.vel[:] = vel
+        
+        vel_w = self.get_velocities(True)
+        vel_b = torch.cat([
+            quat_rotate_inverse(self.rot, vel_w[..., :3]),
+            quat_rotate_inverse(self.rot, vel_w[..., 3:])
+        ], dim=-1)
+        self.vel_w[:] = vel_w
+        self.vel_b[:] = vel_b
+        
+        # acc = self.acc.lerp((vel - self.vel) / self.dt, self.alpha)
+        # self.acc[:] = acc
         self.heading[:] = quat_axis(self.rot, axis=0)
         self.up[:] = quat_axis(self.rot, axis=2)
         state = [self.pos, self.rot, self.vel, self.heading, self.up, self.throttle * 2 - 1]

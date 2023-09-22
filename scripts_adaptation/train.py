@@ -25,7 +25,8 @@ from omni_drones.utils.torchrl.transforms import (
 )
 from omni_drones.utils.wandb import init_wandb
 from omni_drones.learning import (
-    PPOAdaptivePolicy, PPORNNPolicy, PPOPolicy, PPOTConvPolicy, PPOSDFNavPolicy
+    PPOAdaptiveSeparate, PPOAdaptiveJoint, 
+    PPORNNPolicy, PPOPolicy,
 )
 
 from setproctitle import setproctitle
@@ -93,10 +94,9 @@ def main(cfg):
     from omni_drones.envs.isaac_env import IsaacEnv
     algos = {
         "ppo": PPOPolicy,
-        "ppo_adaptive": PPOAdaptivePolicy,
+        "ppo_adaptive_separate": PPOAdaptiveSeparate,
+        "ppo_adaptive_joint": PPOAdaptiveJoint,
         "ppo_rnn": PPORNNPolicy,
-        "ppo_tconv": PPOTConvPolicy,
-        "ppo_sdf_nav": PPOSDFNavPolicy,
     }
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
     base_env = env_class(cfg, headless=cfg.headless)

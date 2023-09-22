@@ -42,13 +42,12 @@ from .common import GAE
 
 @dataclass
 class PPOConfig:
-    name: str = "ppo_adaptive_separate"
+    name: str = "ppo_adaptive_joint"
     train_every: int = 32
     ppo_epochs: int = 4
     num_minibatches: int = 16
 
     checkpoint_path: Union[str, None] = None
-    phase: str = "encoder"
     condition_mode: str = "cat"
 
     # what the adaptation module learns to predict
@@ -58,15 +57,11 @@ class PPOConfig:
     def __post_init__(self):
         assert self.condition_mode.lower() in ("cat", "film")
         assert self.adaptation_key in ("context", ("agents", "intrinsics"), "_feature")
-        assert self.phase in ("encoder", "adaptation", "joint", "finetune")
-        assert self.adaptation_loss.lower() in ("mse", "gan", "lsgan")
+        assert self.adaptation_loss.lower() in ("mse", "gan", "lsgan", "action")
 
 cs = ConfigStore.instance()
-cs.store("ppo_adapt", node=PPOConfig, group="algo")
-cs.store("ppo_adapt_latent_mse", node=PPOConfig(adaptation_loss="mse"), group="algo")
-cs.store("ppo_adapt_latent_gan", node=PPOConfig(adaptation_loss="gan"), group="algo")
-cs.store("ppo_adapt_latent_lsgan", node=PPOConfig(adaptation_loss="lsgan"), group="algo")
-cs.store("ppo_adapt_raw", node=PPOConfig(adaptation_key=("agents", "intrinsics")), group="algo")
+cs.store("ppo_joint_mse", node=PPOConfig, group="algo")
+cs.store("ppo_joint_action", node=PPOConfig(adaptation_loss="action"), group="algo")
 
 
 def make_mlp(num_units):
@@ -111,22 +106,6 @@ class TConv(nn.Module):
         features = self.out(features)
         return features.unflatten(0, batch_shape)
 
-class TConvG(TConv):
-    """
-    A stochastic generator version for the adversarial adaptation modules.
-    """
-    def forward(self, features: torch.Tensor):
-        batch_shape = features.shape[:-2]
-        features = features.flatten(0, -3) # [*, D, T]
-        features = torch.cat([
-            self.tconv(features).flatten(1), 
-            features[:, :, -1],
-            torch.randn(features.shape[0], 32, device=features.device)
-        ], dim=1)
-        features = self.mlp(features)
-        features = self.out(features)
-        return features.unflatten(0, batch_shape)
-
 
 class FiLM(nn.Module):
     def __init__(self, feature_dim: int):
@@ -158,7 +137,6 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
         self.clip_param = 0.1
         self.critic_loss_fn = nn.HuberLoss(delta=10)
         self.adaptation_key = self.cfg.adaptation_key
-        self.phase = self.cfg.phase
 
         if not isinstance(self.adaptation_key, str):
             self.adaptation_key = tuple(self.adaptation_key)
@@ -224,87 +202,52 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
             self.critic.apply(init_)
             self.encoder.apply(init_)
 
-        if self.phase in ("adpatation", "finetune"):
-            if self.cfg.adaptation_loss == "mse":
-                self.adaptation_module = TensorDictModule(
-                    TConv(fake_input[self.adaptation_key].shape[-1]), 
-                    [("agents", "observation_h")], [self.adaptation_key]
-                ).to(self.device)
-                self.adaptation_module(fake_input)
-                self.adaptation_loss = MSE(
-                    self.adaptation_module, 
-                    self.adaptation_key, 
-                ).to(self.device)
-            elif self.cfg.adaptation_loss == "gan":
-                self.adaptation_module = TensorDictModule(
-                    TConvG(fake_input[self.adaptation_key].shape[-1]), 
-                    [("agents", "observation_h")], [self.adaptation_key]
-                ).to(self.device)
-                self.adaptation_module(fake_input)
-                discriminator = TensorDictSequential(
-                    TensorDictModule(TConv(128), [("agents", "observation_h")], ["condition"]),
-                    CatTensors([self.adaptation_key, "condition"], "condition", del_keys=False),
-                    TensorDictModule(
-                        nn.Sequential(make_mlp([256]), nn.LazyLinear(1)),
-                        ["condition"], ["label"]
-                    )
-                )
-                self.adaptation_loss = GAN(
-                    self.adaptation_module, 
-                    discriminator,
-                    self.adaptation_key, 
-                ).to(self.device)
-            elif self.cfg.adaptation_loss == "lsgan":
-                discriminator = TensorDictSequential(
-                    TensorDictModule(TConv(128), [("agents", "observation_h")], ["condition"]),
-                    CatTensors([self.adaptation_key, "condition"], "condition", del_keys=False),
-                    TensorDictModule(
-                        nn.Sequential(make_mlp([256]), nn.LazyLinear(1)),
-                        ["condition"], ["label"]
-                    )
-                )
-                self.adaptation_loss = LSGAN(
-                    self.adaptation_module, 
-                    discriminator,
-                    self.adaptation_key, 
-                ).to(self.device)
-            elif self.cfg.adaptation_loss == "value":
-                self.adaptation_module = TensorDictModule(
-                    TConv(fake_input[self.adaptation_key].shape[-1]), 
-                    [("agents", "observation_h")], [self.adaptation_key]
-                ).to(self.device)
-                self.adaptation_module(fake_input)
-                self.adaptation_loss = ValueDeviation(
-                    self.encoder,
-                    self.adaptation_module,
-                    self.critic
-                ).to(self.device)
-            elif self.cfg.adaptation_loss == "action":
-                self.adaptation_module = TensorDictModule(
-                    TConv(fake_input[self.adaptation_key].shape[-1]), 
-                    [("agents", "observation_h")], [self.adaptation_key]
-                ).to(self.device)
-                self.adaptation_module(fake_input)
-                self.adaptation_loss = ActionDistDiv(
-                    self.encoder,
-                    self.adaptation_module,
-                    self.actor
-                ).to(self.device)
-            elif self.cfg.adaptation_loss == "action_value":
-                self.adaptation_module = TensorDictModule(
-                    TConv(fake_input[self.adaptation_key].shape[-1]), 
-                    [("agents", "observation_h")], [self.adaptation_key]
-                ).to(self.device)
-                self.adaptation_module(fake_input)
-                self.adaptation_loss = ActionValue(
-                    self.encoder,
-                    self.adaptation_module,
-                    self.actor,
-                    self.critic
-                ).to(self.device)
-            else:
-                raise ValueError(self.cfg.adaptation_loss)
-
+        if self.cfg.adaptation_loss == "mse":
+            self.adaptation_module = TensorDictModule(
+                TConv(fake_input[self.adaptation_key].shape[-1]), 
+                [("agents", "observation_h")], [self.adaptation_key]
+            ).to(self.device)
+            self.adaptation_module(fake_input)
+            self.adaptation_loss = MSE(
+                self.adaptation_module, 
+                self.adaptation_key, 
+            ).to(self.device)
+        elif self.cfg.adaptation_loss == "value":
+            self.adaptation_module = TensorDictModule(
+                TConv(fake_input[self.adaptation_key].shape[-1]), 
+                [("agents", "observation_h")], [self.adaptation_key]
+            ).to(self.device)
+            self.adaptation_module(fake_input)
+            self.adaptation_loss = ValueDeviation(
+                self.encoder,
+                self.adaptation_module,
+                self.critic
+            ).to(self.device)
+        elif self.cfg.adaptation_loss == "action":
+            self.adaptation_module = TensorDictModule(
+                TConv(fake_input[self.adaptation_key].shape[-1]), 
+                [("agents", "observation_h")], [self.adaptation_key]
+            ).to(self.device)
+            self.adaptation_module(fake_input)
+            self.adaptation_loss = ActionDistDiv(
+                self.encoder,
+                self.adaptation_module,
+                self.actor
+            ).to(self.device)
+        elif self.cfg.adaptation_loss == "action_value":
+            self.adaptation_module = TensorDictModule(
+                TConv(fake_input[self.adaptation_key].shape[-1]), 
+                [("agents", "observation_h")], [self.adaptation_key]
+            ).to(self.device)
+            self.adaptation_module(fake_input)
+            self.adaptation_loss = ActionValue(
+                self.encoder,
+                self.adaptation_module,
+                self.actor,
+                self.critic
+            ).to(self.device)
+        else:
+            raise ValueError(self.cfg.adaptation_loss)
 
         self.encoder_opt = torch.optim.Adam(self.encoder.parameters(), lr=5e-4)
         self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=5e-4)
@@ -318,25 +261,16 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
         return tensordict
 
     def train_op(self, tensordict: TensorDict):
-        if self.phase == "encoder":
-            info = self._train_policy(tensordict)
-        elif self.phase == "adaptation":
-            info = self._train_adaptation(tensordict)
-        elif self.phase == "finetune":
-            with hold_out_net(self.encoder):
-                info = self._train_policy(tensordict.clone())
-            info.update(self._train_adaptation(tensordict.clone()))
-        else:
-            raise RuntimeError()
+        with hold_out_net(self.encoder):
+            info = self._train_policy(tensordict.clone())
+        info.update(self._train_adaptation(tensordict.clone()))
         return info
     
     def _get_context(self, tensordict: TensorDict):
         assert tensordict.get("context", None) is None
-        if self.phase == "encoder":
+        if self.training:
             self.encoder(tensordict)
-        elif self.phase in ("adaptation", "finetune"):
-            if self.adaptation_key != "context":
-                self.encoder(tensordict)
+        else:
             self.adaptation_module(tensordict)
         assert tensordict.get("context", None) is not None
         return tensordict
@@ -478,69 +412,6 @@ class MSE(nn.Module):
 
 
 from torchrl.objectives.utils import hold_out_net
-class GAN(nn.Module):
-    def __init__(
-        self, 
-        adaptation_module: TensorDictModule, 
-        discriminator: TensorDictModule, 
-        key: str
-    ):
-        super().__init__()
-        self.adaptation_module = adaptation_module
-        self.discriminator = discriminator
-        self.key = key
-        self.loss = F.binary_cross_entropy_with_logits
-        self.opt_g = torch.optim.Adam(self.adaptation_module.parameters(), lr=5e-4)
-        self.opt_d = torch.optim.Adam(self.adaptation_module.parameters(), lr=5e-4)
-    
-    def forward(self, tensordict):
-        true_label = self.discriminator(tensordict).get("label")
-        with torch.no_grad():
-            self.adaptation_module(tensordict)
-        fake_label = self.discriminator(tensordict).get("label")
-        loss_d = (
-            self.loss(true_label, torch.ones_like(true_label))
-            + self.loss(fake_label, torch.zeros_like(fake_label))
-        ) * 0.5
-        accuracy = (
-            (true_label.detach().sigmoid().round() == 1).sum()
-            + (fake_label.detach().sigmoid().round() == 0).sum()
-        ) / (true_label.numel() + fake_label.numel())
-        with hold_out_net(self.discriminator):
-            fake_label = self.adaptation_module(tensordict).get("label")
-            loss_g = self.loss(fake_label, torch.ones_like(fake_label))
-        # print(d_loss.item(), g_loss.item(), accuracy.item())
-        return TensorDict({"loss_d": 0.5 * loss_d, "loss_g": loss_g, "accuracy": accuracy}, [])
-    
-    def update(self, tensordict: TensorDict):
-        self.forward(tensordict)
-        return 
-
-
-class LSGAN(nn.Module):
-    def __init__(
-        self, 
-        adaptation_module, 
-        discriminator, 
-        key
-    ):
-        super().__init__()
-        self.adaptation_module = adaptation_module
-        self.discriminator = discriminator
-        self.key = key
-    
-    def forward(self, tensordict):
-        true_label = self.discriminator(tensordict).get("label")
-        self.adaptation_module(tensordict)
-        fake_label = self.discriminator(tensordict).get("label")
-        loss = (
-            (fake_label + 1).square().mean() + 
-            (true_label - 1).square().mean()
-        )
-        return loss
-
-
-
 
 class ActionDistDiv(nn.Module):
     def __init__(

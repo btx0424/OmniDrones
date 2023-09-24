@@ -29,6 +29,7 @@ import omni.isaac.orbit.utils.kit as kit_utils
 from omni.isaac.orbit.robots.legged_robot import LeggedRobot
 from omni.isaac.orbit.robots.config.anymal import ANYMAL_B_CFG, ANYMAL_C_CFG
 from omni.isaac.orbit.robots.config.unitree import UNITREE_A1_CFG
+from omni.isaac.orbit.actuators.model import IdealActuator
 from omni.isaac.orbit.utils.mdp import ObservationManager, RewardManager
 from omni.isaac.orbit.utils.dict import class_to_dict
 from omni.isaac.orbit_envs.locomotion.velocity.velocity_cfg import ObservationsCfg, RewardsCfg
@@ -47,6 +48,7 @@ from omni.isaac.debug_draw import _debug_draw
 class VelocityEnv(IsaacEnv):
     def __init__(self, cfg, headless):
         self.time_encoding = cfg.task.time_encoding
+        self.randomization = cfg.task.get("randomization", {})
 
         super().__init__(cfg, headless)
         # -- history
@@ -68,20 +70,39 @@ class VelocityEnv(IsaacEnv):
             torch.tensor([-3, -3, -0.25], device=self.device) / (self.dt * self.substeps), 
             torch.tensor([3., 3., 0.25], device=self.device) / (self.dt * self.substeps),
         )
-        self.heading_target = torch.zeros(self.num_envs, device=self.device)
-        self.filtered_linvel_w = torch.zeros(self.num_envs, 3, device=self.device)
 
-        self.robot.base = RigidPrimView(
-            "/World/envs/env_*/Robot/base",
-            reset_xform_properties=False,
-        )
-        self.robot.base.initialize()
-        self.base_mass = self.robot.base.get_masses(clone=True)
-        self.base_mass_dist = D.Uniform(
-            torch.tensor([0.8], device=self.device),
-            torch.tensor([1.4], device=self.device)
-        )
+        import pprint
+        randomization_cfg = self.randomization["train"]
+        if "motor" in randomization_cfg:
+            # randomization of motor parameters
+            cfg = randomization_cfg["motor"]
+            pprint.pprint(cfg)
+            self.actuator_model = self.robot.actuator_groups["base_legs"].model
+            if isinstance(self.actuator_model, IdealActuator):
+                self.init_p_gains = self.actuator_model._p_gains.clone()
+                self.init_d_gains = self.actuator_model._d_gains.clone()
+                self.motor_p_gains_dist = D.Uniform(
+                    torch.ones(12, device=self.device) * cfg["p_gains"][0],
+                    torch.ones(12, device=self.device) * cfg["p_gains"][1],
+                )
+                self.motor_d_gains_dist = D.Uniform(
+                    torch.ones(12, device=self.device) * cfg["d_gains"][0],
+                    torch.ones(12, device=self.device) * cfg["d_gains"][1],
+                )
+        if "base_mass" in randomization_cfg:
+            self.robot.base = RigidPrimView(
+                "/World/envs/env_*/Robot/base",
+                reset_xform_properties=False,
+            )
+            self.robot.base.initialize()
+            self.base_mass = self.robot.base.get_masses(clone=True)
+            self.base_mass_dist = D.Uniform(
+                torch.tensor([0.8], device=self.device),
+                torch.tensor([1.4], device=self.device)
+            )
         
+        self.heading_target = torch.zeros(self.num_envs, device=self.device)
+
         self.base_target_height = 0.3
 
         self.draw = _debug_draw.acquire_debug_draw_interface()
@@ -110,7 +131,9 @@ class VelocityEnv(IsaacEnv):
             "agents": {
                 "observation": UnboundedContinuousTensorSpec((1, observation_dim), device=self.device),
                 "intrinsics": CompositeSpec({
-                    "base_mass": UnboundedContinuousTensorSpec((1, 1), device=self.device)
+                    "base_mass": UnboundedContinuousTensorSpec((1, 1), device=self.device),
+                    "p_gains": UnboundedContinuousTensorSpec((1, 12), device=self.device),
+                    "d_gains": UnboundedContinuousTensorSpec((1, 12), device=self.device),
                 })
             },
             "truncated": BinaryDiscreteTensorSpec(1, dtype=bool, device=self.device)
@@ -150,7 +173,15 @@ class VelocityEnv(IsaacEnv):
         # set into robot
         self.robot.set_root_state(root_state, env_ids=env_ids)
         self.robot.reset_buffers(env_ids)
-        self.filtered_linvel_w[env_ids] = 0.
+        
+        # randomize motor parameters
+        if isinstance(self.actuator_model, IdealActuator):
+            p_gains = self.motor_p_gains_dist.sample(env_ids.shape)
+            d_gains = self.motor_d_gains_dist.sample(env_ids.shape)
+            self.actuator_model._p_gains[env_ids] = p_gains * self.init_p_gains[env_ids]
+            self.actuator_model._d_gains[env_ids] = d_gains * self.init_d_gains[env_ids]
+            self.intrinsics["p_gains"][env_ids] = p_gains.unsqueeze(1)
+            self.intrinsics["d_gains"][env_ids] = d_gains.unsqueeze(1)
 
         # -- reset history
         self.previous_actions[env_ids] = 0.

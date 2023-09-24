@@ -23,9 +23,6 @@
 
 from .mappo import MAPPOPolicy
 from .ppo import *
-# from .test_single import Policy
-# from .mappo_formation import PPOFormation as Policy
-from ._ppo import PPOPolicy as Policy
 from .happo import HAPPOPolicy
 from .qmix import QMIXPolicy
 

@@ -106,37 +106,25 @@ class SACPolicy(object):
 
 
     def make_critic(self):
-        if self.agent_spec.state_spec is not None:
-            self.value_in_keys = [self.state_name, self.act_name]
-            self.value_out_keys = [f"{self.agent_spec.name}.q"]
+        self.value_in_keys = [self.obs_name, self.act_name]
+        self.value_out_keys = [f"{self.agent_spec.name}.q"]
 
-            self.critic = Critic(
-                self.cfg.critic, 
-                1,
-                self.agent_spec.state_spec,
-                self.agent_spec.action_spec
-            ).to(self.device)
-        else:
-            self.value_in_keys = [self.obs_name, self.act_name]
-            self.value_out_keys = [f"{self.agent_spec.name}.q"]
-
-            self.critic = Critic(
-                self.cfg.critic, 
-                1,
-                self.agent_spec.observation_spec,
-                self.agent_spec.action_spec
-            ).to(self.device)
+        self.critic = Critic(
+            self.cfg.critic, 
+            1,
+            self.agent_spec.observation_spec,
+            self.agent_spec.action_spec
+        ).to(self.device)
         
         self.critic_target = copy.deepcopy(self.critic)
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=self.cfg.critic.lr)       
         self.critic_loss_fn = {"mse": F.mse_loss, "smooth_l1": F.smooth_l1_loss}[self.cfg.critic_loss]
 
     def __call__(self, tensordict: TensorDict, deterministic: bool=False) -> TensorDict:
-        return tensordict.update({self.act_name: self.agent_spec.action_spec.zero()})
+        # return tensordict.update({self.act_name: self.agent_spec.action_spec.zero()})
         actor_input = tensordict.select(*self.policy_in_keys)
         actor_input.batch_size = [*actor_input.batch_size, self.agent_spec.n]
         actor_output = self.actor(actor_input)
-        # actor_output["action"].batch_size = tensordict.batch_size
         tensordict.update(actor_output)
         return tensordict
 
@@ -156,12 +144,12 @@ class SACPolicy(object):
 
             transition = self.replay_buffer.sample()
 
-            state   = transition[self.state_name]
+            state   = transition[self.obs_name]
             actions = transition[self.act_name]
 
-            reward  = transition[("next", "reward", f"{self.agent_spec.name}.reward")]
+            reward  = transition[("next", "agents", "reward")]
             next_dones  = transition[("next", "done")].float().unsqueeze(-1)
-            next_state  = transition[("next", self.state_name)]
+            next_state  = transition[("next", "agents", "observation")]
 
             with torch.no_grad():
                 actor_output = self.actor(transition["next"], deterministic=False)

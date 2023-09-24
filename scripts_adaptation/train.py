@@ -178,18 +178,18 @@ def main(cfg):
     def evaluate(seed: int=0):
         frames = []
 
-        from tqdm import tqdm
-        t = tqdm(total=base_env.max_episode_length)
-
-        def record_frame(*args, **kwargs):
-            frame = env.base_env.render(mode="rgb_array")
-            frames.append(frame)
-            t.update(2)
-
         base_env.enable_render(True)
         base_env.eval()
         env.eval()
         env.set_seed(seed)
+
+        from tqdm import tqdm
+        t = tqdm(total=base_env.max_episode_length)
+        def record_frame(*args, **kwargs):
+            frame = env.base_env.render(mode="rgb_array")
+            frames.append(frame)
+            t.update(2)
+        
         trajs = env.rollout(
             max_steps=base_env.max_episode_length,
             policy=policy,
@@ -238,7 +238,7 @@ def main(cfg):
         
         fig, axes = plt.subplots(5, 2, sharex=True)
         for i in range(5):
-            traj = trajs[i, :first_done[i].item()]
+            traj = trajs[i, :first_done[i].item()].cpu()
             # axes[i, 0].set_title("tracking_error")
             # axes[i, 0].plot(traj[("stats", "tracking_error")])
             axes[i, 1].set_title("action")

@@ -64,13 +64,9 @@ class TD3Policy(object):
         self.policy_noise = self.cfg.policy_noise
         self.noise_clip = self.cfg.noise_clip
 
-        self.obs_name = f"{self.agent_spec.name}.obs"
-        self.act_name = ("action", f"{self.agent_spec.name}.action")
-        if agent_spec.state_spec is not None:
-            self.state_name = f"{self.agent_spec.name}.state"
-        else:
-            self.state_name = f"{self.agent_spec.name}.obs"
-        self.reward_name = f"{self.agent_spec.name}.reward"
+        self.obs_name = ("agents", "observation")
+        self.act_name = ("agents", "action")
+        self.reward_name = ("agents", "reward")
 
         self.action_dim = self.agent_spec.action_spec.shape[-1]
         self.make_model()        
@@ -98,26 +94,15 @@ class TD3Policy(object):
         self.actor_target = copy.deepcopy(self.actor)
         self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=self.cfg.actor.lr)
 
-        if self.agent_spec.state_spec is not None:
-            self.value_in_keys = [self.state_name, self.act_name]
-            self.value_out_keys = [f"{self.agent_spec.name}.q"]
+        self.value_in_keys = [self.obs_name, self.act_name]
+        self.value_out_keys = [f"{self.agent_spec.name}.q"]
 
-            self.critic = Critic(
-                self.cfg.critic, 
-                1,
-                self.agent_spec.state_spec,
-                self.agent_spec.action_spec
-            ).to(self.device)
-        else:
-            self.value_in_keys = [self.obs_name, self.act_name]
-            self.value_out_keys = [f"{self.agent_spec.name}.q"]
-
-            self.critic = Critic(
-                self.cfg.critic, 
-                1,
-                self.agent_spec.observation_spec,
-                self.agent_spec.action_spec
-            ).to(self.device)
+        self.critic = Critic(
+            self.cfg.critic, 
+            1,
+            self.agent_spec.observation_spec,
+            self.agent_spec.action_spec
+        ).to(self.device)
         
         self.critic_target = copy.deepcopy(self.critic)
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=self.cfg.critic.lr)       
@@ -134,7 +119,6 @@ class TD3Policy(object):
             .clamp_(-self.noise_clip, self.noise_clip)
         )
         actor_output[self.act_name].add_(action_noise)
-        actor_output["action"].batch_size = tensordict.batch_size
         tensordict.update(actor_output)
         return tensordict
 
@@ -154,12 +138,12 @@ class TD3Policy(object):
 
             transition = self.replay_buffer.sample(self.batch_size)
 
-            state   = transition[self.state_name]
-            action_taken = transition[self.act_name]
+            state   = transition[("agents", "observation")]
+            action_taken = transition[("agents", "action")]
 
-            reward  = transition[("next", "reward", f"{self.agent_spec.name}.reward")]
+            reward  = transition[("next", "agents", "reward")]
             next_dones  = transition[("next", "done")].float().unsqueeze(-1)
-            next_state  = transition[("next", self.state_name)]
+            next_state  = transition[("next", "agents", "observation")]
 
             with torch.no_grad():
 

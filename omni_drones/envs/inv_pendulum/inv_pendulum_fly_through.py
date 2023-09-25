@@ -53,8 +53,7 @@ class InvPendulumFlyThrough(IsaacEnv):
     around a target position. If the distance between the two horizontal bars is less than 
     the length of the rod, the agent need learn to swing the inverted pendulum to pass through.
 
-    Observation
-    -----------
+    ## Observation
     - `drone_payload_rpos` (3): The position of the drone relative to the payload's position.
     - `root_state` (16 + num_rotors): The basic information of the drone (except its position), 
       containing its rotation (in quaternion), velocities (linear and angular), 
@@ -64,8 +63,7 @@ class InvPendulumFlyThrough(IsaacEnv):
     - `obstacle_drone_rpos` (2 * 2 = 4): The position of the two bars relative to the drone's position.
     - *time_encoding*: 
 
-    Reward 
-    ------
+    ## Reward
     - pos: 
     - bar_up:
     - effort:
@@ -79,12 +77,10 @@ class InvPendulumFlyThrough(IsaacEnv):
     
         r = [r_\text{pos} + r_\text{pos} * (r_\text{bar_up} + r_\text{spin} + r_\text{swing}) + r_\text{effort}] * (1 - r_\text{collision})
 
-    Episode End
-    -----------
+    ## Episode End
     - Termination: 
 
-    Config
-    ------
+    ## Config
 
     """
     def __init__(self, cfg, headless):

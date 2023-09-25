@@ -128,7 +128,7 @@ class VelocityEnv(IsaacEnv):
         self.robot.initialize("/World/envs/env_*/Robot")
         observation_dim = (
             52 + 12 
-            + 12 + 12 # feet pos and vels
+            + 12 + 12  # feet pos and vels
         )
         if self.cfg.task.time_encoding:
             self.time_encoding_dim = 4
@@ -172,7 +172,6 @@ class VelocityEnv(IsaacEnv):
         self.stats = stats_spec.zero()
         self.intrinsics = self.observation_spec[("agents", "intrinsics")].zero()
 
-
     def _reset_idx(self, env_ids: torch.Tensor):
         # -- dof state (handled by the robot)
         dof_pos, dof_vel = self.robot.get_random_dof_state(env_ids)
@@ -187,13 +186,13 @@ class VelocityEnv(IsaacEnv):
         self.robot.reset_buffers(env_ids)
         
         # randomize motor parameters
-        if isinstance(self.actuator_model, IdealActuator):
-            p_gains = self.motor_p_gains_dist.sample(env_ids.shape)
-            d_gains = self.motor_d_gains_dist.sample(env_ids.shape)
-            self.actuator_model._p_gains[env_ids] = p_gains * self.init_p_gains[env_ids]
-            self.actuator_model._d_gains[env_ids] = d_gains * self.init_d_gains[env_ids]
-            self.intrinsics["p_gains"][env_ids] = p_gains.unsqueeze(1)
-            self.intrinsics["d_gains"][env_ids] = d_gains.unsqueeze(1)
+        # if isinstance(self.actuator_model, IdealActuator):
+        #     p_gains = self.motor_p_gains_dist.sample(env_ids.shape)
+        #     d_gains = self.motor_d_gains_dist.sample(env_ids.shape)
+        #     self.actuator_model._p_gains[env_ids] = p_gains * self.init_p_gains[env_ids]
+        #     self.actuator_model._d_gains[env_ids] = d_gains * self.init_d_gains[env_ids]
+        #     self.intrinsics["p_gains"][env_ids] = p_gains.unsqueeze(1)
+        #     self.intrinsics["d_gains"][env_ids] = d_gains.unsqueeze(1)
 
         # -- reset history
         self.previous_actions[env_ids] = 0.

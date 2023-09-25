@@ -78,6 +78,24 @@ def make_mlp(num_units):
     return nn.Sequential(*layers)
 
 
+class MLP(nn.Module):
+    def __init__(self, num_units, residual=False):
+        super().__init__()
+        layers = []
+        for n in num_units:
+            layers.append(nn.LazyLinear(n))
+            layers.append(nn.LeakyReLU())
+            layers.append(nn.LayerNorm(n))
+        self.layers = nn.ModuleList(layers)
+        self.residual = residual
+
+    def forward(self, x):
+        x = self.layers[0](x)
+        for layer in self.layers[1:]:
+            x = x + layer(x) if self.residual else layer(x)
+        return x
+
+
 class Actor(nn.Module):
     def __init__(self, action_dim: int) -> None:
         super().__init__()
@@ -184,7 +202,7 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
             TensorDictModule(make_mlp([256, 256]), [("agents", "observation")], ["_feature"]),
             condition(),
             TensorDictModule(
-                nn.Sequential(make_mlp([256, 256]), Actor(self.action_dim)), 
+                nn.Sequential(make_mlp([256]), Actor(self.action_dim)), 
                 ["_feature"], ["loc", "scale"]
             )
         )
@@ -200,7 +218,7 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
             TensorDictModule(make_mlp([256, 256]), [("agents", "observation")], ["_feature"]),
             condition(),
             TensorDictModule(
-                nn.Sequential(make_mlp([256, 256]), nn.LazyLinear(1)), 
+                nn.Sequential(make_mlp([256]), nn.LazyLinear(1)), 
                 ["_feature"], ["state_value"]
             )
         ).to(self.device)

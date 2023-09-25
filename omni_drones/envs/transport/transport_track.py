@@ -48,8 +48,7 @@ class TransportTrack(IsaacEnv):
     rigid links. The goal for the agents is to collectively transport the payload to track a 
     reference trajectory.
 
-    Observation
-    -----------
+    ## Observation
     The observation space is specified by a :py:class:`CompositeSpec` containing the following items:
 
     - `obs_self` (1, \*): The state of each UAV observed by itself, containing its kinematic
@@ -67,8 +66,7 @@ class TransportTrack(IsaacEnv):
     - `swing`: Reward for avoid large swinging of the payload.
     - `joint_limit`: Reward for kepping the joint states in a reasonalble range to avoid glitchy behaviors.
 
-    Config
-    ------
+    ## Config
     - `reset_thres` (float, default=0.7): A threshold value that triggers termination when the payload deviates 
       form the reference position beyond a certain limit.
     - `future_traj_steps` (int, default=4): The number of future time steps to observe the 

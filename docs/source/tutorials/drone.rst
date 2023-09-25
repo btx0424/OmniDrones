@@ -24,7 +24,7 @@ The following example demonstrates:
 2. How to use a position controller to track a circular trajectory.
 3. How to attach cameras to UAVs to record images and hence videos.
 
-.. literalinclude:: ../../examples/demo_drone.py
+.. literalinclude:: ../../../examples/demo_drone.py
     :caption: examples/demo_drone.py
     :language: python
     :linenos:
@@ -52,9 +52,10 @@ Adding an UAV model with more complex dynamics may require extending the corresp
 For example, the omnidirectional UAV :py:class:`Omav` has 6 tilt units. So we extend :py:meth:`Omav.apply_action` 
 to control the tilt units via velocity targets, and :py:meth:`Omav._reset_idx` to reset the tilting angle. 
 
-.. literalinclude:: ../../omni_drones/robots/drone/omav.py
+.. literalinclude:: ../../../omni_drones/robots/drone/omav.py
     :language: python
-    :linenos:
+    :linenos: 
+    :lines: 24-
     :emphasize-lines: 36-39,45-52
 
 

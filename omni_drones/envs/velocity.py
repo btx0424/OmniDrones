@@ -60,8 +60,8 @@ class VelocityEnv(IsaacEnv):
         )
         # -- command: x vel, y vel, yaw vel, heading
         self.commands_dist = D.Uniform(
-            torch.tensor([-1.3, -1.3], device=self.device), 
-            torch.tensor([1.3, 1.3], device=self.device),
+            torch.tensor([-2.0, -2.0], device=self.device), 
+            torch.tensor([2.0, 2.0], device=self.device),
         )
         self.commands = torch.zeros(self.num_envs, 3, device=self.device)
         self.command_interval = 400
@@ -104,11 +104,14 @@ class VelocityEnv(IsaacEnv):
         self.heading_target = torch.zeros(self.num_envs, device=self.device)
 
         self.base_target_height = 0.3
+        self.base_height_error = torch.zeros(self.num_envs, 1, device=self.device)
 
         self.draw = _debug_draw.acquire_debug_draw_interface()
 
     def _design_scene(self):
         # self.robot = LeggedRobot(ANYMAL_C_CFG)
+        # UNITREE_A1_CFG.actuator_groups["base_legs"].control_cfg.command_types=["p_rel"]
+
         self.robot = LeggedRobot(UNITREE_A1_CFG)
         self.robot.spawn("/World/envs/env_0/Robot")
         kit_utils.create_ground_plane(
@@ -123,7 +126,10 @@ class VelocityEnv(IsaacEnv):
     
     def _set_specs(self):
         self.robot.initialize("/World/envs/env_*/Robot")
-        observation_dim = 52
+        observation_dim = (
+            52 + 12 
+            + 12 + 12 # feet pos and vels
+        )
         if self.cfg.task.time_encoding:
             self.time_encoding_dim = 4
             observation_dim += self.time_encoding_dim
@@ -136,7 +142,6 @@ class VelocityEnv(IsaacEnv):
                     "d_gains": UnboundedContinuousTensorSpec((1, 12), device=self.device),
                 })
             },
-            "truncated": BinaryDiscreteTensorSpec(1, dtype=bool, device=self.device)
         }).expand(self.num_envs).to(self.device)
         self.action_spec = CompositeSpec({
             "agents": CompositeSpec({
@@ -148,10 +153,17 @@ class VelocityEnv(IsaacEnv):
                 "reward": UnboundedContinuousTensorSpec((1, 1))
             })
         }).expand(self.num_envs).to(self.device)
+        self.done_spec = CompositeSpec({
+            "done": BinaryDiscreteTensorSpec(1, dtype=bool, device=self.device),
+            "truncated": BinaryDiscreteTensorSpec(1, dtype=bool, device=self.device)
+        }).expand(self.num_envs).to(self.device)
+
         stats_spec = CompositeSpec({
             "return": UnboundedContinuousTensorSpec(1),
             "episode_len": UnboundedContinuousTensorSpec(1),
             "lin_vel_error": UnboundedContinuousTensorSpec(1),
+            "base_height_error": UnboundedContinuousTensorSpec(1),
+            "energy": UnboundedContinuousTensorSpec(1),
             "dof_torques": UnboundedContinuousTensorSpec(1),
             "dof_acc": UnboundedContinuousTensorSpec(1),
             "action_rate": UnboundedContinuousTensorSpec(1),
@@ -189,6 +201,7 @@ class VelocityEnv(IsaacEnv):
 
         # sample commands
         lin_vel_commands = self.commands_dist.sample(env_ids.shape)
+        lin_vel_commands *= (lin_vel_commands.norm(dim=-1, keepdim=True) > 0.6).float()
         self.commands[env_ids, :2] = lin_vel_commands
 
         # sample base mass
@@ -216,9 +229,26 @@ class VelocityEnv(IsaacEnv):
     def _compute_state_and_obs(self):
         self.robot.update_buffers(dt=self.dt * self.substeps)
         self.robot.data.heading = quat_axis(self.robot.data.root_quat_w, 0)
+        
+        feet_pos = []
+        feet_vel = []
+        for body, view in self.robot.feet_bodies.items():
+            feet_vel.append(view.get_velocities()[..., :3])
+            feet_pos_w, feet_quat_w = view.get_world_poses()
+            feet_pos.append(feet_pos_w - self.robot.data.root_pos_w)
+            
+        feet_vel_b = quat_rotate_inverse(
+            self.robot.data.root_quat_w.unsqueeze(1).expand(-1, 4, -1),
+            torch.stack(feet_vel, dim=-2)
+        )
+        feet_pos_b = quat_rotate_inverse(
+            self.robot.data.root_quat_w.unsqueeze(1).expand(-1, 4, -1),
+            torch.stack(feet_pos, dim=-2)
+        )
 
         obs = [
-            self.robot.data.root_pos_w[:, [2]],
+            # base orientation
+            self.robot.data.root_pos_w[:, [2]] - self.base_target_height,
             self.robot.data.root_lin_vel_b,
             self.robot.data.root_lin_vel_w,
             self.robot.data.root_ang_vel_b,
@@ -226,8 +256,12 @@ class VelocityEnv(IsaacEnv):
             quat_rotate_inverse(self.robot.data.root_quat_w, self.commands),
             self.robot.data.dof_pos - self.robot.data.actuator_pos_offset,
             self.robot.data.dof_vel - self.robot.data.actuator_vel_offset,
-            self.actions,
+            self.actions, # a_{t-1}
+            self.previous_actions, # a_{t-2}
+            feet_pos_b.flatten(1),
+            feet_vel_b.flatten(1)
         ]
+        
         if self.time_encoding:
             t = (self.progress_buf / self.max_episode_length).unsqueeze(-1)
             obs.append(t.expand(-1, self.time_encoding_dim))
@@ -264,10 +298,11 @@ class VelocityEnv(IsaacEnv):
         # -- compute reward
         lin_vel_error = square_norm(self.commands[:, :2] - self.robot.data.root_lin_vel_w[:, :2])
         # ang_vel_error = torch.square(self.commands[:, 2] - self.robot.data.root_ang_vel_b[:, 2])
-        base_height_error = (self.robot.data.root_pos_w[:, 2] - self.base_target_height).abs()
+        base_height_error = (self.robot.data.root_pos_w[:, [2]] - self.base_target_height).abs()
         heading_projection = (normalize(self.robot.data.heading[:, :2]) * self.commands[:, :2]).sum(-1, keepdim=True)
 
-        lin_vel_xy_exp = torch.exp(-lin_vel_error / 0.25)
+        # lin_vel_xy_exp = torch.exp(-lin_vel_error / 0.25)
+        lin_vel_xy_exp = torch.exp(-lin_vel_error / 0.5)
         # ang_vel_z_exp = torch.exp(-ang_vel_error / 0.25)
         lin_vel_z_l2 = torch.square(self.robot.data.root_lin_vel_w[:, 2])
         ang_vel_xy_l2 = square_norm(self.robot.data.root_ang_vel_w[:, :2])
@@ -276,20 +311,24 @@ class VelocityEnv(IsaacEnv):
         dof_acc_l2 = square_norm(self.robot.data.dof_acc)
         action_rate_l2 = square_norm(self.previous_actions - self.actions)
         self.previous_actions[:] = self.actions
+        energy = (self.robot.data.dof_vel * self.robot.data.applied_torques).abs().sum(dim=-1, keepdim=True)
         
         reward = (
             2.0 * lin_vel_xy_exp
             + 0.5 * heading_projection
             # + 0.5 * ang_vel_z_exp.unsqueeze(1)
-            + 0.25 / (1 + base_height_error).unsqueeze(1)
+            # + 0.25 / (1 + base_height_error).unsqueeze(1)
+            + (self.base_height_error - base_height_error)
             - 2.0 * lin_vel_z_l2.unsqueeze(1)
             - 0.05 * ang_vel_xy_l2
             - 2.0 * flat_orientation_l2
             - 0.000025 * dof_torques_l2
             - 2.5e-7 * dof_acc_l2
             - 0.01 * action_rate_l2
+            - 0.0005 * energy
         ).clip(min=0.)
 
+        self.base_height_error[:] = base_height_error
 
         truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
         done = (
@@ -298,14 +337,19 @@ class VelocityEnv(IsaacEnv):
         
         self.stats["return"].add_(reward)
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
+
+        self.stats["energy"].add_(energy)
         self.stats["lin_vel_error"].add_(lin_vel_error)
+        self.stats["base_height_error"].add_(base_height_error)
         self.stats["dof_torques"].add_(dof_torques_l2)
         self.stats["dof_acc"].add_(dof_acc_l2)
         self.stats["action_rate"].add_(action_rate_l2)
 
         # resample commands
         change_commands = ((self.progress_buf % self.command_interval) == 0).nonzero().squeeze(1)
-        self.commands[change_commands, :2] = self.commands_dist.sample(change_commands.shape)
+        lin_vel_commands = self.commands_dist.sample(change_commands.shape)
+        lin_vel_commands *= (lin_vel_commands.norm(dim=-1, keepdim=True) > 0.6).float()
+        self.commands[change_commands, :2] = lin_vel_commands
 
         return TensorDict({
             "agents": {

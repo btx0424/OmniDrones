@@ -93,12 +93,12 @@ class PPOPolicy:
         self.clip_param = 0.1
         self.critic_loss_fn = nn.HuberLoss(delta=10)
         self.n_agents, self.action_dim = action_spec.shape[-2:]
-        intrinsics_dim = observation_spec[("agents", "intrinsics")].shape[-1]
         self.gae = GAE(0.99, 0.95)
 
         fake_input = observation_spec.zero()
         
         if self.cfg.priv_actor:
+            intrinsics_dim = observation_spec[("agents", "intrinsics")].shape[-1]
             actor_module = TensorDictSequential(
                 TensorDictModule(make_mlp([128, 128]), [("agents", "observation")], ["feature"]),
                 TensorDictModule(
@@ -125,6 +125,7 @@ class PPOPolicy:
         ).to(self.device)
 
         if self.cfg.priv_critic:
+            intrinsics_dim = observation_spec[("agents", "intrinsics")].shape[-1]
             self.critic = TensorDictSequential(
                 TensorDictModule(make_mlp([128, 128]), [("agents", "observation")], ["feature"]),
                 TensorDictModule(

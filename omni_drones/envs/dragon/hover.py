@@ -55,8 +55,7 @@ class DragonHover(IsaacEnv):
     A basic control task. The goal for the agent is to maintain a stable
     position and heading in mid-air without drifting. 
 
-    Observation
-    -----------
+    ## Observation
     The observation space consists of the following part:
 
     - `rpos` (3): The position relative to the target hovering position.
@@ -66,8 +65,7 @@ class DragonHover(IsaacEnv):
     - `rheading` (3): The difference between the reference heading and the current heading.
     - *time_encoding*:
 
-    Reward 
-    ------
+    ## Reward
     - pos: 
     - heading_alignment:
     - up:
@@ -79,12 +77,10 @@ class DragonHover(IsaacEnv):
     
         r = r_\text{pos} + r_\text{pos} * (r_\text{up} + r_\text{heading})
 
-    Episode End
-    -----------
+    ## Episode End
     - Termination: 
 
-    Config
-    ------
+    ## Config
 
 
     """

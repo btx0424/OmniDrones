@@ -15,14 +15,14 @@ sim:
 
 randomization:
   train:
-    base_mass: [0.8, 1.2]
-    motor:
-      p_gains: [0.8, 1.2]
-      d_gains: [0.8, 1.2]
-  eval:
-    base_mass: [0.8, 1.2]
-    motor:
-      p_gains: [0.8, 1.2]
-      d_gains: [0.8, 1.2]
+  #   base_mass: [0.8, 1.2]
+  #   motor:
+  #     p_gains: [0.8, 1.2]
+  #     d_gains: [0.8, 1.2]
+  # eval:
+  #   base_mass: [0.8, 1.2]
+  #   motor:
+  #     p_gains: [0.8, 1.2]
+  #     d_gains: [0.8, 1.2]
 
 time_encoding: false

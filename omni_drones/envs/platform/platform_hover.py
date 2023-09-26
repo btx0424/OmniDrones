@@ -51,25 +51,23 @@ class PlatformHover(IsaacEnv):
     The goal for the agents is to make the platform hover at a reference pose 
     (position and attitude).
 
-    Observation
-    -----------
+    ## Observation
     The observation is a `CompositeSpec` containing the following items:
 
-    - ``obs_self`` (1, \*): The state of each UAV observed by itself, containing its kinematic
+    - `obs_self` (1, \*): The state of each UAV observed by itself, containing its kinematic
       information with the position being relative to the frame center, and an one-hot
       identity indicating the UAV's index.
-    - ``obs_others`` (k-1, \*): The observed states of other agents.
-    - ``state_frame`` (1, \*): The state of the frame.
+    - `obs_others` (k-1, \*): The observed states of other agents.
+    - `state_frame` (1, \*): The state of the frame.
 
-    Reward
-    ------
+    ## Reward
 
-    Episode End
-    -----------
+    - `reward_pose`: The reward for the platform to reach the reference pose.
+
+    ## Episode End
     - Termination:
 
-    Config
-    ------
+    ## Config
     - `num_drones`: The number of UAVs in the platform.
     - `arm_length`: The arm length of the overactuated platform, which determines the distance
       between the center of the frame and the UAVs.

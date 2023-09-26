@@ -107,11 +107,17 @@ class MultirotorBase(RobotBase):
             self.base_link.initialize()
             print(self._view.dof_names)
             print(self._view._dof_indices)
-            self.rotor_joint_indices = torch.tensor(
-                [i for i, dof_name in enumerate(self._view._dof_names) 
-                 if dof_name.startswith("rotor")],
-                device=self.device
-            )
+            rotor_joint_indices = [
+                i for i, dof_name in enumerate(self._view._dof_names) 
+                if dof_name.startswith("rotor")
+            ]
+            if len(rotor_joint_indices):
+                self.rotor_joint_indices = torch.tensor(
+                    rotor_joint_indices,
+                    device=self.device
+                )
+            else:
+                self.rotor_joint_indices = None
         else:
             super().initialize(prim_paths_expr=f"{prim_paths_expr}/base_link")
             self.base_link = self._view
@@ -260,7 +266,7 @@ class MultirotorBase(RobotBase):
         self.thrusts[..., 2] = thrusts
         self.torques[:] = (moments.unsqueeze(-1) * torque_axis).sum(-2)
         # TODO@btx0424: general rotating rotor
-        if self.is_articulation:
+        if self.is_articulation and self.rotor_joint_indices is not None:
             rot_vel = (self.throttle * self.directions * self.MAX_ROT_VEL)
             self._view.set_joint_velocities(
                 rot_vel.reshape(-1, self.num_rotors),

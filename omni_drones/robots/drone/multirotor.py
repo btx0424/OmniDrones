@@ -107,6 +107,11 @@ class MultirotorBase(RobotBase):
             self.base_link.initialize()
             print(self._view.dof_names)
             print(self._view._dof_indices)
+            self.rotor_joint_indices = torch.tensor(
+                [i for i, dof_name in enumerate(self._view._dof_names) 
+                 if dof_name.startswith("rotor")],
+                device=self.device
+            )
         else:
             super().initialize(prim_paths_expr=f"{prim_paths_expr}/base_link")
             self.base_link = self._view
@@ -120,12 +125,17 @@ class MultirotorBase(RobotBase):
         )
         self.rotors_view.initialize()
 
-        self.rotors = RotorGroup(self.params["rotor_configuration"], dt=self.dt).to(
-            self.device
-        )
+        rotor_config = self.params["rotor_configuration"]
+        self.rotors = RotorGroup(rotor_config, dt=self.dt).to(self.device)
+
         rotor_params = make_functional(self.rotors)
         self.KF_0 = rotor_params["KF"].clone()
         self.KM_0 = rotor_params["KM"].clone()
+        self.MAX_ROT_VEL = (
+            torch.as_tensor(rotor_config["max_rotation_velocities"])
+            .float()
+            .to(self.device)
+        )
         self.rotor_params = rotor_params.expand(self.shape).clone()
 
         self.tau_up = self.rotor_params["tau_up"]
@@ -249,9 +259,13 @@ class MultirotorBase(RobotBase):
 
         self.thrusts[..., 2] = thrusts
         self.torques[:] = (moments.unsqueeze(-1) * torque_axis).sum(-2)
-        # self.articulations.set_joint_velocities(
-        #     (self.throttle * self.directions * self.MAX_ROT_VEL).reshape(-1, self.num_rotors)
-        # )
+        # TODO@btx0424: general rotating rotor
+        if self.is_articulation:
+            rot_vel = (self.throttle * self.directions * self.MAX_ROT_VEL)
+            self._view.set_joint_velocities(
+                rot_vel.reshape(-1, self.num_rotors),
+                joint_indices=self.rotor_joint_indices
+            )
         self.forces.zero_()
         # TODO: global downwash
         if self.n > 1:

@@ -10,7 +10,7 @@ Multi-Agent Tasks
     * - :ref:`TransportHover`
       - 
     * - :ref:`TransportTrack`
-    ..   - .. image:: ../_static/tasks/TransportTrack.gif
+      -
 
 .. toctree::
     :hidden:

@@ -65,7 +65,8 @@ class TransportTrack(IsaacEnv):
     - `up`: Reward for keeping the payload upright.
     - `swing`: Reward for avoid large swinging of the payload.
     - `joint_limit`: Reward for kepping the joint states in a reasonalble range to avoid glitchy behaviors.
-    - 
+    - `effort`: Reward computed from the effort of the drone to optimize the
+      energy consumption.
 
     The total reward is computed as:
 

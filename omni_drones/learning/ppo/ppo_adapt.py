@@ -55,6 +55,9 @@ class PPOConfig:
     adaptation_key: Any = "context"
     adaptation_loss: str = "mse"
 
+    # whether to add perception reward
+    perception_reward: bool = False
+
     def __post_init__(self):
         assert self.condition_mode.lower() in ("cat", "film")
         assert self.adaptation_key in ("context", ("agents", "intrinsics"), "_feature")
@@ -224,7 +227,7 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
             self.critic.apply(init_)
             self.encoder.apply(init_)
 
-        if self.phase in ("adpatation", "finetune"):
+        if self.phase in ("adaptation", "finetune"):
             if self.cfg.adaptation_loss == "mse":
                 self.adaptation_module = TensorDictModule(
                     TConv(fake_input[self.adaptation_key].shape[-1]), 
@@ -318,6 +321,8 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
         return tensordict
 
     def train_op(self, tensordict: TensorDict):
+        if self.cfg.perception_reward:
+            self.perception_reward(tensordict)
         if self.phase == "encoder":
             info = self._train_policy(tensordict)
         elif self.phase == "adaptation":
@@ -330,7 +335,21 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
             raise RuntimeError()
         return info
     
-    def _get_context(self, tensordict: TensorDict):
+    def perception_reward(self, tensordict: TensorDictBase):
+        """
+        Compute the perception reward according to the adaptation module's
+        perception error.
+
+        """
+        reward_task = tensordict[("next", "agents", "reward")]
+        adaptation_loss = self.adaptation_loss(tensordict)
+        tensordict.set(
+            ("next", "agents", "reward"),
+            reward_task - adaptation_loss
+        )
+        return tensordict
+    
+    def _get_context(self, tensordict: TensorDictBase):
         assert tensordict.get("context", None) is None
         if self.phase == "encoder":
             self.encoder(tensordict)
@@ -461,7 +480,7 @@ class MSE(nn.Module):
     def forward(self, tensordict):
         target = tensordict.get(self.key)
         pred = self.adaptation_module(tensordict).get(self.key)
-        loss = F.mse_loss(pred, target)
+        loss = F.mse_loss(pred, target, reduction="none")
         # return TensorDict({"loss_mse": loss}, [])
         return loss
 
@@ -469,7 +488,7 @@ class MSE(nn.Module):
         info = []
         for epoch in range(4):
             for batch in make_batch(tensordict, 8):
-                loss = self(batch)
+                loss = self(batch).mean()
                 self.opt.zero_grad()
                 loss.backward()
                 self.opt.step()

@@ -64,36 +64,13 @@ def sample_from_grid(cells: torch.Tensor, n):
 
 class Formation(IsaacEnv):
     def __init__(self, cfg, headless):
+        self.time_encoding = cfg.task.time_encoding
+        self.safe_distance = cfg.task.safe_distance
+
         super().__init__(cfg, headless)
-        self.time_encoding = self.cfg.task.time_encoding
-        self.safe_distance = self.cfg.task.safe_distance
 
         self.drone.initialize()
         self.init_poses = self.drone.get_world_poses(clone=True)
-
-        drone_state_dim = self.drone.state_spec.shape[0]
-        obs_self_dim = drone_state_dim
-        if self.time_encoding:
-            self.time_encoding_dim = 4
-            obs_self_dim += self.time_encoding_dim
-
-        observation_spec = CompositeSpec({
-            "obs_self": UnboundedContinuousTensorSpec((1, obs_self_dim)).to(self.device),
-            "obs_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13+1)).to(self.device),
-        })
-
-        state_spec = CompositeSpec({
-            "drones": UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim)),
-        }).to(self.device)
-
-        self.agent_spec["drone"] = AgentSpec(
-            "drone",
-            self.drone.n,
-            observation_spec,
-            self.drone.action_spec.to(self.device),
-            UnboundedContinuousTensorSpec(1).to(self.device),
-            state_spec,
-        )
 
         # initial state distribution
         self.cells = (
@@ -109,15 +86,6 @@ class Formation(IsaacEnv):
         self.target_heading = torch.zeros(self.num_envs, 3, device=self.device)
         self.target_heading[..., 0] = -1
 
-        # additional infos & buffers
-        stats_spec = CompositeSpec({
-            # "cost_laplacian": UnboundedContinuousTensorSpec((self.num_envs, 1)),
-            "cost_hausdorff": UnboundedContinuousTensorSpec(1),
-            "pos_error": UnboundedContinuousTensorSpec(1)
-        }).expand(self.num_envs).to(self.device)
-        self.observation_spec["stats"] = stats_spec
-
-        self.stats = stats_spec.zero()
         self.alpha = 0.8
 
         # self.last_cost_l = torch.zeros(self.num_envs, 1, device=self.device)
@@ -151,6 +119,55 @@ class Formation(IsaacEnv):
         self.drone.spawn(translations=self.formation)
         return ["/World/defaultGroundPlane"]
 
+    def _set_specs(self):
+        drone_state_dim = self.drone.state_spec.shape[0]
+        obs_self_dim = drone_state_dim
+        if self.time_encoding:
+            self.time_encoding_dim = 4
+            obs_self_dim += self.time_encoding_dim
+
+        observation_spec = CompositeSpec({
+            "obs_self": UnboundedContinuousTensorSpec((1, obs_self_dim)),
+            "obs_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13+1)),
+        }).to(self.device)
+        observation_central_spec = CompositeSpec({
+            "drones": UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim)),
+        }).to(self.device)
+        self.observation_spec = CompositeSpec({
+            "agents": {
+                "observation": observation_spec.expand(self.drone.n),
+                "observation_central": observation_central_spec,
+            }
+        }).expand(self.num_envs).to(self.device)
+        self.action_spec = CompositeSpec({
+            "agents": {
+                "action": torch.stack([self.drone.action_spec] * self.drone.n, dim=0),
+            }
+        }).expand(self.num_envs).to(self.device)
+        self.reward_spec = CompositeSpec({
+            "agents": {
+                "reward": UnboundedContinuousTensorSpec((self.drone.n, 1))
+            }
+        }).expand(self.num_envs).to(self.device)
+        self.agent_spec["drone"] = AgentSpec(
+            "drone",
+            self.drone.n,
+            observation_key=("agents", "observation"),
+            action_key=("agents","action"),
+            reward_key=("agents", "reward"),
+            state_key=("agents", "observation_central")
+        )
+         # additional infos & buffers
+        stats_spec = CompositeSpec({
+            "return": UnboundedContinuousTensorSpec(self.drone.n),
+            "episode_len": UnboundedContinuousTensorSpec(1),
+            # "cost_laplacian": UnboundedContinuousTensorSpec((self.num_envs, 1)),
+            "cost_hausdorff": UnboundedContinuousTensorSpec(1),
+            "pos_error": UnboundedContinuousTensorSpec(1)
+        }).expand(self.num_envs).to(self.device)
+        self.observation_spec["stats"] = stats_spec
+        self.stats = stats_spec.zero()
+
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
         
@@ -177,7 +194,7 @@ class Formation(IsaacEnv):
         self.stats[env_ids] = 0.
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
-        actions = tensordict[("action", "drone.action")]
+        actions = tensordict[("agents", "action")]
         self.effort = self.drone.apply_action(actions)
 
     def _compute_state_and_obs(self):
@@ -209,8 +226,11 @@ class Formation(IsaacEnv):
         state = TensorDict({"drones": self.root_states}, self.batch_size)
 
         return TensorDict({
-            "drone.obs": obs, 
-            "drone.state": state,
+            "agents": {
+                "observation": obs, 
+                "observation_central": state,
+            },
+            "stats": self.stats
         }, self.batch_size)
 
     def _compute_reward_and_done(self):
@@ -236,29 +256,29 @@ class Formation(IsaacEnv):
                 + reward_formation * (reward_pos + reward_heading)
                 + 0.4 * reward_pos
             )
-        ).unsqueeze(1).expand(-1, self.drone.n, 1)
+        )
 
         # self.last_cost_l[:] = cost_l
         self.last_cost_h[:] = cost_h
         self.last_cost_pos[:] = torch.square(distance)
-
-        self._tensordict["return"] += reward
 
         terminated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
         crash = (pos[..., 2] < 0.2).any(-1, keepdim=True)
 
         done = terminated | crash | (separation<0.23)
 
+        self.stats["return"].add_(reward)
+        self.stats["episode_len"][:] = self.progress_buf.unsqueeze(-1)
         # self.stats["cost_laplacian"] -= cost_l
         self.stats["cost_hausdorff"].lerp_(cost_h, (1-self.alpha))
         self.stats["pos_error"].lerp_(distance, (1-self.alpha))
 
         return TensorDict(
             {
-                "reward": {"drone.reward": reward},
-                "return": self._tensordict["return"],
+                "agents": {
+                    "reward": reward.unsqueeze(1).expand(-1, self.drone.n, 1)
+                },
                 "done": done,
-                "stats": self.stats,
             },
             self.batch_size,
         )

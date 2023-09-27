@@ -118,8 +118,8 @@ def main(cfg):
     # flatten it to use a MLP encoder instead
     if cfg.task.get("flatten_obs", False):
         transforms.append(ravel_composite(base_env.observation_spec, ("agents", "observation")))
-    if cfg.task.get("flatten_state", False):
-        transforms.append(ravel_composite(base_env.observation_spec, "state"))
+    if cfg.task.get("flatten_central_obs", False):
+        transforms.append(ravel_composite(base_env.observation_spec, ("agents", "observation_central")))
     if (
         cfg.task.get("flatten_intrinsics", True)
         and ("agents", "intrinsics") in base_env.observation_spec.keys(True)

@@ -22,6 +22,8 @@ progress of the episode.
 - `heading_alignment`: Reward computed from the alignment of the heading to the target heading.
 - `up`: Reward computed from the uprightness of the drone to discourage large tilting.
 - `spin`: Reward computed from the spin of the drone to discourage spinning.
+- `effort`: Reward computed from the effort of the drone to optimize the
+energy consumption.
 
 The total reward is computed as follows:
 

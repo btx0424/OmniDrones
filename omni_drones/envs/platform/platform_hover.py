@@ -58,21 +58,37 @@ class PlatformHover(IsaacEnv):
       information with the position being relative to the frame center, and an one-hot
       identity indicating the UAV's index.
     - `obs_others` (k-1, \*): The observed states of other agents.
-    - `state_frame` (1, \*): The state of the frame.
+    - `obs_frame`:
+      - `state_frame`: (1, \*): The state of the frame.
+      - `rpos` (3): The relative position of the platform to the reference positions.
+      - `time_encoding` (optional): The time encoding, which is a 4-dimensional
+        vector encoding the current progress of the episode.
 
     ## Reward
 
-    - `reward_pose`: The reward for the platform to reach the reference pose.
+    - `reward_pose`: The reward for the pose error between the platform and 
+      the reference (position and orientation).
+    - `reward_up`: The reward for the alignment of the platform's up vector and
+      the reference up vector.
+    - `reward_spin`: Reward computed from the spin of the drone to discourage spinning.
+    - `reward_effort`: Reward computed from the effort of the drone to optimize the
+      energy consumption.
+    
+    The total reward is computed as follows:
 
-    ## Episode End
-    - Termination:
+    ```{math}
+        r = r_\text{pose} + r_\text{pose} * (r_\text{up} + r_\text{spin}) + r_\text{effort}
+    ```
 
     ## Config
-    - `num_drones`: The number of UAVs in the platform.
-    - `arm_length`: The arm length of the overactuated platform, which determines the distance
-      between the center of the frame and the UAVs.
-    - `joint_damping`: The damping coefficient of the gimbal joints connecting each UAV to the
-      frame. This parameter affects the stability of the platform.
+
+    | Parameter               | Type  | Default       | Description |
+    |-------------------------|-------|---------------|-------------|
+    | `drone_model`           | str   | "hummingbird" |             |
+    | `num_drones`            | int   | 4             |             |
+    | `arm_length`            | float | 0.85          |             |
+    | `reward_distance_scale` | float | 1.2           |             |
+    | `time_encoding`         | bool  | True          |             |
 
     """
     def __init__(self, cfg, headless):
@@ -157,19 +173,19 @@ class PlatformHover(IsaacEnv):
             "obs_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13)),
             "state_frame": UnboundedContinuousTensorSpec((1, frame_state_dim)),
         }).to(self.device)
-        state_spec = CompositeSpec({
+        observation_central_spec = CompositeSpec({
             "state_drones": UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim + self.drone.n)),
             "state_frame": UnboundedContinuousTensorSpec((1, frame_state_dim)),
         }).to(self.device)
         self.observation_spec = CompositeSpec({
             "agents": {
                 "observation": observation_spec.expand(self.drone.n),
-                "state": state_spec,
+                "observation_central": observation_central_spec,
             },
         }).expand(self.num_envs).to(self.device)
         self.action_spec = CompositeSpec({
             "agents": {
-                "action": self.drone.action_spec.expand(self.drone.n),
+                "action": torch.stack([self.drone.action_spec] * self.drone.n, dim=0),
             }
         }).expand(self.num_envs).to(self.device)
         self.reward_spec = CompositeSpec({
@@ -182,7 +198,7 @@ class PlatformHover(IsaacEnv):
             observation_key=("agents", "observation"),
             action_key=("agents", "action"),
             reward_key=("agents", "reward"),
-            state_key="state"
+            state_key=("agents", "observation_central")
         )
 
         stats_spec = CompositeSpec({
@@ -291,8 +307,8 @@ class PlatformHover(IsaacEnv):
             {
                 "agents": {
                     "observation": obs,
+                    "observation_central": state,
                 },
-                "state": state,
                 "stats": self.stats
             },
             self.batch_size,

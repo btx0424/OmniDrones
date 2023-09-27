@@ -189,6 +189,7 @@ class TransportHover(IsaacEnv):
             observation_key=("agents", "observation"),
             action_key=("agents", "action"),
             reward_key=("agents", "reward"),
+            state_key=("agents", "state")
         )
 
         info_spec = CompositeSpec({
@@ -292,7 +293,7 @@ class TransportHover(IsaacEnv):
         state["payload"] = payload_state # [..., 1, 22]
         state["drones"] = obs["obs_self"].squeeze(2) # [..., n, state_dim]
 
-        self.pos_error = torch.norm(payload_target_rpos, dim=-1, keepdim=True)
+        self.pos_error = self.target_payload_rpose[..., :3].norm(dim=-1, keepdim=True)
         self.heading_alignment = torch.sum(
             self.payload_heading * self.payload_target_heading, dim=-1, keepdim=True
         )

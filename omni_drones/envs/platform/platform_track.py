@@ -75,7 +75,16 @@ class PlatformTrack(IsaacEnv):
       the reference (position and orientation).
     - `reward_up`: The reward for the alignment of the platform's up vector and
       the reference up vector.
+    - `reward_spin`: Reward computed from the spin of the drone to discourage spinning.
+    - `reward_effort`: Reward computed from the effort of the drone to optimize the
+      energy consumption.
+    
+    The total reward is computed as follows:
 
+     ```{math}
+        r = r_\text{pose} + r_\text{pose} * (r_\text{up} + r_\text{spin}) + r_\text{effort}
+    ```
+      
     ## Config
     
     | Parameter               | Type  | Default       | Description |
@@ -87,6 +96,7 @@ class PlatformTrack(IsaacEnv):
     | `future_traj_steps`     | int   | 4             |             |
     | `reward_distance_scale` | float | 1.2           |             |
     | `time_encoding`         | bool  | True          |             |
+    
     """
     def __init__(self, cfg, headless):
         self.reset_thres = cfg.task.reset_thres
@@ -189,14 +199,14 @@ class PlatformTrack(IsaacEnv):
             "obs_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13)),
             "obs_frame": UnboundedContinuousTensorSpec((1, frame_state_dim)),
         }).to(self.device)
-        state_spec = CompositeSpec({
+        observation_central_spec = CompositeSpec({
             "drones": UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim + self.drone.n)),
             "frame": UnboundedContinuousTensorSpec((1, frame_state_dim)),
         }).to(self.device)
         self.observation_spec = CompositeSpec({
             "agents": {
                 "observation": observation_spec.expand(self.drone.n),
-                "state": state_spec,
+                "observation_central": observation_central_spec,
             }
         }).expand(self.num_envs).to(self.device)
         self.action_spec = CompositeSpec({
@@ -214,7 +224,7 @@ class PlatformTrack(IsaacEnv):
             observation_key=("agents", "observation"),
             action_key=("agents", "action"),
             reward_key=("agents", "reward"),
-            state_key=("agents", "state")
+            state_key=("agents", "observation_central")
         )
         stats_spec = CompositeSpec({
             "return": UnboundedContinuousTensorSpec(self.drone.n),
@@ -318,7 +328,7 @@ class PlatformTrack(IsaacEnv):
         return TensorDict({
             "agents": {
                 "observation": obs,
-                "state": state,
+                "observation_central": state,
             },
             "stats": self.stats
         }, self.batch_size)

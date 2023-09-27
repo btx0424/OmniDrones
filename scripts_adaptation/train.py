@@ -212,7 +212,7 @@ def main(cfg):
         
         traj_stats = trajs["next"].select(*stats_keys).cpu().apply(take_first, batch_size=[len(first_done)])
         info = {
-            "eval/" + (".".join(k) if isinstance(k, tuple) else k): torch.mean(v).item() 
+            "eval/" + (".".join(k) if isinstance(k, tuple) else k): torch.mean(v.float()).item() 
             for k, v in traj_stats.items(True, True)
         }
         video_array = np.stack(frames).transpose(0, 3, 1, 2)
@@ -255,7 +255,7 @@ def main(cfg):
         
         if len(episode_stats) >= base_env.num_envs:
             stats = {
-                "train/" + (".".join(k) if isinstance(k, tuple) else k): torch.mean(v).item() 
+                "train/" + (".".join(k) if isinstance(k, tuple) else k): torch.mean(v.float()).item() 
                 for k, v in episode_stats.pop().items(True, True)
             }
             info.update(stats)

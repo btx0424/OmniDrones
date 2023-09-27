@@ -51,8 +51,7 @@ class TransportFlyThrough(IsaacEnv):
     A challenging cooperative control task where a group of UAVs carry a box-shaped payload connected via
     rigid links. 
 
-    Observation
-    -----------
+    ## Observation
     The observation space is specified by a :py:class:`CompositeSpec` containing the following items:
 
     - `obs_self` (1, \*): The state of each UAV observed by itself, containing its kinematic
@@ -71,8 +70,7 @@ class TransportFlyThrough(IsaacEnv):
     - `swing`: Reward for avoid large swinging of the payload.
     - `joint_limit`: Reward for kepping the joint states in a reasonalble range to avoid glitchy behaviors.
 
-    Config
-    ------
+    ## Config
     - `obstacle_spacing` (Tuple[float, float], default=[0.85, 0.85]): A range from which the vertical spacing between the 
       obstacles is sampled.
     - `reset_on_collision` (bool, default=False): Whether to reset the environment when the payload collides with an 

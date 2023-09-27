@@ -14,15 +14,28 @@
 
 For usage and more details, please refer to the [documentation](https://omnidrones.readthedocs.io/en/latest/).
 
+## Announcement 2023-09-25
+
+The initial release of **OmniDrones** is developed based on Isaac Sim 2022.2.0. As the next version of 
+Isaac Sim (2023.1.0) is expected to bring susbtantial changes but is not yet available, the APIs and usage 
+of **OmniDrones** are subject to change. We will try our best to keep the documentation up-to-date.
 
 
 ## Citation
 
-Please cite [this paper]() if you use *OmniDrones* in your work:
+Please cite [this paper](https://arxiv.org/abs/2309.12825) if you use *OmniDrones* in your work:
 
 ```
-
+@misc{xu2023omnidrones,
+    title={OmniDrones: An Efficient and Flexible Platform for Reinforcement Learning in Drone Control}, 
+    author={Botian Xu and Feng Gao and Chao Yu and Ruize Zhang and Yi Wu and Yu Wang},
+    year={2023},
+    eprint={2309.12825},
+    archivePrefix={arXiv},
+    primaryClass={cs.RO}
+}
 ```
+
 
 ## Ackowledgement
 

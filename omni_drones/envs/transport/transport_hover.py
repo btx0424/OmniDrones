@@ -48,8 +48,7 @@ class TransportHover(IsaacEnv):
     rigid links. The goal for the agents is to make the payload hover at a reference pose 
     (position and attitude).
 
-    Observation
-    -----------
+    ## Observation
     The observation space is specified a py:class:`CompositeSpec` containing the following items:
 
     - ``obs_self`` (1, \*): The state of each UAV observed by itself, containing its kinematic
@@ -66,8 +65,7 @@ class TransportHover(IsaacEnv):
     - `swing`: Reward for avoid large swinging of the payload.
     - `joint_limit`: Reward for kepping the joint states in a reasonalble range to avoid glitchy behaviors.
 
-    Config
-    ------
+    ## Config
     - `num_drones`: The number of UAVs to carry the payload.
     - `safe_distance`: A threshold value that gives penalty when the minimum seperation between the 
       UAVs is too small.

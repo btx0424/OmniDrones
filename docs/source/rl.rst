@@ -19,6 +19,7 @@ Here we give a few examples to demonstrate its usage.
     
     # most commonly we want to train in the headless mode for sampling performance
     python train.py task=Hover headless=true
+    python train.py task=InvPendulum/InvPendulumHover headless=true
 
     # enable evaluation (which would record a video clip for visulization) during training
     python train.py task=Hover total_frames=100_000_000 eval_interval=60 headless=true 

@@ -60,6 +60,7 @@ def main(cfg):
     init_vels = torch.zeros(n, 6, device=sim.device)
     target_rate = torch.zeros(n, 3, device=sim.device)
     target_rate[:, 2] = torch.pi
+    target_height = 1.5 + 0.5 * torch.arange(n, device=sim.device).float()
 
     controller = RateController(9.8, uav_params=drone.params).to(sim.device)
 
@@ -71,23 +72,42 @@ def main(cfg):
         # returns up-to-date values
         sim._physics_sim_view.flush() 
     
+    pos_gain = 4.
+    vel_gain = 2.
+
+    def height_control(
+        drone,
+        target_height = 1.5
+    ):
+        drone_state = drone.get_state()[..., :13]
+        height = drone.pos[..., 2]
+        velocity_z = drone.vel[..., 2]
+        pos_error = target_height - height
+        target_acc = (
+            pos_gain * pos_error 
+            + vel_gain * -velocity_z 
+            + 9.81
+        )
+        target_thrust = (target_acc.unsqueeze(-1) * drone.MASS_0)
+        cmd = controller(
+            drone_state.squeeze(0), 
+            target_rate=target_rate,
+            target_thrust=target_thrust
+        )
+        return cmd 
+
     reset()
-    drone_state = drone.get_state()[..., :13].squeeze(0)
 
     frames_vis = []
     
     from tqdm import tqdm
-    for i in tqdm(range(500)):
+    for i in tqdm(range(2000)):
         if sim.is_stopped():
             break
         if not sim.is_playing():
             sim.render()
             continue
-        action = controller(
-            drone_state, 
-            target_rate=target_rate, 
-            target_thrust=drone.MASS_0 * 9.81
-        )
+        action = height_control(drone, target_height)
         drone.apply_action(action)
         sim.step(render=True)
 
@@ -96,7 +116,6 @@ def main(cfg):
 
         if i % 1000 == 0:
             reset()
-        drone_state = drone.get_state()[..., :13].squeeze(0)
 
     from torchvision.io import write_video
 

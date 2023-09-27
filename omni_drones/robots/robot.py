@@ -137,7 +137,7 @@ class RobotBase(abc.ABC):
             if self.is_articulation:
                 kit_utils.set_articulation_properties(
                     prim_path,
-                    enable_self_collisions=False,
+                    enable_self_collisions=self.articulation_props.enable_self_collisions,
                     solver_position_iteration_count=self.articulation_props.solver_position_iteration_count,
                     solver_velocity_iteration_count=self.articulation_props.solver_velocity_iteration_count,
                 )

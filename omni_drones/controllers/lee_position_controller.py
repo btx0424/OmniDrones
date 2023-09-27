@@ -330,8 +330,9 @@ class RateController(nn.Module):
         target_thrust = target_thrust.reshape(-1, 1)
 
         pos, rot, linvel, angvel = root_state.split([3, 4, 3, 3], dim=1)
+        body_rate = quat_rotate_inverse(rot, angvel)
 
-        rate_error = angvel - target_rate
+        rate_error = body_rate - target_rate
         acc_des = (
             - rate_error * self.gain_angular_rate
             + angvel.cross(angvel)

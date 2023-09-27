@@ -12,6 +12,13 @@ if __name__ == "__main__":
         "InvPendulumHover", "InvPendulumTrack", "InvPendulumFlyThrough",
         "PayloadTrack", "PayloadFlyThrough"
     ]
+    multi_tasks = [
+        "Formation",
+        "PlatformHover",
+        "PlatformTrack",
+        "TransportHover",
+        "TransportTrack",
+    ]
     for task in single_tasks:
         with open(f"source/tasks/single/{task}.md", "w") as f:
             lines = [

@@ -51,14 +51,13 @@ class TransportHover(IsaacEnv):
     ## Observation
     The observation space is specified a py:class:`CompositeSpec` containing the following items:
 
-    - ``obs_self`` (1, \*): The state of each UAV observed by itself, containing its kinematic
+    - `obs_self` (1, \*): The state of each UAV observed by itself, containing its kinematic
       information with the position being relative to the payload. It also includes a one-hot 
       vector indicating each drone's identity.
-    - ``obs_others`` (k-1, \*): The observed states of other agents.
-    - ``obs_payload`` (1, \*): The state of the frame.
+    - `obs_others` (k-1, \*): The observed states of other agents.
+    - `obs_payload` (1, \*): The state of the frame.
 
-    Reward
-    ------
+    ## Reward
     - `seperation`: A factor that penalizes all agents when the minimum seperation is too small.
     - `pos`: Reward for hovering at the reference position, computed as :math:`\exp(-a * \text{pos_error})`.
     - `up`: Reward for keeping the payload upright.
@@ -69,6 +68,8 @@ class TransportHover(IsaacEnv):
     - `num_drones`: The number of UAVs to carry the payload.
     - `safe_distance`: A threshold value that gives penalty when the minimum seperation between the 
       UAVs is too small.
+    - `payload_mass_scale`: A tuple of two values that specifies the range of the payload mass to sample from
+      in each episode (as ratio to the drone's mass).
 
     """
     def __init__(self, cfg, headless):

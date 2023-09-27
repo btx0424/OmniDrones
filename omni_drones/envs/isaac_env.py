@@ -62,7 +62,6 @@ class IsaacEnv(EnvBase):
         # extract commonly used parameters
         self.num_envs = self.cfg.env.num_envs
         self.max_episode_length = self.cfg.env.max_episode_length
-        self.min_episode_length = self.cfg.env.min_episode_length
         self.substeps = self.cfg.sim.substeps
 
         torch.backends.cudnn.benchmark = True

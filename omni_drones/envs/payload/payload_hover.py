@@ -47,8 +47,7 @@ class PayloadHover(IsaacEnv):
     An intermediate control task where a spherical payload is attached to the drone.
     The goal for the agent is to hover the payload at a target position.
 
-    Observation
-    -----------
+    ## Observation
     - `drone_payload_rpos` (3): 
     - `ref_payload_rpos` (3): The reference positions of the
       payload at multiple future time steps. This helps the agent anticipate the desired payload
@@ -59,8 +58,7 @@ class PayloadHover(IsaacEnv):
     Reward
     ------
 
-    Episode End
-    -----------
+    ## Episode End
     - Termination: 
 
 

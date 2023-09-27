@@ -35,6 +35,7 @@ from omni_drones.utils.torch import euler_to_quaternion, quat_axis
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec
 
+
 def attach_payload(parent_path):
     from omni.isaac.core import objects
     import omni.physx.scripts.utils as script_utils
@@ -60,38 +61,50 @@ def attach_payload(parent_path):
 class Hover(IsaacEnv):
     r"""
     A basic control task. The goal for the agent is to maintain a stable
-    position and heading in mid-air without drifting. 
+    position and heading in mid-air without drifting. This task is designed
+    to serve as a sanity check.
 
-    Observation
-    -----------
+    ## Observation
     The observation space consists of the following part:
 
     - `rpos` (3): The position relative to the target hovering position.
-    - `root_state` (16 + num_rotors): The basic information of the drone (except its position), 
+    - `root_state` (16 + `num_rotors`): The basic information of the drone (except its position), 
       containing its rotation (in quaternion), velocities (linear and angular), 
       heading and up vectors, and the current throttle.
     - `rheading` (3): The difference between the reference heading and the current heading.
-    - *time_encoding*:
+    - `time_encoding` (optional): The time encoding, which is a 4-dimensional vector encoding the current
+      progress of the episode.
 
-    Reward 
-    ------
-    - pos: 
-    - heading_alignment:
-    - up:
-    - spin:
+    ## Reward
+    - `pos`: Reward computed from the position error to the target position.
+    - `heading_alignment`: Reward computed from the alignment of the heading to the target heading.
+    - `up`: Reward computed from the uprightness of the drone to discourage large tilting.
+    - `spin`: Reward computed from the spin of the drone to discourage spinning.
 
-    The total reward is 
+    The total reward is computed as follows:
 
-    .. math:: 
-    
+    ```{math}
         r = r_\text{pos} + r_\text{pos} * (r_\text{up} + r_\text{heading})
+    ```
+        
+    ## Episode End
+    The episode ends when the drone mishebaves, i.e., it crashes into the ground or flies too far away:
 
-    Episode End
-    -----------
-    - Termination: 
+    ```{math}
+        d_\text{pos} > 4 \text{ or } x^w_z < 0.2
+    ```
+    
+    or when the episode reaches the maximum length.
 
-    Config
-    ------
+
+    ## Config
+
+    | Parameter               | Type  | Default   | Description |
+    |-------------------------|-------|-----------|-------------|
+    | `drone_model`           | str   | "firefly" |             |
+    | `reward_distance_scale` | float | 1.2       |             |
+    | `time_encoding`         | bool  | True      |             |
+    | `has_payload`           | bool  | False     |             |
 
 
     """

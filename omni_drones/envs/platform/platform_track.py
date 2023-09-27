@@ -50,11 +50,43 @@ class PlatformTrack(IsaacEnv):
     r"""
     A cooperative control task where a group of `k` UAVs are connected together by a rigid frame 
     to form an overactuated platform. Each individual UAV, attached by a 2-DoF passive gimbal 
-    joint, acts as a thrust generator.
-    The goal for the agents is to collectively control the platform to track a given reference 
-    trajectory.
+    joint, acts as a thrust generator. The goal for the agents is to 
+    collectively control the platform to track a given reference trajectory 
+    while orienting the platform towards a given direction.
 
+    ## Observation
 
+    The observation is a `CompositeSpec` containing:
+
+    - `obs_self`` (1, \*): The state of each UAV observed by itself, containing its kinematic
+      information with the position being relative to the frame center, and an one-hot
+      identity indicating the UAV's index.
+    - `obs_others`` (k-1, \*): The observed states of other agents.
+    - `obs_frame`:
+      - `state_frame`: (1, \*): The state of the frame.
+      - `rpos` (3 * `future_traj_steps`): The relative position of the platform to the 
+        reference positions in the future `future_traj_steps` time steps.
+      - `time_encoding` (optional): The time encoding, which is a 4-dimensional
+        vector encoding the current progress of the episode.
+
+    ## Reward
+
+    - `reward_pose`: The reward for the pose error between the platform and 
+      the reference (position and orientation).
+    - `reward_up`: The reward for the alignment of the platform's up vector and
+      the reference up vector.
+
+    ## Config
+    
+    | Parameter               | Type  | Default       | Description |
+    |-------------------------|-------|---------------|-------------|
+    | `drone_model`           | str   | "hummingbird" |             |
+    | `num_drones`            | int   | 4             |             |
+    | `arm_length`            | float | 0.85          |             |
+    | `reset_thres`           | float | 0.5           |             |
+    | `future_traj_steps`     | int   | 4             |             |
+    | `reward_distance_scale` | float | 1.2           |             |
+    | `time_encoding`         | bool  | True          |             |
     """
     def __init__(self, cfg, headless):
         self.reset_thres = cfg.task.reset_thres
@@ -277,7 +309,7 @@ class PlatformTrack(IsaacEnv):
         state["drones"] = obs["obs_self"].squeeze(2)    # [num_envs, drone.n, drone_state_dim]
         state["frame"] = platform_state                # [num_envs, 1, platform_state_dim]
         
-        self.heading_alignment = torch.sum(self.platform.up * target_up, dim=-1)
+        self.up_alignment = torch.sum(self.platform.up * target_up, dim=-1)
 
         self.stats["pos_error"].lerp_(self.target_distance, (1-self.alpha))
         self.stats["heading_alignment"].lerp_(self.heading_alignment, (1-self.alpha))
@@ -298,7 +330,7 @@ class PlatformTrack(IsaacEnv):
         # reward_pose = 1 / (1 + torch.square(distance * self.reward_distance_scale))
         reward_pose = torch.exp(- self.reward_distance_scale * self.target_distance)
         
-        reward_up = torch.square((self.heading_alignment + 1) / 2)
+        reward_up = torch.square((self.up_alignment + 1) / 2)
 
         spinnage = platform_vels[:, -3:].abs().sum(-1)
         reward_spin = 1. / (1 + torch.square(spinnage))

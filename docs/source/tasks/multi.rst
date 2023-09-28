@@ -1,16 +1,26 @@
 Multi-Agent Tasks
 ==================
 
-.. list-table::
+.. grid:: 2
 
-    * - :ref:`PlatformHover`
-      -     
-    * - :ref:`PlatformTrack`
-      - 
-    * - :ref:`TransportHover`
-      - 
-    * - :ref:`TransportTrack`
-      -
+  .. grid-item-card:: :ref:`PlatformHover`
+
+    ...
+  
+  .. grid-item-card:: :ref:`PlatformTrack`
+
+    ...
+
+.. grid:: 2
+
+  .. grid-item-card:: :ref:`TransportHover`
+
+    ...
+
+  .. grid-item-card:: :ref:`TransportTrack`
+      
+      ...
+
 
 .. toctree::
     :hidden:

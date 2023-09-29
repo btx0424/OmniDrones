@@ -1,0 +1,26 @@
+# QMIX config
+name: qmix
+
+q_net:
+  hidden_units: [256, 128]
+  hidden_dim: 128
+
+q_mixer:
+  hidden_units: [256, 128]
+  hidden_dim: 128
+
+gamma: 0.99
+lr: 0.0005
+max_grad_norm: 10 
+num_envs: ${..env.num_envs}
+buffer_size: 1024
+batch_size: 128
+gradient_steps: 100
+train_every: 64
+
+# epsilon
+anneal_time: 50000
+
+# target network
+target_update_interval: 4
+tau: 0.005

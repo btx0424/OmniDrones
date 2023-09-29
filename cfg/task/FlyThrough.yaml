@@ -1,0 +1,23 @@
+name: FlyThrough
+
+defaults:
+  # see https://hydra.cc/docs/advanced/overriding_packages/
+  - /base/env_base@_here_
+  - /base/sim_base@_here_
+  # - /base/randomization_base@_here_
+
+env:
+  num_envs: 2048
+
+drone_model: Hummingbird
+force_sensor: false
+
+reward_effort_weight: 0.1
+reward_distance_scale: 1.0
+visual_obs: false
+gate_moving_range: 1.0
+gate_scale: 1.1
+reset_on_collision: false
+
+
+action_transform: null

@@ -1,0 +1,27 @@
+name: InvPendulumHover
+
+defaults:
+  # see https://hydra.cc/docs/advanced/overriding_packages/
+  - /base/env_base@_here_
+  - /base/sim_base@_here_
+  # - /base/randomization_base@_here_
+
+env:
+  num_envs: 4096
+  env_spacing: 6
+
+drone_model: Hummingbird
+force_sensor: false
+time_encoding: true
+
+reward_effort_weight: 0.1
+reward_action_smoothness_weight: 0.
+reward_distance_scale: 1.2
+
+payload_mass_scale: [0.2, 0.3]
+bar_mass_min: 0.01
+bar_mass_max: 0.04
+
+bar_length: 1.
+
+action_transform: null

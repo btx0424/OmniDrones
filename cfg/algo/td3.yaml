@@ -1,0 +1,28 @@
+name: td3
+
+buffer_size: 1_000_000
+train_every: 64
+batch_size: 4096
+gamma: 0.95
+tau: 0.005
+max_grad_norm: 5
+
+gradient_steps: 2048
+target_noise: 0.1
+policy_noise: 0.1
+noise_clip: 0.2
+
+actor:
+  hidden_units: [256, 128, 128]
+  lr: 0.0005
+  layer_norm: true
+
+critic:
+  hidden_units: [256, 128, 128]
+  lr: 0.0005
+  layer_norm: true
+
+critic_loss: smooth_l1
+
+actor_delay: 2
+target_update_interval: 4

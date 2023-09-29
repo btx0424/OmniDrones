@@ -1,7 +1,7 @@
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 setup(
-    name="isaac_drones",
+    name="omni_drones",
     author="btx0424@SUSTech",
     keywords=["robotics", "rl"],
     packages=find_packages("."),
@@ -14,5 +14,5 @@ setup(
         "plotly",
         # "torchinfo",
         # "torchopt"
-    ]
+    ],
 )

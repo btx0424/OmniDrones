@@ -1,0 +1,68 @@
+name: happo
+
+# ppo
+train_every: 64
+num_minibatches: 16
+ppo_epochs: 4
+clip_param: 0.1
+entropy_coef: 0.001
+gae_lambda: 0.95
+gamma: 0.995
+max_grad_norm: 10.0
+normalize_advantages: True
+
+reward_weights: null # null means all 1.0
+share_actor: false
+critic_input: obs # `obs` or `state`
+
+actor:
+  lr: 0.0005
+  lr_scheduler: 
+  lr_scheduler_kwargs: 
+  
+  # mlp
+  hidden_units: [256, 128]
+  layer_norm: true
+
+  weight_decay: 0.0
+  gain: 0.01
+
+  attn_encoder: PartialAttentionEncoder
+  use_orthogonal: true
+
+  # rnn:
+  #   cls: gru
+  #   kwargs:
+  #     hidden_size: 128
+  #   train_seq_len: 8
+
+critic:
+  num_critics: 1
+  value_norm:
+    class: ValueNorm1
+    kwargs: 
+      beta: 0.995
+
+  lr: 0.0005
+  lr_scheduler: 
+  lr_scheduler_kwargs: 
+
+  # mlp
+  hidden_units: [256, 128]
+  layer_norm: true
+
+  weight_decay: 0.0
+  gain: 0.01
+
+  use_huber_loss: true
+  huber_delta: 10
+
+  # rnn:
+  #   cls: gru
+  #   kwargs:
+  #     hidden_size: 128
+  #   train_seq_len: 8
+
+  attn_encoder: PartialAttentionEncoder
+  use_feature_normalization: true
+  use_orthogonal: true

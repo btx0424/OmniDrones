@@ -1,0 +1,45 @@
+program: train.py
+name: SingleModelBased
+project: gpu-onpolicy
+entity: marl-drones
+method: grid
+
+metric:
+  name: train/return
+  goal: maximize
+
+parameters:
+
+  algo:
+    values:
+    - tdmpc
+
+  task: 
+    values: 
+    - Hover
+    - Track
+    - InvPendulumHover
+    # - InvPendulumFlyThrough
+    # - PayloadTrack
+    - PayloadFlyThrough
+
+  # task.env.num_envs:
+  #   value: 1024
+
+  total_frames: 
+    value: 50_500_000
+
+  headless:
+    value: true
+  
+  seed:
+    values: [0, 42, 81]
+
+  task.drone_model:
+    values: [Firefly, Hummingbird]
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args_no_hyphens}

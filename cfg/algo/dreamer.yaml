@@ -1,0 +1,48 @@
+name: dreamer
+
+encoder:
+  hidden_units: [256, 128]
+  layer_norm: true
+
+  proj_units: [128]
+
+decoder:
+  hidden_units: [128, 128]
+
+world_model:
+  deter_dim: 128
+  stoch_dim: 32
+  discrete_dim: 32
+  hidden_units: [128] # cat([stoch, action]) -> gru_input
+  prior_hidden_units: [128] # gru_output -> prior_logits
+  post_hidden_units: [128] # cat([embed, deter]) -> post_logits
+  lr: 1e-4
+  kl_free: 1.
+
+actor:
+  hidden_units: [128]
+  lr: 3e-5
+critic:
+  dist: normal
+  value_pred_dist: twohot_symlog
+  hidden_units: [128]
+  lr: 3e-5
+
+reward_pred:
+  dist: normal
+  hidden_units: [128]
+discount_pred:
+  hidden_units: [128]
+
+discount: 0.95
+gradient_steps: 64
+buffer_size: 1024
+train_every: 64
+batch_size: 32
+batch_length: 64
+
+max_grad_norm: 100
+return_lambda: 0.95
+imag_horizon: 15
+actor_grad: dynamics
+actor_entropy_coeff: 0.001

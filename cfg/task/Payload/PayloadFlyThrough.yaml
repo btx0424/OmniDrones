@@ -1,0 +1,26 @@
+# @package task
+name: PayloadFlyThrough
+
+defaults:
+  # see https://hydra.cc/docs/advanced/overriding_packages/
+  - /base/env_base@_here_
+  - /base/sim_base@_here_
+  # - /base/randomization_base@_here_
+
+
+drone_model: Hummingbird
+force_sensor: false
+time_encoding: true
+
+reward_effort_weight: 0.1
+reward_action_smoothness_weight: 0.
+reward_motion_smoothness_weight: 0.
+reward_distance_scale: 1.2
+
+payload_mass_scale: [0.2, 0.3]
+
+bar_length: 1.
+obstacle_spacing: [0.85, 0.85]
+reset_on_collision: false
+
+action_transform: null

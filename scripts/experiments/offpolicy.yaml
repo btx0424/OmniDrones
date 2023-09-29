@@ -1,0 +1,45 @@
+program: train.py
+name: SingleOffpolicy125M
+project: omnidrones
+entity: marl-drones
+method: grid
+
+metric:
+  name: train/return
+  goal: maximize
+
+parameters:
+
+  algo:
+    values:
+    - sac
+    - td3
+
+  task: 
+    values: 
+    - Hover
+    - Track
+    - InvPendulumHover
+    - InvPendulumTrack
+    - InvPendulumFlyThrough
+    - PayloadHover
+    - PayloadFlyThrough
+    - PayloadTrack
+
+  total_frames: 
+    value: 125_000_000
+
+  headless:
+    value: true
+  
+  seed:
+    values: [0, 42, 81] #, 57] #, 127]
+
+  task.drone_model:
+    values: [Firefly, Hummingbird, Omav]
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args_no_hyphens}

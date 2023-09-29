@@ -1,0 +1,47 @@
+program: train.py
+name: DQN125M
+project: omnidrones
+entity: marl-drones
+method: grid
+
+metric:
+  name: train/return
+  goal: maximize
+
+parameters:
+
+  algo:
+    values:
+    - dqn
+
+  task: 
+    values: 
+    - Hover
+    - Track
+    - InvPendulumHover
+    - InvPendulumTrack
+    - InvPendulumFlyThrough
+    - PayloadHover
+    - PayloadTrack
+    - PayloadFlyThrough
+
+  task.action_transform:
+    value: discrete:2
+
+  total_frames: 
+    value: 125_500_000
+
+  headless:
+    value: true
+  
+  seed:
+    values: [0, 42]
+
+  task.drone_model:
+    values: [Firefly, Hummingbird]
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args_no_hyphens}

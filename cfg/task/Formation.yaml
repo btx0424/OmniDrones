@@ -1,0 +1,22 @@
+name: Formation
+
+defaults:
+  # see https://hydra.cc/docs/advanced/overriding_packages/
+  - /base/env_base@_here_
+  - /base/sim_base@_here_
+  # - /base/randomization_base@_here_
+
+env: 
+  num_envs: 1024
+  max_episode_length: 600
+
+drone_model: Hummingbird
+force_sensor: false
+time_encoding: true
+
+safe_distance: 0.4
+formation: hexagon # tetragon
+
+flatten_state: false
+
+action_transform: null

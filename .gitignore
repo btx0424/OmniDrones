@@ -1,3 +1,5 @@
+.devcontainer
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -104,7 +106,7 @@ celerybeat.pid
 # Environments
 .env
 .venv
-env/
+# env/
 venv/
 ENV/
 env.bak/
@@ -127,3 +129,21 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# hydra and wandb output
+outputs/
+wandb/
+videos/
+.vscode/
+*.out
+
+# collected data
+*.pt
+urdf/
+*.pkl
+*.pth
+tmp
+plot/
+
+test*.ipynb
+examples/*.mp4

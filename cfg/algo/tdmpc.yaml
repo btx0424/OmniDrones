@@ -1,0 +1,43 @@
+name: tdmpc
+verbose: false
+
+actor:
+  hidden_units: [128]
+  lr: 3e-4
+model:
+  hidden_dim: 100
+  encoder:
+    hidden_units: [256, 128]
+  dynamics:
+    hidden_units: [100, 100]
+  lr: 3e-4
+max_grad_norm: 100
+
+
+# cem planning
+num_samples: 512
+min_std: 0.05
+mixture_coef: 0.05
+gamma: 0.99
+cem_momentum: 0.1
+cem_iterations: 6
+cem_num_elites: 64
+cem_temperature: 0.5
+
+# model learning
+horizon: 5
+reward_coef: 0.5
+value_coef: 0.1
+consistency_coef: 2
+target_update_interval: 2
+tau: 0.01
+rho: 0.5
+
+buffer_size: 2048
+batch_size: 512
+train_every: 64
+gradient_steps: 1024
+actor_delay: 1
+
+horizon_schedule: "linear(1, ${.horizon}, 25000)"
+std_schedule: "linear(0.5, ${.min_std}, 25000)"

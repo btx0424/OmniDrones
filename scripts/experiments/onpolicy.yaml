@@ -1,0 +1,47 @@
+program: train.py
+name: SinglePPO
+project: omnidrones
+entity: marl-drones
+method: grid
+
+metric:
+  name: train/return
+  goal: maximize
+
+parameters:
+
+  algo:
+    values:
+    - mappo
+    
+  task: 
+    values: 
+    - Hover
+    - Track
+    - InvPendulumHover
+    - InvPendulumTrack
+    - InvPendulumFlyThrough
+    - PayloadHover
+    - PayloadTrack
+    - PayloadFlyThrough
+
+  total_frames: 
+    value: 125_500_000
+
+  headless:
+    value: true
+  
+  seed:
+    values: [0, 42, 81] #, 57]
+
+  task.drone_model:
+    values: [Firefly, Hummingbird, Omav]
+
+  algo.train_every:
+    value: 128
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args_no_hyphens}

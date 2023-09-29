@@ -1,0 +1,31 @@
+headless: false
+
+viewer:
+  eye: [7.5, 7.5, 7.5]
+  lookat: [0., 0., 0.]
+
+wandb:
+  group: ${oc.select:..task.name}
+  run_name: ${oc.select:..task.name,test}
+  job_type: train
+  entity: marl-drones
+  project: gpu-onpolicy
+  mode: online # set to 'disabled' when debugging locally
+  run_id: 
+  run_path:
+  monitor_gym: True
+  log_code: True
+  tags: 
+
+sim:
+  device: cpu
+  use_flatcache: false
+  use_gpu_pipeline: false
+  
+  use_gpu: false
+
+defaults:
+  - env_base
+  - sim_base
+  - algo: mappo
+  - _self_

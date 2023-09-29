@@ -25,6 +25,8 @@ extensions = [
     'sphinx.ext.autodoc',
     "sphinx.ext.autosummary",
     "sphinx.ext.autosectionlabel",
+    "sphinx_copybutton",
+    "sphinx_design",
     'myst_parser',
 ]
 

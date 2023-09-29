@@ -322,7 +322,7 @@ class PlatformTrack(IsaacEnv):
         self.up_alignment = torch.sum(self.platform.up * target_up, dim=-1)
 
         self.stats["pos_error"].lerp_(self.target_distance, (1-self.alpha))
-        self.stats["heading_alignment"].lerp_(self.heading_alignment, (1-self.alpha))
+        self.stats["heading_alignment"].lerp_(self.up_alignment, (1-self.alpha))
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference.mean(-1, True), (1-self.alpha))
 
         return TensorDict({

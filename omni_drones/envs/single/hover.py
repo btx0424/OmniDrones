@@ -33,7 +33,7 @@ from omni_drones.views import ArticulationView, RigidPrimView
 from omni_drones.utils.torch import euler_to_quaternion, quat_axis
 
 from tensordict.tensordict import TensorDict, TensorDictBase
-from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec
+from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec, DiscreteTensorSpec
 
 
 def attach_payload(parent_path):
@@ -222,6 +222,9 @@ class Hover(IsaacEnv):
             "agents": CompositeSpec({
                 "reward": UnboundedContinuousTensorSpec((1, 1))
             })
+        }).expand(self.num_envs).to(self.device)
+        self.done_spec = CompositeSpec({
+            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
         }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,

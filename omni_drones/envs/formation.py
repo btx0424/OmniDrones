@@ -33,7 +33,7 @@ from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv, List, Optional
 from omni_drones.utils.torch import cpos, off_diag, others, make_cells, euler_to_quaternion
 from omni_drones.robots.drone import MultirotorBase
 from tensordict.tensordict import TensorDict, TensorDictBase
-from torchrl.data import CompositeSpec, UnboundedContinuousTensorSpec
+from torchrl.data import CompositeSpec, UnboundedContinuousTensorSpec, DiscreteTensorSpec
 
 REGULAR_HEXAGON = [
     [0, 0, 0],
@@ -148,6 +148,9 @@ class Formation(IsaacEnv):
             "agents": {
                 "reward": UnboundedContinuousTensorSpec((self.drone.n, 1))
             }
+        }).expand(self.num_envs).to(self.device)
+        self.done_spec = CompositeSpec({
+            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
         }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone",

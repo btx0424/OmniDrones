@@ -43,7 +43,24 @@ from torchrl.envs import EnvBase
 from omni_drones.robots.robot import RobotBase
 from omni_drones.utils.torchrl import AgentSpec
 
+from omni.isaac.debug_draw import _debug_draw
 
+class DebugDraw:
+    def __init__(self):
+        self._draw = _debug_draw.acquire_debug_draw_interface()
+    
+    def clear(self):
+        self._draw.clear_lines()
+
+    def plot(self, x: torch.Tensor, size=2.0, color=(1., 1., 1., 1.)):
+        x = x.cpu()
+        point_list_0 = x[:-1].tolist()
+        point_list_1 = x[1:].tolist()
+        sizes = [size] * len(point_list_0)
+        colors = [color] * len(point_list_0)
+        self._draw.draw_lines(point_list_0, point_list_1, colors, sizes)
+        
+        
 class IsaacEnv(EnvBase):
 
     env_ns = "/World/envs"
@@ -138,6 +155,7 @@ class IsaacEnv(EnvBase):
             global_paths=global_prim_paths,
         )
         self.sim.reset()
+        self.debug_draw = DebugDraw()
 
         self._tensordict = TensorDict(
             {

@@ -33,7 +33,7 @@ from omni.isaac.debug_draw import _debug_draw
 import omni_drones.utils.kit as kit_utils
 
 from tensordict.tensordict import TensorDict, TensorDictBase
-from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec
+from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec, DiscreteTensorSpec
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.views import RigidPrimView
@@ -218,6 +218,9 @@ class PlatformTrack(IsaacEnv):
             "agents": {
                 "reward": UnboundedContinuousTensorSpec((self.drone.n, 1))
             }
+        }).expand(self.num_envs).to(self.device)
+        self.done_spec = CompositeSpec({
+            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
         }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", self.drone.n,

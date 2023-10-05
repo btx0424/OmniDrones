@@ -82,11 +82,12 @@ class Hover(IsaacEnv):
     - `spin`: Reward computed from the spin of the drone to discourage spinning.
     - `effort`: Reward computed from the effort of the drone to optimize the
       energy consumption.
+    - `action_smoothness`: Reward that encourages smoother drone actions, computed based on the throttle difference of the drone.
 
     The total reward is computed as follows:
 
     ```{math}
-        r = r_\text{pos} + r_\text{pos} * (r_\text{up} + r_\text{heading})
+        r = r_\text{pos} + r_\text{pos} * (r_\text{up} + r_\text{spin}) + r_\text{effort} + r_\text{action_smoothness}
     ```
         
     ## Episode End
@@ -103,10 +104,10 @@ class Hover(IsaacEnv):
 
     | Parameter               | Type  | Default   | Description |
     |-------------------------|-------|-----------|-------------|
-    | `drone_model`           | str   | "firefly" |             |
-    | `reward_distance_scale` | float | 1.2       |             |
-    | `time_encoding`         | bool  | True      |             |
-    | `has_payload`           | bool  | False     |             |
+    | `drone_model`           | str   | "firefly" | Specifies the model of the drone being used in the environment. |
+    | `reward_distance_scale` | float | 1.2       | Scales the reward based on the distance (both in position and heading) between the drone and its target. |
+    | `time_encoding`         | bool  | True      | Indicates whether to include time encoding in the observation space. If set to True, a 4-dimensional vector encoding the current progress of the episode is included in the observation. If set to False, this feature is not included. |
+    | `has_payload`           | bool  | False     | Indicates whether the drone has a payload attached. If set to True, it means that a payload is attached; otherwise, if set to False, no payload is attached. |
 
 
     """

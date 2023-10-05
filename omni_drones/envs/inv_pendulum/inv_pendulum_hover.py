@@ -73,9 +73,10 @@ class InvPendulumHover(IsaacEnv):
 
     ## Episode End
     The episode ends when the bar falls beyond a certain angle, or when the
-    drone gets too close to the ground, or when the maximum episode length
+    drone gets too close to the ground, or when the distance between the payload 
+    and the target exceeds a threshold, or when the maximum episode length
     is reached.
-
+    
     ## Config
     - `bar_length`: The length of the pendulum's bar (or pole).
 

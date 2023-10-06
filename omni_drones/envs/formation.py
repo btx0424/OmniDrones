@@ -150,7 +150,9 @@ class Formation(IsaacEnv):
             }
         }).expand(self.num_envs).to(self.device)
         self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
+            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
+            "terminated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
+            "truncated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
         }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone",
@@ -265,10 +267,10 @@ class Formation(IsaacEnv):
         self.last_cost_h[:] = cost_h
         self.last_cost_pos[:] = torch.square(distance)
 
-        terminated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
+        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
         crash = (pos[..., 2] < 0.2).any(-1, keepdim=True)
 
-        done = terminated | crash | (separation<0.23)
+        terminated = crash | (separation<0.23)
 
         self.stats["return"].add_(reward)
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(-1)
@@ -281,7 +283,9 @@ class Formation(IsaacEnv):
                 "agents": {
                     "reward": reward.unsqueeze(1).expand(-1, self.drone.n, 1)
                 },
-                "done": done,
+                "done": terminated | truncated,
+                "terminated": terminated,
+                "truncated": truncated,
             },
             self.batch_size,
         )

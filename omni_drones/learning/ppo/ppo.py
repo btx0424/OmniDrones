@@ -34,6 +34,7 @@ from tensordict.nn import TensorDictModule, TensorDictSequential
 
 from hydra.core.config_store import ConfigStore
 from dataclasses import dataclass
+import einops
 
 from ..utils.valuenorm import ValueNorm1
 from ..modules.distributions import IndependentNormal
@@ -171,10 +172,10 @@ class PPOPolicy:
         with torch.no_grad():
             next_values = self.critic(next_tensordict)["state_value"]
         rewards = tensordict[("next", "agents", "reward")]
-        dones = (
-            tensordict[("next", "done")]
-            .expand(-1, -1, self.n_agents)
-            .unsqueeze(-1)
+        dones = einops.repeat(
+            tensordict[("next", "done")],
+            "t e 1 -> t e a 1", 
+            a=self.n_agents
         )
         values = tensordict["state_value"]
         values = self.value_norm.denormalize(values)

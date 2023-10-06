@@ -55,7 +55,7 @@ To verify the installation, run
 
 .. code-block:: bash
     
-    cd scripts_adaptation
+    cd scripts
     python train.py algo=ppo headless=true
 
 

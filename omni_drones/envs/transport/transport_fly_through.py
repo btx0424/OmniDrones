@@ -181,7 +181,7 @@ class TransportFlyThrough(IsaacEnv):
         self.observation_spec = CompositeSpec({
             "agents": {
                 "observation": observation_spec.expand(self.drone.n),
-                "state": state_spec,
+                "observation_central": state_spec,
             }
         }).expand(self.num_envs).to(self.device)
         self.action_spec = CompositeSpec({

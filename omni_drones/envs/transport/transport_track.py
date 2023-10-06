@@ -179,12 +179,12 @@ class TransportTrack(IsaacEnv):
         self.observation_spec = CompositeSpec({
             "agents": {
                 "observation": observation_spec.expand(self.drone.n),
-                "state": state_spec,
+                "observation_central": state_spec,
             }
         }).expand(self.num_envs).to(self.device)
         self.action_spec = CompositeSpec({
             "agents": {
-                "action": self.drone.action_spec.expand(self.drone.n),
+                "action": torch.stack([self.drone.action_spec] * self.drone.n, dim=0),
             }
         }).expand(self.num_envs).to(self.device)
         self.reward_spec = CompositeSpec({

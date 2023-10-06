@@ -30,9 +30,6 @@ from torchrl.data import (
     DiscreteTensorSpec
 )
 
-import omni.isaac.core.utils.torch as torch_utils
-import omni.isaac.core.utils.prims as prim_utils
-import omni.physx.scripts.utils as script_utils
 import omni.isaac.core.objects as objects
 from omni.isaac.debug_draw import _debug_draw
 
@@ -85,7 +82,6 @@ class InvPendulumFlyThrough(IsaacEnv):
     """
     def __init__(self, cfg, headless):
         self.reward_effort_weight = cfg.task.reward_effort_weight
-        self.reward_action_smoothness_weight = cfg.task.reward_action_smoothness_weight
         self.reward_distance_scale = cfg.task.reward_distance_scale
         self.reset_on_collision = cfg.task.reset_on_collision
         self.time_encoding = cfg.task.time_encoding
@@ -110,6 +106,12 @@ class InvPendulumFlyThrough(IsaacEnv):
             f"/World/envs/env_*/{self.drone.name}_*/bar",
         )
         self.bar.initialize()
+
+        self.payload_target_vis = RigidPrimView(
+            "/World/envs/env_*/target",
+            reset_xform_properties=False
+        )
+        self.payload_target_vis.initialize()
 
         self.init_vels = torch.zeros_like(self.drone.get_velocities())
         self.init_joint_pos = self.drone.get_joint_positions(True)
@@ -209,7 +211,9 @@ class InvPendulumFlyThrough(IsaacEnv):
             })
         }).expand(self.num_envs).to(self.device)
         self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
+            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
+            "terminated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
+            "truncated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
         }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,
@@ -319,8 +323,8 @@ class InvPendulumFlyThrough(IsaacEnv):
     def _compute_reward_and_done(self):
         pos, rot, vels = self.drone_state[..., :13].split([3, 4, 6], dim=-1)
         
-        # pos_reward = 1.0 / (1.0 + torch.square(self.reward_distance_scale * distance))
-        pos_reward = torch.exp(-self.reward_distance_scale * self.pos_error)
+        # reward_pos = 1.0 / (1.0 + torch.square(self.reward_distance_scale * distance))
+        reward_pos = 1 / (1 + self.reward_distance_scale * self.pos_error)
 
         bar_reward_up = normalize(-self.drone_payload_rpos)[..., 2]
 
@@ -331,6 +335,8 @@ class InvPendulumFlyThrough(IsaacEnv):
 
         swing = torch.norm(self.payload_vels[..., :3], dim=-1, keepdim=True)
         reward_swing = 1. * torch.exp(-swing)
+
+        success = self.pos_error < 0.2
 
         collision = (
             self.obstacles
@@ -343,29 +349,27 @@ class InvPendulumFlyThrough(IsaacEnv):
         self.stats["collision"].add_(collision_reward)
         assert bar_reward_up.shape == reward_spin.shape == reward_swing.shape
         reward = (
-            pos_reward
-            + pos_reward * (bar_reward_up + reward_spin + reward_swing) 
+            reward_pos
+            + reward_pos * (bar_reward_up + reward_spin + reward_swing) 
+            # + success.float()
             + reward_effort
         ) * (1 - collision_reward)
         
-        done_misbehave = (
+        misbehave = (
             (pos[..., 2] < 0.2) 
             | (pos[..., 1].abs() > 2.)
-            | (bar_reward_up < 0.2) 
+            | (bar_reward_up < 0.1) 
             | (self.payload_pos[:, 2] > 3.).unsqueeze(-1)
         )
-        done_hasnan = torch.isnan(self.drone_state).any(-1)
+        hasnan = torch.isnan(self.drone_state).any(-1)
 
-        done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-            | done_misbehave
-            | done_hasnan
-        ) 
+        terminated = misbehave | hasnan
+        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
         if self.reset_on_collision:
-            done |= collision
+            terminated |= collision
 
-        self.stats["success"].bitwise_or_(self.pos_error < 0.2)
+        self.stats["success"].bitwise_or_(success)
         self.stats["return"].add_(reward)
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(-1)
         
@@ -374,7 +378,9 @@ class InvPendulumFlyThrough(IsaacEnv):
                 "agents": {
                     "reward": reward.unsqueeze(-1)
                 },
-                "done": done,
+                "done": terminated | truncated,
+                "terminated": terminated,
+                "truncated": truncated,
             },
             self.batch_size,
         )

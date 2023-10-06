@@ -336,22 +336,21 @@ class PayloadFlyThrough(IsaacEnv):
             + reward_effort
         ) * (1 - collision_reward)
         
-        done_misbehave = (
+        misbehave = (
             (self.drone.pos[..., 2] < 0.2) 
             | (self.drone.pos[..., 2] > 2.5)
             | (self.drone.pos[..., 1].abs() > 2.)
             | (self.payload_pos[..., 2] < 0.15).unsqueeze(1)
         )
-        done_hasnan = torch.isnan(self.drone_state).any(-1)
+        hasnan = torch.isnan(self.drone_state).any(-1)
 
-        done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-            | done_misbehave
-            | done_hasnan
-        )
+        terminated = misbehave | hasnan
+        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
         
         if self.reset_on_collision:
-            done = done | collision
+            terminated = terminated | collision
+
+        done = terminated | truncated
         
         self.stats["success"].bitwise_or_(self.payload_pos_error < 0.2)
         self.stats["return"].add_(reward)
@@ -363,6 +362,8 @@ class PayloadFlyThrough(IsaacEnv):
                     "reward": reward.unsqueeze(-1)
                 },
                 "done": done,
+                "terminated": terminated,
+                "truncated": truncated,
             },
             self.batch_size,
         )

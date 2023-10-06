@@ -15,7 +15,7 @@ Single-Agent Tasks
         :scale: 50%
 
 
-.. grid:: 2
+.. grid:: 3
 
     .. grid-item-card::  :ref:`InvPendulumHover`
       
@@ -27,6 +27,10 @@ Single-Agent Tasks
       .. image:: ../_static/tasks/InvPendulumTrack.gif
         :scale: 50%
 
+    .. grid-item-card::  :ref:`InvPendulumFlyThrough`
+
+      .. image:: ../_static/tasks/InvPendulumFlyThrough.gif
+        :scale: 50%
 
 .. grid:: 2
 
@@ -46,7 +50,8 @@ Single-Agent Tasks
 
     single/Hover
     single/Track
-    single/InvPendulumHover
-    single/InvPendulumTrack
     single/PayloadTrack
     single/PayloadFlyThrough
+    single/InvPendulumHover
+    single/InvPendulumTrack
+    single/InvPendulumFlyThrough

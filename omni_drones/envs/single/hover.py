@@ -225,7 +225,9 @@ class Hover(IsaacEnv):
             })
         }).expand(self.num_envs).to(self.device)
         self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
+            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
+            "terminated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
+            "truncated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
         }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,
@@ -341,12 +343,8 @@ class Hover(IsaacEnv):
             + reward_action_smoothness
         )
         
-        done_misbehave = (self.drone.pos[..., 2] < 0.2) | (distance > 4)
-
-        done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-            | done_misbehave
-        )
+        terminated = (self.drone.pos[..., 2] < 0.2) | (distance > 4)
+        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
         self.stats["pos_error"].lerp_(pos_error, (1-self.alpha))
         self.stats["heading_alignment"].lerp_(heading_alignment, (1-self.alpha))
@@ -360,7 +358,9 @@ class Hover(IsaacEnv):
                 "agents": {
                     "reward": reward.unsqueeze(-1)
                 },
-                "done": done,
+                "done": terminated | truncated,
+                "terminated": terminated,
+                "truncated": truncated
             },
             self.batch_size,
         )

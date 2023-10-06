@@ -30,3 +30,7 @@ and shape the action space properly.
 We provide some results of training with different controllers in three tasks
 with `Hummingbird`:
 
+.. image:: ../_static/controller.png
+   :width: 100%
+   :align: center
+

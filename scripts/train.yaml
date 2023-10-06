@@ -1,0 +1,37 @@
+# hydra.job.chdir: false
+hydra:
+  searchpath:
+  # see https://hydra.cc/docs/advanced/search_path/
+   - file://../cfg
+
+headless: true
+
+sim: ${task.sim}
+env: ${task.env}
+
+total_frames: 150_000_000
+max_iters: -1
+eval_interval: -1
+save_interval: -1
+seed: 0
+
+viewer:
+  resolution: [960, 720]
+  eye: [8, 0., 6.]
+  lookat: [0., 0., 1.]
+
+wandb:
+  group: ${oc.select:..task.name}
+  run_name: ${oc.select:..task.name,test}-${oc.select:..algo.name,none}
+  job_type: train
+  entity: marl-drones
+  project: omnidrones
+  mode: online # set to 'disabled' when debugging locally
+  run_id: 
+  monitor_gym: True
+  tags: 
+
+defaults:
+  - task: Hover
+  - algo: ppo
+  - _self_

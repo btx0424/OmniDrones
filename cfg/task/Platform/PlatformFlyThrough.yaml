@@ -20,6 +20,6 @@ obstacle_spacing: 1.
 reset_on_collision: false
 
 ravel_obs: true
-flatten_state: true
+ravel_obs_central: true
 
 action_transform: null

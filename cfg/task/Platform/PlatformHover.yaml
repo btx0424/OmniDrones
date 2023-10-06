@@ -21,6 +21,6 @@ arm_length: 0.85
 joint_damping: 0.002
 
 ravel_obs: true
-flatten_state: true
+ravel_obs_central: true
 
 action_transform: null

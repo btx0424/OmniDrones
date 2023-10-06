@@ -24,7 +24,7 @@ from omni_drones.utils.torchrl.transforms import (
     History
 )
 from omni_drones.utils.wandb import init_wandb
-from omni_drones.learning import PPORNNPolicy, PPOPolicy, MAPPOPolicy
+from omni_drones.learning.ppo import PPORNNPolicy, PPOPolicy, MAPPOPolicy
 
 from setproctitle import setproctitle
 from torchrl.envs.transforms import (
@@ -77,8 +77,9 @@ class EpisodeStats:
     def __len__(self):
         return len(self._stats)
 
+FILE_PATH = os.path.dirname(__file__)
 
-@hydra.main(config_path=CONFIG_PATH, config_name="train", version_base=None)
+@hydra.main(config_path=FILE_PATH, config_name="train", version_base=None)
 def main(cfg):
     OmegaConf.register_new_resolver("eval", eval)
     OmegaConf.resolve(cfg)
@@ -92,7 +93,7 @@ def main(cfg):
     algos = {
         "ppo": PPOPolicy,
         "ppo_rnn": PPORNNPolicy,
-        "mappo": MA
+        "mappo": MAPPOPolicy
     }
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
     base_env = env_class(cfg, headless=cfg.headless)
@@ -100,11 +101,13 @@ def main(cfg):
     transforms = [InitTracker()]
 
     # a CompositeSpec is by deafault processed by a entity-based encoder
-    # flatten it to use a MLP encoder instead
-    if cfg.task.get("flatten_obs", False):
-        transforms.append(ravel_composite(base_env.observation_spec, ("agents", "observation")))
-    if cfg.task.get("flatten_state", False):
-        transforms.append(ravel_composite(base_env.observation_spec, "state"))
+    # ravel it to use a MLP encoder instead
+    if cfg.task.get("ravel_obs", False):
+        transform = ravel_composite(base_env.observation_spec, ("agents", "observation"))
+        transforms.append(transform)
+    if cfg.task.get("ravel_obs_central", False):
+        transform = ravel_composite(base_env.observation_spec, ("agents", "observation_central"))
+        transforms.append(transform)
     if (
         cfg.task.get("flatten_intrinsics", True)
         and ("agents", "intrinsics") in base_env.observation_spec.keys(True)

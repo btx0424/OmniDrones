@@ -112,11 +112,13 @@ def main(cfg):
     transforms = [InitTracker()]
 
     # a CompositeSpec is by deafault processed by a entity-based encoder
-    # flatten it to use a MLP encoder instead
-    if cfg.task.get("flatten_obs", False):
-        transforms.append(ravel_composite(base_env.observation_spec, ("agents", "observation")))
-    if cfg.task.get("flatten_central_obs", False):
-        transforms.append(ravel_composite(base_env.observation_spec, ("agents", "observation_central")))
+    # ravel it to use a MLP encoder instead
+    if cfg.task.get("ravel_obs", False):
+        transform = ravel_composite(base_env.observation_spec, ("agents", "observation"))
+        transforms.append(transform)
+    if cfg.task.get("ravel_central_obs", False):
+        transform = ravel_composite(base_env.observation_spec, ("agents", "observation_central"))
+        transforms.append(transform)
     if (
         cfg.task.get("flatten_intrinsics", True)
         and ("agents", "intrinsics") in base_env.observation_spec.keys(True)

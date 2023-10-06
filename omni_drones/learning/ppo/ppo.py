@@ -46,6 +46,7 @@ class PPOConfig:
     ppo_epochs: int = 4
     num_minibatches: int = 16
 
+    # whether to use privileged information
     priv_actor: bool = False
     priv_critic: bool = False
 

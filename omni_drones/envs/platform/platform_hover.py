@@ -28,7 +28,7 @@ import torch.distributions as D
 import omni.isaac.core.utils.torch as torch_utils
 import omni.isaac.core.utils.prims as prim_utils
 from tensordict.tensordict import TensorDict, TensorDictBase
-from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec
+from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec, DiscreteTensorSpec
 
 import omni_drones.utils.kit as kit_utils
 
@@ -192,6 +192,9 @@ class PlatformHover(IsaacEnv):
             "agents": {
                 "reward": UnboundedContinuousTensorSpec((self.drone.n, 1))
             }
+        }).expand(self.num_envs).to(self.device)
+        self.done_spec = CompositeSpec({
+            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
         }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", self.drone.n,

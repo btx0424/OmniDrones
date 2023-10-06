@@ -34,6 +34,7 @@ from tensordict.nn import TensorDictModule, TensorDictSequential
 
 from hydra.core.config_store import ConfigStore
 from dataclasses import dataclass
+import logging
 
 from ..utils.valuenorm import ValueNorm1
 from ..modules.distributions import IndependentNormal
@@ -41,19 +42,15 @@ from .common import GAE
 
 @dataclass
 class PPOConfig:
-    name: str = "ppo"
+    name: str = "mappo"
     train_every: int = 32
     ppo_epochs: int = 4
     num_minibatches: int = 16
 
-    # whether to use privileged information
-    priv_actor: bool = False
-    priv_critic: bool = False
+    share_actor: bool = True
 
 cs = ConfigStore.instance()
-cs.store("ppo", node=PPOConfig, group="algo")
-cs.store("ppo_priv", node=PPOConfig(priv_actor=True, priv_critic=True), group="algo")
-cs.store("ppo_priv_critic", node=PPOConfig(priv_critic=True), group="algo")
+cs.store("mappo", node=PPOConfig, group="algo")
 
 
 def make_mlp(num_units):
@@ -77,7 +74,7 @@ class Actor(nn.Module):
         return loc, scale
 
 
-class PPOPolicy:
+class MAPPOPolicy:
 
     def __init__(
         self, 
@@ -98,25 +95,13 @@ class PPOPolicy:
 
         fake_input = observation_spec.zero()
         
-        if self.cfg.priv_actor:
-            intrinsics_dim = observation_spec[("agents", "intrinsics")].shape[-1]
-            actor_module = TensorDictSequential(
-                TensorDictModule(make_mlp([128, 128]), [("agents", "observation")], ["feature"]),
-                TensorDictModule(
-                    nn.Sequential(nn.LayerNorm(intrinsics_dim), make_mlp([64, 64])), 
-                    [("agents", "intrinsics")], ["context"]
-                ),
-                CatTensors(["feature", "context"], "feature"),
-                TensorDictModule(
-                    nn.Sequential(make_mlp([256, 256]), Actor(self.action_dim)), 
-                    ["feature"], ["loc", "scale"]
-                )
-            )
-        else:
+        if cfg.share_actor:
             actor_module=TensorDictModule(
                 nn.Sequential(make_mlp([256, 256, 256]), Actor(self.action_dim)),
                 [("agents", "observation")], ["loc", "scale"]
             )
+        else:
+            ...
         self.actor: ProbabilisticActor = ProbabilisticActor(
             module=actor_module,
             in_keys=["loc", "scale"],
@@ -125,25 +110,15 @@ class PPOPolicy:
             return_log_prob=True
         ).to(self.device)
 
-        if self.cfg.priv_critic:
-            intrinsics_dim = observation_spec[("agents", "intrinsics")].shape[-1]
-            self.critic = TensorDictSequential(
-                TensorDictModule(make_mlp([128, 128]), [("agents", "observation")], ["feature"]),
-                TensorDictModule(
-                    nn.Sequential(nn.LayerNorm(intrinsics_dim), make_mlp([64, 64])), 
-                    [("agents", "intrinsics")], ["context"]
-                ),
-                CatTensors(["feature", "context"], "feature"),
-                TensorDictModule(
-                    nn.Sequential(make_mlp([256, 256]), nn.LazyLinear(1)),
-                    ["feature"], ["state_value"]
-                )
-            ).to(self.device)
+        if ("agents", "observation_central") in observation_spec.keys(True):
+            critic_input = [("agents", "observation_central")]
         else:
-            self.critic = TensorDictModule(
-                nn.Sequential(make_mlp([256, 256, 256]), nn.LazyLinear(1)),
-                [("agents", "observation")], ["state_value"]
-            ).to(self.device)
+            logging.warning("No central observation found, using local observation for critic.")
+            critic_input = [("agents", "observation")]
+        self.critic = TensorDictModule(
+            nn.Sequential(make_mlp([256, 256, 256]), nn.LazyLinear(1)),
+            critic_input, ["state_value"]
+        ).to(self.device)
 
         self.actor(fake_input)
         self.critic(fake_input)

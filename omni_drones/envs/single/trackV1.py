@@ -209,6 +209,15 @@ class TrackV1(IsaacEnv):
             .expand(self.num_envs)
             .to(self.device)
         )
+        self.done_spec = (
+            CompositeSpec(
+                {
+                    "done": BinaryDiscreteTensorSpec(1, dtype=bool),
+                    "terminated": BinaryDiscreteTensorSpec(1, dtype=bool),
+                    "truncated": BinaryDiscreteTensorSpec(1, dtype=bool),
+                }
+            )
+        )
         self.agent_spec["drone"] = AgentSpec(
             "drone",
             1,
@@ -410,7 +419,7 @@ class TrackV1(IsaacEnv):
         )
 
         truncated = (self.progress_buf >= self.max_episode_length - 1).unsqueeze(-1)
-        done = (self.drone.pos[..., 2] < 0.1) | (pos_error > self.reset_thres)
+        terminated = (self.drone.pos[..., 2] < 0.1) | (pos_error > self.reset_thres)
 
         self.stats["action_smoothness"].lerp_(
             -self.drone.throttle_difference, (1 - self.alpha)
@@ -427,7 +436,8 @@ class TrackV1(IsaacEnv):
                 "agents": {
                     "reward": reward.unsqueeze(-1),
                 },
-                "done": done,
+                "done": terminated | truncated,
+                "terminated": terminated,
                 "truncated": truncated,
             },
             self.batch_size,

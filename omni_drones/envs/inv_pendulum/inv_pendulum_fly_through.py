@@ -27,7 +27,7 @@ from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import (
     UnboundedContinuousTensorSpec, 
     CompositeSpec, 
-    BinaryDiscreteTensorSpec
+    DiscreteTensorSpec
 )
 
 import omni.isaac.core.utils.torch as torch_utils
@@ -208,7 +208,9 @@ class InvPendulumFlyThrough(IsaacEnv):
                 "reward": UnboundedContinuousTensorSpec((1, 1))
             })
         }).expand(self.num_envs).to(self.device)
-
+        self.done_spec = CompositeSpec({
+            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
+        }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,
             observation_key=("agents", "observation"),
@@ -220,7 +222,7 @@ class InvPendulumFlyThrough(IsaacEnv):
             "episode_len": UnboundedContinuousTensorSpec(1),
             "pos_error": UnboundedContinuousTensorSpec(1),
             "collision": UnboundedContinuousTensorSpec(1),
-            "success": BinaryDiscreteTensorSpec(1, dtype=bool),
+            "success": DiscreteTensorSpec(2, (1,), dtype=bool),
             "action_smoothness": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec

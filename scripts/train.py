@@ -24,7 +24,7 @@ from omni_drones.utils.torchrl.transforms import (
     History
 )
 from omni_drones.utils.wandb import init_wandb
-from omni_drones.learning import PPORNNPolicy, PPOPolicy
+from omni_drones.learning import PPORNNPolicy, PPOPolicy, MAPPOPolicy
 
 from setproctitle import setproctitle
 from torchrl.envs.transforms import (
@@ -92,6 +92,7 @@ def main(cfg):
     algos = {
         "ppo": PPOPolicy,
         "ppo_rnn": PPORNNPolicy,
+        "mappo": MA
     }
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
     base_env = env_class(cfg, headless=cfg.headless)

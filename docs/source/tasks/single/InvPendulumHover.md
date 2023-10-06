@@ -24,19 +24,30 @@ Reward
 energy consumption.
 - `spin`: Reward computed from the spin of the drone to discourage spinning.
 - `swing`: Reward computed from the swing of the payload to discourage swinging.
+- `action_smoothness`: Reward that encourages smoother drone actions, computed based on the throttle difference of the drone.
 
 The total reward is
 
 ```{math}
-r = r_\text{bar_up} + r_\text{pos} + r_\text{bar_up} * (r_\text{spin} + r_\text{swing}) + r_\text{effort}
+r = r_\text{bar_up} + r_\text{pos} + r_\text{bar_up} * (r_\text{spin} + r_\text{swing}) + r_\text{effort} + r_\text{action_smoothness}
 ```
 
 ## Episode End
 The episode ends when the bar falls beyond a certain angle, or when the
-drone gets too close to the ground, or when the maximum episode length
+drone gets too close to the ground, or when the distance between the payload
+and the target exceeds a threshold, or when the maximum episode length
 is reached.
 
 ## Config
 - `bar_length`: The length of the pendulum's bar (or pole).
+
+## Config
+
+| Parameter               | Type  | Default       | Description |
+|-------------------------|-------|---------------|-------------|
+| `drone_model`           | str   | "hummingbird" | Specifies the model of the drone being used in the environment. |
+| `bar_length`            | float | 1.0           | Length of the pendulum's bar. |
+| `reward_distance_scale` | float | 1.2           | Scales the reward based on `target_payload_rpos`. |
+| `time_encoding`         | bool  | True          | Indicates whether to include time encoding in the observation space. If set to True, a 4-dimensional vector encoding the current progress of the episode is included in the observation. If set to False, this feature is not included. |
 
 

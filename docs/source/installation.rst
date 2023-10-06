@@ -34,6 +34,31 @@ Although Isaac Sim comes with a built-in Python environment, we recommend using 
     python -c "import torch; print(torch.__path__)"
 
 
+The next step is to install `TensorDict <https://github.com/pytorch/rl>`__ and `TorchRL <https://github.com/btx0424/tensordict/tree/main>`__. 
+
+.. note::
+
+    Since TensorDict and TorchRL are still under active development are subject to 
+    changes frequently, we recommend installing them by cloning the repositories 
+    and installing them in editable mode (via ``python setup.py develop``). 
+
+
+Finally, install **OmniDrones** in editable mode (which automatically installs other 
+required dependencies):
+
+.. code-block:: bash
+
+    # at OmniDrones/
+    pip install -e .
+
+To verify the installation, run
+
+.. code-block:: bash
+    
+    cd scripts_adaptation
+    python train.py algo=ppo headless=true
+
+
 Developer Guide: Working with VSCode
 ------------------------------------
 

@@ -56,7 +56,10 @@ To verify the installation, run
 .. code-block:: bash
     
     cd scripts
-    python train.py algo=ppo headless=true
+    python train.py algo=ppo headless=true wandb.entity=YOUR_WANDB_ENTITY
+
+In general, YOUR_WANDB_ENTITY is your wandb ID.
+If you don't want to add arguments every time, edit ``scripts/train.yaml``
 
 
 Developer Guide: Working with VSCode

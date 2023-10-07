@@ -217,6 +217,8 @@ class TrackV1(IsaacEnv):
                     "truncated": BinaryDiscreteTensorSpec(1, dtype=bool),
                 }
             )
+            .expand(self.num_envs)
+            .to(self.device)
         )
         self.agent_spec["drone"] = AgentSpec(
             "drone",

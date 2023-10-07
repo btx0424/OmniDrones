@@ -12,6 +12,8 @@ setup(
         "moviepy",
         "imageio",
         "plotly",
+        "pandas",
+        "einops",
         # "torchinfo",
         # "torchopt"
     ],

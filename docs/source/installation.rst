@@ -34,7 +34,7 @@ Although Isaac Sim comes with a built-in Python environment, we recommend using 
     python -c "import torch; print(torch.__path__)"
 
 
-The next step is to install `TensorDict <https://github.com/pytorch/rl>`__ and `TorchRL <https://github.com/btx0424/tensordict/tree/main>`__. 
+The next step is to install `TensorDict <https://github.com/btx0424/tensordict/tree/main>`__ and `TorchRL <https://github.com/pytorch/rl>`__.
 
 .. note::
 

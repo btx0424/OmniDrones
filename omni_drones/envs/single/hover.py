@@ -105,7 +105,7 @@ class Hover(IsaacEnv):
     | Parameter               | Type  | Default   | Description |
     |-------------------------|-------|-----------|-------------|
     | `drone_model`           | str   | "firefly" | Specifies the model of the drone being used in the environment. |
-    | `reward_distance_scale` | float | 1.2       | Scales the reward based on the distance (both in position and heading) between the drone and its target. |
+    | `reward_distance_scale` | float | 1.2       | Scales the reward based on the distance between the drone and its target. |
     | `time_encoding`         | bool  | True      | Indicates whether to include time encoding in the observation space. If set to True, a 4-dimensional vector encoding the current progress of the episode is included in the observation. If set to False, this feature is not included. |
     | `has_payload`           | bool  | False     | Indicates whether the drone has a payload attached. If set to True, it means that a payload is attached; otherwise, if set to False, no payload is attached. |
 

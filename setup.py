@@ -13,7 +13,8 @@ setup(
         "imageio",
         "plotly",
         "einops"
-        "av",
+        "av", # for moviepy
+        "pandas",
         # install by cloning from github
         # "tensordict" 
         # "torchrl",

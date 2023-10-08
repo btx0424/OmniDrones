@@ -6,37 +6,33 @@ from functorch import vmap
 
 import hydra
 from omegaconf import OmegaConf
-from omni_drones import CONFIG_PATH, init_simulation_app
+from omni_drones import init_simulation_app
 from tensordict import TensorDict
 
 
-@hydra.main(version_base=None, config_path=CONFIG_PATH, config_name="config")
+@hydra.main(version_base=None, config_path=".", config_name="demo")
 def main(cfg):
     OmegaConf.resolve(cfg)
     simulation_app = init_simulation_app(cfg)
     print(OmegaConf.to_yaml(cfg))
 
-    import omni.isaac.core.utils.prims as prim_utils
-    import omni_drones.utils.kit as kit_utils
     import omni_drones.utils.scene as scene_utils
     from omni.isaac.core.simulation_context import SimulationContext
     from omni_drones.controllers import LeePositionController
-    from omni_drones.robots import RobotCfg
-    from omni_drones.robots.drone import Crazyflie, Firefly, Hummingbird, MultirotorBase
+    from omni_drones.robots.drone import MultirotorBase
     from omni_drones.sensors.camera import Camera, PinholeCameraCfg
 
     sim = SimulationContext(
         stage_units_in_meters=1.0,
-        physics_dt=0.01,
-        rendering_dt=0.01,
+        physics_dt=cfg.sim.dt,
+        rendering_dt=cfg.sim.dt,
         sim_params=cfg.sim,
         backend="torch",
         device=cfg.sim.device,
     )
     n = 4
 
-    drone_cfg = Firefly.cfg_cls()
-    drone = Firefly(cfg=drone_cfg)
+    drone: MultirotorBase = MultirotorBase.REGISTRY[cfg.drone_model]()
 
     translations = torch.tensor([
         [0, -1, 1.5],
@@ -61,7 +57,7 @@ def main(cfg):
     camera = Camera(camera_cfg)
     camera.spawn(
         ["/World/Camera"],
-        translations=[(8, 2., 2.)],
+        translations=[(8, 2., 3.)],
         targets=[(0., 0., 1.75)]
     )
 
@@ -73,10 +69,10 @@ def main(cfg):
         g=9.81, uav_params=drone.params
     ).to(sim.device)
 
-    control_target = torch.zeros(n, 7, device=sim.device)
-    control_target[:, 0] = 0
-    control_target[:, 1] = translations[:, 1]
-    control_target[:, 2] = translations[:, 2]
+    target_pos = torch.zeros(n, 3, device=sim.device)
+    target_pos[:, 0] = 0
+    target_pos[:, 1] = translations[:, 1]
+    target_pos[:, 2] = translations[:, 2]
     action = drone.action_spec.zero((n,))
     
     
@@ -89,10 +85,10 @@ def main(cfg):
         if not sim.is_playing():
             continue
         root_state = drone.get_state()[..., :13].squeeze(0)
-        distance = torch.norm(root_state[-1, :2] - control_target[-1, :2])
+        distance = torch.norm(root_state[-1, :2] - target_pos[-1, :2])
         if distance < 0.05:
-            control_target[-1, 1] = -control_target[-1, 1]
-        action = vmap(controller)(root_state, control_target)
+            target_pos[-1, 1] = -target_pos[-1, 1]
+        action = controller(root_state, target_pos=target_pos)
         drone.apply_action(action)
         sim.step(i % 2 == 0)
 
@@ -101,11 +97,13 @@ def main(cfg):
             frames.append(frame.cpu())
 
     from torchvision.io import write_video
+    import einops
 
     for k, v in torch.stack(frames).cpu().items():
         for i, vv in enumerate(v.unbind(1)):
             if vv.shape[1] == 4: # rgba
-                write_video(f"{k}_{i}.mp4", vv[:, :3].permute(0, 2, 3, 1), fps=50)
+                video_array = einops.rearrange(vv[:, :3], "b c h w -> b h w c")
+                write_video(f"downwash.mp4", video_array, fps=30)
 
     simulation_app.close()
 

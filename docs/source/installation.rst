@@ -1,7 +1,7 @@
 Workstation Installation
 ========================
 
-Follow the `Omniverse Isaac Sim documentation <https://docs.omniverse.nvidia.com/app_isaacsim/app_isaacsim/install_workstation.html>`_ to install the desired Isaac Sim release. 
+Follow the `Omniverse Isaac Sim documentation <https://docs.omniverse.nvidia.com/app_isaacsim/app_isaacsim/install_workstation.html>`_ to install the desired Isaac Sim release.
 
 Set the following environment variables to your ``~/.bashrc`` or ``~/.zshrc`` files:
 
@@ -12,10 +12,10 @@ Set the following environment variables to your ``~/.bashrc`` or ``~/.zshrc`` fi
 
 where ``*`` corresponds to the Isaac Sim version. Remember to run `source ~/.bashrc` before you proceed.
 
-Although Isaac Sim comes with a built-in Python environment, we recommend using a seperate conda environment which is more flexible. We provide scripts to automate environment setup when activating/deactivating a conda environment at ``OmniDrones/conda_setup``. 
+Although Isaac Sim comes with a built-in Python environment, we recommend using a seperate conda environment which is more flexible. We provide scripts to automate environment setup when activating/deactivating a conda environment at ``OmniDrones/conda_setup``.
 
 .. seealso::
-    
+
     `Managing Conda Environments <https://conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html#macos-and-linux>`_ .
 
 .. code-block:: bash
@@ -34,16 +34,16 @@ Although Isaac Sim comes with a built-in Python environment, we recommend using 
     python -c "import torch; print(torch.__path__)"
 
 
-The next step is to install `TensorDict <https://github.com/pytorch/rl>`__ and `TorchRL <https://github.com/btx0424/tensordict/tree/main>`__. 
+The next step is to install `TensorDict <https://github.com/btx0424/tensordict/tree/main>`__ and `TorchRL <https://github.com/pytorch/rl>`__.
 
 .. note::
 
-    Since TensorDict and TorchRL are still under active development are subject to 
-    changes frequently, we recommend installing them by cloning the repositories 
-    and installing them in editable mode (via ``python setup.py develop``). 
+    Since TensorDict and TorchRL are still under active development are subject to
+    changes frequently, we recommend installing them by cloning the repositories
+    and installing them in editable mode (via ``python setup.py develop``).
 
 
-Finally, install **OmniDrones** in editable mode (which automatically installs other 
+Finally, install **OmniDrones** in editable mode (which automatically installs other
 required dependencies):
 
 .. code-block:: bash
@@ -54,9 +54,12 @@ required dependencies):
 To verify the installation, run
 
 .. code-block:: bash
-    
+
     cd scripts
-    python train.py algo=ppo headless=true
+    python train.py algo=ppo headless=true wandb.entity=YOUR_WANDB_ENTITY
+
+In general, YOUR_WANDB_ENTITY is your wandb ID.
+If you don't want to add arguments every time, edit ``scripts/train.yaml``
 
 
 Developer Guide: Working with VSCode
@@ -67,7 +70,7 @@ To enable features like linting and auto-completion with VSCode Python Extension
 Create a file ``.vscode/settings.json`` at your workspace if it is not already there.
 
 After activating the conda environment, run
-   
+
 .. code:: console
 
     printenv > .vscode/.python.env

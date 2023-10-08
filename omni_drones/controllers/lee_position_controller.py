@@ -118,7 +118,8 @@ class LeePositionController(nn.Module):
         target_pos: torch.Tensor=None,
         target_vel: torch.Tensor=None,
         target_acc: torch.Tensor=None,
-        target_yaw: torch.Tensor=None
+        target_yaw: torch.Tensor=None,
+        body_rate: bool=False
     ):
         batch_shape = root_state.shape[:-1]
         device = root_state.device
@@ -146,13 +147,17 @@ class LeePositionController(nn.Module):
             target_pos.reshape(-1, 3),
             target_vel.reshape(-1, 3),
             target_acc.reshape(-1, 3),
-            target_yaw.reshape(-1, 1)
+            target_yaw.reshape(-1, 1),
+            body_rate
         )
 
         return cmd.reshape(*batch_shape, -1)
     
-    def _compute(self, root_state, target_pos, target_vel, target_acc, target_yaw):
+    def _compute(self, root_state, target_pos, target_vel, target_acc, target_yaw, body_rate):
         pos, rot, vel, ang_vel = torch.split(root_state, [3, 4, 3, 3], dim=-1)
+        if not body_rate:
+            # convert angular velocity from world frame to body frame
+            ang_vel = quat_rotate_inverse(rot, ang_vel)
         
         pos_error = pos - target_pos
         vel_error = vel - target_vel

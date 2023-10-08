@@ -12,7 +12,11 @@ setup(
         "moviepy",
         "imageio",
         "plotly",
-        # "torchinfo",
-        # "torchopt"
+        "einops"
+        "av", # for moviepy
+        "pandas",
+        # install by cloning from github
+        # "tensordict" 
+        # "torchrl",
     ],
 )

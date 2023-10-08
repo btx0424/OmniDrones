@@ -53,6 +53,8 @@ class DebugDraw:
         self._draw.clear_lines()
 
     def plot(self, x: torch.Tensor, size=2.0, color=(1., 1., 1., 1.)):
+        if not (x.ndim == 2) and (x.shape[1] == 3):
+            raise ValueError("x must be a tensor of shape (N, 3).")
         x = x.cpu()
         point_list_0 = x[:-1].tolist()
         point_list_1 = x[1:].tolist()
@@ -60,7 +62,16 @@ class DebugDraw:
         colors = [color] * len(point_list_0)
         self._draw.draw_lines(point_list_0, point_list_1, colors, sizes)
         
-        
+    def vector(self, x: torch.Tensor, v: torch.Tensor, size=2.0, color=(0., 1., 1., 1.)):
+        x = torch.atleast_2d(x.cpu())
+        v = torch.atleast_2d(v.cpu())
+        point_list_0 = x.tolist()
+        point_list_1 = (x + v).tolist()
+        sizes = [size] * len(point_list_0)
+        colors = [color] * len(point_list_0)
+        self._draw.draw_lines(point_list_0, point_list_1, colors, sizes)
+    
+
 class IsaacEnv(EnvBase):
 
     env_ns = "/World/envs"

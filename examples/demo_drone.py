@@ -5,7 +5,7 @@ from omegaconf import OmegaConf
 from omni_drones import CONFIG_PATH, init_simulation_app
 
 
-@hydra.main(version_base=None, config_path=CONFIG_PATH, config_name="train")
+@hydra.main(version_base=None, config_path=".", config_name="demo")
 def main(cfg):
     OmegaConf.resolve(cfg)
     simulation_app = init_simulation_app(cfg)
@@ -21,16 +21,15 @@ def main(cfg):
 
     sim = SimulationContext(
         stage_units_in_meters=1.0,
-        physics_dt=0.01,
-        rendering_dt=0.01,
+        physics_dt=cfg.sim.dt,
+        rendering_dt=cfg.sim.dt,
         sim_params=cfg.sim,
         backend="torch",
         device=cfg.sim.device,
     )
     n = 4
 
-    drone_model = "Hummingbird"
-    drone_cls = MultirotorBase.REGISTRY[drone_model]
+    drone_cls = MultirotorBase.REGISTRY[cfg.drone_model]
     drone = drone_cls()
 
     translations = torch.zeros(n, 3)
@@ -127,22 +126,22 @@ def main(cfg):
         for drone_id, arrays_drone in enumerate(arrays.unbind(1)):
             if image_type == "rgb":
                 arrays_drone = arrays_drone.permute(0, 2, 3, 1)[..., :3]
-                write_video(f"rgb_{drone_id}.mp4", arrays_drone, fps=1/cfg.sim.dt)
+                write_video(f"demo_rgb_{drone_id}.mp4", arrays_drone, fps=1/cfg.sim.dt)
             elif image_type == "distance_to_camera":
                 arrays_drone = -torch.nan_to_num(arrays_drone, 0).permute(0, 2, 3, 1)
                 arrays_drone = arrays_drone.expand(*arrays_drone.shape[:-1], 3)
-                write_video(f"depth_{drone_id}.mp4", arrays_drone, fps=1/cfg.sim.dt)
+                write_video(f"demo_depth_{drone_id}.mp4", arrays_drone, fps=0.5/cfg.sim.dt)
 
     for image_type, arrays in torch.stack(frames_vis).items():
         print(f"Writing {image_type} of shape {arrays.shape}.")
         for _, arrays_drone in enumerate(arrays.unbind(1)):
             if image_type == "rgb":
                 arrays_drone = arrays_drone.permute(0, 2, 3, 1)[..., :3]
-                write_video(f"rgb.mp4", arrays_drone, fps=1/cfg.sim.dt)
+                write_video(f"demo_rgb.mp4", arrays_drone, fps=1/cfg.sim.dt)
             elif image_type == "distance_to_camera":
                 arrays_drone = -torch.nan_to_num(arrays_drone, 0).permute(0, 2, 3, 1)
                 arrays_drone = arrays_drone.expand(*arrays_drone.shape[:-1], 3)
-                write_video(f"depth.mp4", arrays_drone, fps=1/cfg.sim.dt)
+                write_video(f"demo_depth.mp4", arrays_drone, fps=0.5/cfg.sim.dt)
 
     simulation_app.close()
 

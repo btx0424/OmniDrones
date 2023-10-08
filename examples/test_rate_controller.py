@@ -6,11 +6,11 @@ from functorch import vmap
 
 import hydra
 from omegaconf import OmegaConf
-from omni_drones import CONFIG_PATH, init_simulation_app
+from omni_drones import init_simulation_app
 from tensordict import TensorDict
 
 
-@hydra.main(version_base=None, config_path=CONFIG_PATH, config_name="train")
+@hydra.main(version_base=None, config_path=".", config_name="demo")
 def main(cfg):
     OmegaConf.resolve(cfg)
     simulation_app = init_simulation_app(cfg)
@@ -25,17 +25,15 @@ def main(cfg):
 
     sim = SimulationContext(
         stage_units_in_meters=1.0,
-        physics_dt=0.01,
-        rendering_dt=0.01,
+        physics_dt=cfg.sim.dt,
+        rendering_dt=cfg.sim.dt,
         sim_params=cfg.sim,
         backend="torch",
         device=cfg.sim.device,
     )
     n = 4
 
-    drone_model = "Hummingbird"
-    drone_cls = MultirotorBase.REGISTRY[drone_model]
-    drone = drone_cls()
+    drone: MultirotorBase = MultirotorBase.REGISTRY[cfg.drone_model]()
 
     translations = torch.zeros(n, 3)
     translations[:, 1] = torch.arange(n)
@@ -118,7 +116,6 @@ def main(cfg):
             reset()
 
     from torchvision.io import write_video
-
 
     for image_type, arrays in torch.stack(frames_vis).items():
         print(f"Writing {image_type} of shape {arrays.shape}.")

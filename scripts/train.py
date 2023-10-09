@@ -21,6 +21,7 @@ from omni_drones.utils.torchrl.transforms import (
     ravel_composite,
     VelController,
     AttitudeController,
+    RateController,
     History
 )
 from omni_drones.utils.wandb import init_wandb
@@ -136,9 +137,10 @@ def main(cfg):
             transform = VelController(vmap(controller))
             transforms.append(transform)
         elif action_transform == "rate":
-            from omni_drones.controllers import RateController
-            transform = RateController.make()
-            transforms.append()
+            from omni_drones.controllers import RateController as _RateController
+            controller = _RateController(9.81, base_env.drone.params).to(base_env.device)
+            transform = RateController(controller)
+            transforms.append(transform)
         elif action_transform == "attitude":
             from omni_drones.controllers import AttitudeController as _AttitudeController
             controller = _AttitudeController(9.81, base_env.drone.params).to(base_env.device)

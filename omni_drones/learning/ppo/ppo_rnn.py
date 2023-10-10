@@ -31,7 +31,7 @@ import torch.nn.functional as F
 
 from hydra.core.config_store import ConfigStore
 from tensordict import TensorDict
-from tensordict.nn import TensorDictModule, TensorDictSequential
+from tensordict.nn import TensorDictModuleBase, TensorDictModule, TensorDictSequential
 
 from torchrl.data import CompositeSpec, TensorSpec, UnboundedContinuousTensorSpec
 from torchrl.envs import CatTensors, TensorDictPrimer
@@ -75,10 +75,6 @@ class LSTM(nn.Module):
         self, x: torch.Tensor, is_init: torch.Tensor, hx: torch.Tensor, cx: torch.Tensor
     ):
         T = x.shape[1]
-        # if hx is None:
-        #     hx = torch.zeros(*x.shape[:-1], self.lstm.hidden_size, device=x.device)
-        # if cx is None:
-        #     cx = torch.zeros(*x.shape[:-1], self.lstm.hidden_size, device=x.device)
         hx, cx = hx[:, 0], cx[:, 0]
         output = []
         for i in range(T):
@@ -123,10 +119,6 @@ class GRU(nn.Module):
 
     def forward(self, x: torch.Tensor, is_init: torch.Tensor, hx: torch.Tensor):
         T = x.shape[1]
-        # if is_init is None:
-        #     is_init = torch.ones(*x.shape[:-1], 1, device=x.device)
-        # if hx is None:
-        #     hx = torch.zeros(*x.shape[:-1], self.gru.hidden_size, device=x.device)
         hx = hx[:, 0]
         output = []
         for i in range(T):
@@ -174,7 +166,7 @@ cs.store("ppo_gru", node=PPOConfig, group="algo")
 cs.store("ppo_lstm", node=PPOConfig(rnn="lstm"), group="algo")
 
 
-class PPORNNPolicy:
+class PPORNNPolicy(TensorDictModuleBase):
     def __init__(
         self,
         cfg: PPOConfig,
@@ -322,7 +314,11 @@ class PPORNNPolicy:
         with torch.no_grad():
             next_values = self.critic(next_tensordict)["state_value"].squeeze(1)
         rewards = tensordict[("next", "agents", "reward")]
-        dones = tensordict[("next", "done")].expand(-1, -1, self.n_agents).unsqueeze(-1)
+        dones = (
+            tensordict[("next", "terminated")]
+            .expand(-1, -1, self.n_agents)
+            .unsqueeze(-1)
+        )
         values = tensordict["state_value"]
         values = self.value_norm.denormalize(values)
         next_values = self.value_norm.denormalize(next_values)

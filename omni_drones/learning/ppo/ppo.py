@@ -30,7 +30,7 @@ from torchrl.data import CompositeSpec, TensorSpec
 from torchrl.modules import ProbabilisticActor
 from torchrl.envs.transforms import CatTensors
 from tensordict import TensorDict
-from tensordict.nn import TensorDictModule, TensorDictSequential
+from tensordict.nn import TensorDictModuleBase, TensorDictModule, TensorDictSequential
 
 from hydra.core.config_store import ConfigStore
 from dataclasses import dataclass
@@ -78,7 +78,7 @@ class Actor(nn.Module):
         return loc, scale
 
 
-class PPOPolicy:
+class PPOPolicy(TensorDictModuleBase):
 
     def __init__(
         self, 
@@ -104,12 +104,12 @@ class PPOPolicy:
             actor_module = TensorDictSequential(
                 TensorDictModule(make_mlp([128, 128]), [("agents", "observation")], ["feature"]),
                 TensorDictModule(
-                    nn.Sequential(nn.LayerNorm(intrinsics_dim), make_mlp([64, 64])), 
+                    nn.Sequential(nn.LayerNorm(intrinsics_dim), make_mlp([64, 64])),
                     [("agents", "intrinsics")], ["context"]
                 ),
                 CatTensors(["feature", "context"], "feature"),
                 TensorDictModule(
-                    nn.Sequential(make_mlp([256, 256]), Actor(self.action_dim)), 
+                    nn.Sequential(make_mlp([256, 256]), Actor(self.action_dim)),
                     ["feature"], ["loc", "scale"]
                 )
             )
@@ -173,8 +173,8 @@ class PPOPolicy:
             next_values = self.critic(next_tensordict)["state_value"]
         rewards = tensordict[("next", "agents", "reward")]
         dones = einops.repeat(
-            tensordict[("next", "done")],
-            "t e 1 -> t e a 1", 
+            tensordict[("next", "terminated")],
+            "t e 1 -> t e a 1",
             a=self.n_agents
         )
         values = tensordict["state_value"]

@@ -160,6 +160,7 @@ class PPOConfig:
     skip_conn: Union[str, None] = None
     hidden_size: int = 128
 
+    checkpoint_path: Union[str, None] = None
 
 cs = ConfigStore.instance()
 cs.store("ppo_gru", node=PPOConfig, group="algo")
@@ -268,15 +269,19 @@ class PPORNNPolicy(TensorDictModuleBase):
         self.actor(fake_input.unsqueeze(1))
         self.critic(fake_input.unsqueeze(1))
 
-        def init_(module):
-            if isinstance(module, nn.Linear):
-                nn.init.orthogonal_(module.weight, 0.01)
-                nn.init.constant_(module.bias, 0.0)
-            elif isinstance(module, (nn.GRUCell, nn.LSTMCell)):
-                nn.init.orthogonal_(module.weight_hh)
+        if self.cfg.checkpoint_path is not None:
+            state_dict = torch.load(self.cfg.checkpoint_path)
+            self.load_state_dict(state_dict, strict=False)
+        else:
+            def init_(module):
+                if isinstance(module, nn.Linear):
+                    nn.init.orthogonal_(module.weight, 0.01)
+                    nn.init.constant_(module.bias, 0.0)
+                elif isinstance(module, (nn.GRUCell, nn.LSTMCell)):
+                    nn.init.orthogonal_(module.weight_hh)
 
-        self.actor.apply(init_)
-        self.critic.apply(init_)
+            self.actor.apply(init_)
+            self.critic.apply(init_)
 
         self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=5e-4)
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=5e-4)

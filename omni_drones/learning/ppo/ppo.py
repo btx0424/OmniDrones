@@ -34,6 +34,7 @@ from tensordict.nn import TensorDictModuleBase, TensorDictModule, TensorDictSequ
 
 from hydra.core.config_store import ConfigStore
 from dataclasses import dataclass
+from typing import Union
 import einops
 
 from ..utils.valuenorm import ValueNorm1
@@ -50,6 +51,8 @@ class PPOConfig:
     # whether to use privileged information
     priv_actor: bool = False
     priv_critic: bool = False
+
+    checkpoint_path: Union[str, None] = None
 
 cs = ConfigStore.instance()
 cs.store("ppo", node=PPOConfig, group="algo")
@@ -148,14 +151,18 @@ class PPOPolicy(TensorDictModuleBase):
 
         self.actor(fake_input)
         self.critic(fake_input)
-        
-        def init_(module):
-            if isinstance(module, nn.Linear):
-                nn.init.orthogonal_(module.weight, 0.01)
-                nn.init.constant_(module.bias, 0.)
-        
-        self.actor.apply(init_)
-        self.critic.apply(init_)
+
+        if self.cfg.checkpoint_path is not None:
+            state_dict = torch.load(self.cfg.checkpoint_path)
+            self.load_state_dict(state_dict, strict=False)
+        else:
+            def init_(module):
+                if isinstance(module, nn.Linear):
+                    nn.init.orthogonal_(module.weight, 0.01)
+                    nn.init.constant_(module.bias, 0.)
+            
+            self.actor.apply(init_)
+            self.critic.apply(init_)
 
         self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=5e-4)
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=5e-4)

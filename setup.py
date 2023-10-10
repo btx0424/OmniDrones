@@ -12,7 +12,7 @@ setup(
         "moviepy",
         "imageio",
         "plotly",
-        "einops"
+        "einops",
         "av", # for moviepy
         "pandas",
         # install by cloning from github

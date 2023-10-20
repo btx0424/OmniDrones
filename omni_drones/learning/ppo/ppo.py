@@ -91,6 +91,7 @@ class PPOPolicy(TensorDictModuleBase):
         reward_spec: TensorSpec,
         device
     ):
+        super().__init__()
         self.cfg = cfg
         self.device = device
 

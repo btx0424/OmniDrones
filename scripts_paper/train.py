@@ -37,6 +37,7 @@ from torchrl.envs.transforms import (
 )
 
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 class Every:
     def __init__(self, func, steps):
@@ -119,14 +120,6 @@ def main(cfg):
     if cfg.task.get("ravel_central_obs", False):
         transform = ravel_composite(base_env.observation_spec, ("agents", "observation_central"))
         transforms.append(transform)
-    if (
-        cfg.task.get("flatten_intrinsics", True)
-        and ("agents", "intrinsics") in base_env.observation_spec.keys(True)
-    ):
-        transforms.append(ravel_composite(base_env.observation_spec, ("agents", "intrinsics"), start_dim=-1))
-
-    if cfg.task.get("history", False):
-        transforms.append(History([("agents", "observation")]))
     
     # optionally discretize the action space or use a controller
     action_transform: str = cfg.task.get("action_transform", None)
@@ -187,7 +180,9 @@ def main(cfg):
     )
 
     @torch.no_grad()
-    def evaluate():
+    def evaluate(
+        seed: int = 0,
+    ):
         frames = []
 
         def record_frame(*args, **kwargs):
@@ -196,9 +191,11 @@ def main(cfg):
 
         base_env.enable_render(True)
         env.eval()
-        env.rollout(
+        env.set_seed(seed)
+
+        trajs = env.rollout(
             max_steps=base_env.max_episode_length,
-            policy=policy,
+            policy=lambda td: policy(td, deterministic=True),
             callback=Every(record_frame, 2),
             auto_reset=True,
             break_when_any_done=False,
@@ -206,22 +203,39 @@ def main(cfg):
         )
         base_env.enable_render(not cfg.headless)
         env.reset()
-        env.train()
+
+        done = trajs.get(("next", "done"))
+        first_done = torch.argmax(done.long(), dim=1).cpu()
+
+        def take_first_episode(tensor: torch.Tensor):
+            indices = first_done.reshape(first_done.shape+(1,)*(tensor.ndim-2))
+            return torch.take_along_dim(tensor, indices, dim=1).reshape(-1)
+
+        traj_stats = {
+            k: take_first_episode(v)
+            for k, v in trajs[("next", "stats")].cpu().items()
+        }
+
+        info = {
+            "eval/stats." + k: torch.mean(v.float()).item() 
+            for k, v in traj_stats.items()
+        }
 
         if len(frames):
-            # video_array = torch.stack(frames)
             video_array = np.stack(frames).transpose(0, 3, 1, 2)
             info["recording"] = wandb.Video(
-                video_array, fps=0.5 / cfg.sim.dt, format="mp4"
+                video_array, 
+                fps=0.5 / cfg.sim.dt, 
+                format="mp4"
             )
+
         frames.clear()
         return info
 
     pbar = tqdm(collector)
     env.train()
-    fps = []
+
     for i, data in enumerate(pbar):
-        # fps.append(collector._fps)
         info = {"env_frames": collector._frames, "rollout_fps": collector._fps}
         episode_stats(data.to_tensordict())
 
@@ -238,6 +252,7 @@ def main(cfg):
             logging.info(f"Eval at {collector._frames} steps.")
             info.update(evaluate())
             env.train()
+            base_env.train()
 
         if save_interval > 0 and i % save_interval == 0:
             if hasattr(policy, "state_dict"):
@@ -255,11 +270,6 @@ def main(cfg):
 
         if max_iters > 0 and i >= max_iters - 1:
             break 
-
-        # if len(fps) > 50:
-        #     fps = np.array(fps)[10:]
-        #     print(fps.mean(), fps.std())
-        #     exit()
     
     logging.info(f"Final Eval at {collector._frames} steps.")
     info = {"env_frames": collector._frames}
@@ -271,7 +281,7 @@ def main(cfg):
         logging.info(f"Save checkpoint to {str(ckpt_path)}")
         torch.save(policy.state_dict(), ckpt_path)
 
-    wandb.save(os.path.join(run.dir, "checkpoint*"))
+
     wandb.finish()
     
     simulation_app.close()

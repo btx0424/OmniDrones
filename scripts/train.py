@@ -12,8 +12,9 @@ import matplotlib.pyplot as plt
 from functorch import vmap
 from omegaconf import OmegaConf
 
-from omni_drones import CONFIG_PATH, init_simulation_app
+from omni_drones import init_simulation_app
 from torchrl.data import CompositeSpec
+from torchrl.envs.utils import set_exploration_type, ExplorationType
 from omni_drones.utils.torchrl import SyncDataCollector
 from omni_drones.utils.torchrl.transforms import (
     FromMultiDiscreteAction, 
@@ -94,7 +95,6 @@ def main(cfg):
     algos = {
         "ppo": PPOPolicy,
         "ppo_rnn": PPORNNPolicy,
-        "mappo": MAPPOPolicy
     }
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
     base_env = env_class(cfg, headless=cfg.headless)
@@ -176,7 +176,10 @@ def main(cfg):
     )
 
     @torch.no_grad()
-    def evaluate(seed: int=0):
+    def evaluate(
+        seed: int=0, 
+        exploration_type: ExplorationType=ExplorationType.MODE
+    ):
         frames = []
 
         base_env.enable_render(True)
@@ -191,30 +194,33 @@ def main(cfg):
             frames.append(frame)
             t.update(2)
         
-        trajs = env.rollout(
-            max_steps=base_env.max_episode_length,
-            policy=policy,
-            callback=Every(record_frame, 2),
-            auto_reset=True,
-            break_when_any_done=False,
-            return_contiguous=False,
-        )
+        with set_exploration_type(exploration_type):
+            trajs = env.rollout(
+                max_steps=base_env.max_episode_length,
+                policy=policy,
+                callback=Every(record_frame, 2),
+                auto_reset=True,
+                break_when_any_done=False,
+                return_contiguous=False,
+            )
         base_env.enable_render(not cfg.headless)
         env.reset()
 
         done = trajs.get(("next", "done"))
-        truncated = trajs.get(("next", "truncated"), None)
-        done_or_truncated = (done | truncated) if truncated is not None else done
-        first_done = torch.argmax(done_or_truncated.long(), dim=1).cpu()
+        first_done = torch.argmax(done.long(), dim=1).cpu()
 
-        def take_first(tensor: torch.Tensor):
+        def take_first_episode(tensor: torch.Tensor):
             indices = first_done.reshape(first_done.shape+(1,)*(tensor.ndim-2))
             return torch.take_along_dim(tensor, indices, dim=1).reshape(-1)
-        
-        traj_stats = trajs["next"].select(*stats_keys).cpu().apply(take_first, batch_size=[len(first_done)])
+
+        traj_stats = {
+            k: take_first_episode(v)
+            for k, v in trajs[("next", "stats")].cpu().items()
+        }
+
         info = {
-            "eval/" + (".".join(k) if isinstance(k, tuple) else k): torch.mean(v.float()).item() 
-            for k, v in traj_stats.items(True, True)
+            "eval/stats." + k: torch.mean(v.float()).item() 
+            for k, v in traj_stats.items()
         }
 
         # log video
@@ -227,10 +233,10 @@ def main(cfg):
         )
         
         # log distributions
-        df = pd.DataFrame(traj_stats["stats"].to_dict())
-        table = wandb.Table(dataframe=df)
-        info["eval/return"] = wandb.plot.histogram(table, "return")
-        info["eval/episode_len"] = wandb.plot.histogram(table, "episode_len")
+        # df = pd.DataFrame(traj_stats)
+        # table = wandb.Table(dataframe=df)
+        # info["eval/return"] = wandb.plot.histogram(table, "return")
+        # info["eval/episode_len"] = wandb.plot.histogram(table, "episode_len")
 
         return info
 
@@ -287,7 +293,6 @@ def main(cfg):
         logging.warning(f"Policy {policy} does not implement `.state_dict()`")
         
 
-    wandb.save(os.path.join(run.dir, "checkpoint*"))
     wandb.finish()
     
     simulation_app.close()

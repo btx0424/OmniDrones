@@ -290,8 +290,8 @@ class Track(IsaacEnv):
             "agents": {
                 "observation": obs,
             },
-            "stats": self.stats,  
-            "info": self.info
+            "stats": self.stats.clone(),  
+            "info": self.info.clone()
         }, self.batch_size)
 
     def _compute_reward_and_done(self):

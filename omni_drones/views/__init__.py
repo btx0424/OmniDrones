@@ -581,7 +581,7 @@ class RigidPrimView(_RigidPrimView):
     ) -> None:
         # TODO@btx0424 fix orientations
         indices = self._resolve_env_indices(env_indices)
-        return super().set_coms(positions.reshape(-1, 3), None, indices)
+        return super().set_coms(positions.reshape(-1, 1, 3), None, indices)
     
     def get_inertias(
         self, 

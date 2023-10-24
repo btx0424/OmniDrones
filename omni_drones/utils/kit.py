@@ -54,7 +54,9 @@ def create_ground_plane(
         usd_path = kwargs["usd_path"]
     else:
         # get path to the nucleus server
-        assets_root_path = nucleus_utils.get_assets_root_path()
+        # assets_root_path = nucleus_utils.get_assets_root_path()
+        assets_root_path = "http://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/2023.1.0"
+        print("Assets root path: ", assets_root_path)
         if assets_root_path is None:
             carb.log_error("Unable to access the Isaac Sim assets folder on Nucleus server.")
             return

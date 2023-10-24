@@ -382,11 +382,11 @@ class IsaacEnv(EnvBase):
         # check if flatcache is enabled
         # this is needed to flush the flatcache data into Hydra manually when calling `env.render()`
         # ref: https://docs.omniverse.nvidia.com/prod_extensions/prod_extensions/ext_physics.html
-        if  self.sim.get_physics_context().use_flatcache:
-            from omni.physxflatcache import get_physx_flatcache_interface
+        # if  self.sim.get_physics_context().use_flatcache:
+        #     from omni.physxflatcache import get_physx_flatcache_interface
 
-            # acquire flatcache interface
-            self._flatcache_iface = get_physx_flatcache_interface()
+        #     # acquire flatcache interface
+        #     self._flatcache_iface = get_physx_flatcache_interface()
 
         # check if viewport is enabled before creating render product
         if self.enable_viewport:

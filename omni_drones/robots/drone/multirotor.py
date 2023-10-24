@@ -73,7 +73,7 @@ class MultirotorBase(RobotBase):
         self.intrinsics_spec = CompositeSpec({
             "mass": UnboundedContinuousTensorSpec(1),
             "inertia": UnboundedContinuousTensorSpec(3),
-            # "com": UnboundedContinuousTensorSpec(3),
+            "com": UnboundedContinuousTensorSpec(3),
             "KF": UnboundedContinuousTensorSpec(self.num_rotors),
             "KM": UnboundedContinuousTensorSpec(self.num_rotors),
             "tau_up": UnboundedContinuousTensorSpec(self.num_rotors),
@@ -232,6 +232,12 @@ class MultirotorBase(RobotBase):
                     torch.tensor(tau_down[0], device=self.device),
                     torch.tensor(tau_down[1], device=self.device)
                 )
+            com = cfg[phase].get("com", None)
+            if com is not None:
+                self.randomization[phase]["com"] = D.Uniform(
+                    torch.tensor(com[0], device=self.device),
+                    torch.tensor(com[1], device=self.device)
+                )
             if not len(self.randomization[phase]) == len(cfg[phase]):
                 unkown_keys = set(cfg[phase].keys()) - set(self.randomization[phase].keys())
                 raise ValueError(
@@ -350,10 +356,10 @@ class MultirotorBase(RobotBase):
                 torch.diag_embed(inertias).flatten(-2), env_indices=env_ids
             )
             self.intrinsics["inertia"][env_ids] = inertias / self.INERTIA_0
-        # if "com" in distributions:
-        #     coms = distributions["com"].sample(shape)
-        #     self.base_link.set_coms(coms, env_indices=env_ids)
-        #     self.intrinsics["com"][env_ids] = coms / self.params["l"]
+        if "com" in distributions:
+            coms = distributions["com"].sample((*shape, 3))
+            self.base_link.set_coms(coms, env_indices=env_ids)
+            self.intrinsics["com"][env_ids] = coms.reshape(*self.shape, 3)
         if "thrust2weight" in distributions:
             thrust2weight = distributions["thrust2weight"].sample(shape)
             KF = thrust2weight * self.masses[env_ids] * 9.81 

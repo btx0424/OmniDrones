@@ -26,7 +26,7 @@ from omni_drones.utils.torchrl.transforms import (
     History
 )
 from omni_drones.utils.wandb import init_wandb
-from omni_drones.learning.ppo import PPORNNPolicy, PPOPolicy, MAPPOPolicy
+from omni_drones.learning.ppo import PPORNNPolicy, PPOPolicy
 
 from setproctitle import setproctitle
 from torchrl.envs.transforms import (

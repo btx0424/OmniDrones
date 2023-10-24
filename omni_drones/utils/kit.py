@@ -13,6 +13,7 @@ import omni.isaac.core.utils.prims as prim_utils
 import omni.kit
 from omni.isaac.core.materials import PhysicsMaterial
 from omni.isaac.core.prims import GeometryPrim
+from omni.isaac.version import get_version
 from pxr import Gf, PhysxSchema, UsdPhysics
 
 
@@ -22,7 +23,7 @@ def create_ground_plane(
     static_friction: float = 1.0,
     dynamic_friction: float = 1.0,
     restitution: float = 0.0,
-    color: Optional[Sequence[float]] = (0.065, 0.0725, 0.080),
+    color: Sequence[float] | None = (0.065, 0.0725, 0.080),
     **kwargs,
 ):
     """Spawns a ground plane into the scene.
@@ -31,22 +32,22 @@ def create_ground_plane(
     It applies a physics material to the ground plane and sets the color of the ground plane.
 
     Args:
-        prim_path (str): The prim path to spawn the ground plane at.
-        z_position (float, optional): The z-location of the plane. Defaults to 0.
-        static_friction (float, optional): The static friction coefficient. Defaults to 1.0.
-        dynamic_friction (float, optional): The dynamic friction coefficient. Defaults to 1.0.
-        restitution (float, optional): The coefficient of restitution. Defaults to 0.0.
-        color (Optional[Sequence[float]], optional): The color of the ground plane.
+        prim_path: The prim path to spawn the ground plane at.
+        z_position: The z-location of the plane. Defaults to 0.
+        static_friction: The static friction coefficient. Defaults to 1.0.
+        dynamic_friction: The dynamic friction coefficient. Defaults to 1.0.
+        restitution: The coefficient of restitution. Defaults to 0.0.
+        color: The color of the ground plane.
             Defaults to (0.065, 0.0725, 0.080).
 
     Keyword Args:
-        usd_path (str): The USD path to the ground plane. Defaults to the asset path
+        usd_path: The USD path to the ground plane. Defaults to the asset path
             `Isaac/Environments/Grid/default_environment.usd` on the Isaac Sim Nucleus server.
-        improve_patch_friction (bool): Whether to enable patch friction. Defaults to False.
-        combine_mode (str): Determines the way physics materials will be combined during collisions.
+        improve_patch_friction: Whether to enable patch friction. Defaults to False.
+        combine_mode: Determines the way physics materials will be combined during collisions.
             Available options are `average`, `min`, `multiply`, `multiply`, and `max`. Defaults to `average`.
-        light_intensity (Optional[float]): The power intensity of the light source. Defaults to 1e7.
-        light_radius (Optional[float]): The radius of the light source. Defaults to 50.0.
+        light_intensity: The power intensity of the light source. Defaults to 1e7.
+        light_radius: The radius of the light source. Defaults to 50.0.
     """
     # Retrieve path to the plane
     if "usd_path" in kwargs:
@@ -55,16 +56,12 @@ def create_ground_plane(
         # get path to the nucleus server
         assets_root_path = nucleus_utils.get_assets_root_path()
         if assets_root_path is None:
-            carb.log_error(
-                "Unable to access the Isaac Sim assets folder on Nucleus server."
-            )
+            carb.log_error("Unable to access the Isaac Sim assets folder on Nucleus server.")
             return
         # prepend path to the grid plane
         usd_path = f"{assets_root_path}/Isaac/Environments/Grid/default_environment.usd"
     # Spawn Ground-plane
-    prim_utils.create_prim(
-        prim_path, usd_path=usd_path, translation=(0.0, 0.0, z_position)
-    )
+    prim_utils.create_prim(prim_path, usd_path=usd_path, translation=(0.0, 0.0, z_position))
     # Create physics material
     material = PhysicsMaterial(
         f"{prim_path}/groundMaterial",
@@ -78,7 +75,7 @@ def create_ground_plane(
     improve_patch_friction = kwargs.get("improve_patch_friction", False)
     physx_material_api.CreateImprovePatchFrictionAttr().Set(improve_patch_friction)
     # Set combination mode for coefficients
-    combine_mode = kwargs.get("combine_mode", "average")
+    combine_mode = kwargs.get("friciton_combine_mode", "multiply")
     physx_material_api.CreateFrictionCombineModeAttr().Set(combine_mode)
     physx_material_api.CreateRestitutionCombineModeAttr().Set(combine_mode)
     # Apply physics material to ground plane
@@ -87,7 +84,8 @@ def create_ground_plane(
             prim_path, predicate=lambda x: prim_utils.get_prim_type_name(x) == "Plane"
         )
     )
-    GeometryPrim(collision_prim_path, collision=True).apply_physics_material(material)
+    geom_prim = GeometryPrim(collision_prim_path, disable_stablization=False, collision=True)
+    geom_prim.apply_physics_material(material)
     # Change the color of the plane
     # Warning: This is specific to the default grid plane asset.
     if color is not None:
@@ -97,43 +95,18 @@ def create_ground_plane(
             value=Gf.Vec3f(*color),
             prev=None,
         )
-    # Change the settings of the sphere light
+    # Add light source
     # By default, the one from Isaac Sim is too dim for large number of environments.
     # Warning: This is specific to the default grid plane asset.
-    light_intensity = kwargs.get("light_intensity", 1e7)
-    light_radius = kwargs.get("light_radius", 100.0)
-    # -- light intensity
-    if light_intensity is not None:
-        omni.kit.commands.execute(
-            "ChangeProperty",
-            prop_path=f"{prim_path}/SphereLight.intensity",
-            value=light_intensity,
-            prev=None,
-        )
-    # -- light radius
-    if light_radius is not None:
-        # set radius of the light
-        omni.kit.commands.execute(
-            "ChangeProperty",
-            prop_path=f"{prim_path}/SphereLight.radius",
-            value=light_radius,
-            prev=None,
-        )
-        # as a rule of thumb, we set the sphere center 1.5 times
-        omni.kit.commands.execute(
-            "ChangeProperty",
-            prop_path=f"{prim_path}/SphereLight.xformOp:translate",
-            value=(0.0, 0.0, 1.5 * light_radius),
-            prev=None,
-        )
-    # -- ambient light
     ambient_light = kwargs.get("ambient_light", True)
     if ambient_light:
-        prim_utils.create_prim(
-            f"{prim_path}/AmbientLight",
-            "DistantLight",
-            attributes={"intensity": 600.0},
-        )
+        # check isaacsim version to determine the attribute name
+        attributes = {"intensity": 600.0}
+        isaacsim_version = get_version()
+        if int(isaacsim_version[2]) > 2022:
+            attributes = {f"inputs:{k}": v for k, v in attributes.items()}
+        # create light prim
+        prim_utils.create_prim(f"{prim_path}/AmbientLight", "DistantLight", attributes=attributes)
 
 
 def move_nested_prims(source_ns: str, target_ns: str):

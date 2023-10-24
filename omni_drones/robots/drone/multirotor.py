@@ -79,7 +79,6 @@ class MultirotorBase(RobotBase):
             "tau_up": UnboundedContinuousTensorSpec(self.num_rotors),
             "tau_down": UnboundedContinuousTensorSpec(self.num_rotors),
             "drag_coef": UnboundedContinuousTensorSpec(1),
-            "rotor_offset": UnboundedContinuousTensorSpec(1),
         }).to(self.device)
         
         if self.cfg.force_sensor:
@@ -167,12 +166,6 @@ class MultirotorBase(RobotBase):
         # self.jerk = torch.zeros(*self.shape, 6, device=self.device)
         self.alpha = 0.9
 
-        self.rotor_pos_0 = (
-            self.rotors_view.get_world_poses()[0][0] 
-            - self.pos[0].unsqueeze(1)
-        )
-        self.rotor_pos_offset = torch.zeros(*self.shape, self.num_rotors, 3, device=self.device)
-
         self.masses = self.base_link.get_masses().clone()
         self.gravity = self.masses * 9.81
         self.inertias = self.base_link.get_inertias().reshape(*self.shape, 3, 3).diagonal(0, -2, -1)
@@ -227,12 +220,6 @@ class MultirotorBase(RobotBase):
                     torch.tensor(low, device=self.device),
                     torch.tensor(high, device=self.device)
                 )
-            rotor_pos_offset_scale = cfg[phase].get("rotor_offset_scale")
-            if rotor_pos_offset_scale is not None:
-                self.randomization[phase]["rotor_offset"] = D.Uniform(
-                    torch.tensor(rotor_pos_offset_scale[0], device=self.device), 
-                    torch.tensor(rotor_pos_offset_scale[1], device=self.device)
-                )
             tau_up = cfg[phase].get("tau_up", None)
             if tau_up is not None:
                 self.randomization[phase]["tau_up"] = D.Uniform(
@@ -285,7 +272,6 @@ class MultirotorBase(RobotBase):
 
         self.rotors_view.apply_forces_and_torques_at_pos(
             self.thrusts.reshape(-1, 3), 
-            positions=self.rotor_pos_offset,
             is_global=False
         )
         self.base_link.apply_forces_and_torques_at_pos(
@@ -382,11 +368,6 @@ class MultirotorBase(RobotBase):
             drag_coef = distributions["drag_coef"].sample(shape).reshape(-1, 1, 1)
             self.drag_coef[env_ids] = drag_coef
             self.intrinsics["drag_coef"][env_ids] = drag_coef
-        if "rotor_offset" in distributions:
-            offset_scale = distributions["rotor_offset"].sample(shape).reshape(-1, 1, 1)
-            pos_offset = self.rotor_pos_0[..., :2] * offset_scale
-            self.rotor_pos_offset[env_ids, ..., :2] = pos_offset.unsqueeze(1)
-            self.intrinsics["rotor_offset"][env_ids] = offset_scale
         if "tau_up" in distributions:
             tau_up = distributions["tau_up"].sample(shape+self.rotors_view.shape[1:])
             self.tau_up[env_ids] = tau_up

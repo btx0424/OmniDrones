@@ -23,17 +23,15 @@ from omni_drones.utils.torchrl.transforms import (
     VelController,
     AttitudeController,
     RateController,
-    History
 )
 from omni_drones.utils.wandb import init_wandb
-from omni_drones.learning.ppo import PPORNNPolicy, PPOPolicy, MAPPOPolicy
+from omni_drones.learning.ppo import PPORNNPolicy, PPOPolicy
 
 from setproctitle import setproctitle
 from torchrl.envs.transforms import (
     TransformedEnv, 
     InitTracker, 
     Compose,
-    CatTensors
 )
 
 from tqdm import tqdm
@@ -115,10 +113,6 @@ def main(cfg):
         and isinstance(base_env.observation_spec[("agents", "intrinsics")], CompositeSpec)
     ):
         transforms.append(ravel_composite(base_env.observation_spec, ("agents", "intrinsics"), start_dim=-1))
-
-    # if cfg.task.get("history", False):
-    #     # transforms.append(History([("info", "drone_state"), ("info", "prev_action")]))
-    #     transforms.append(History([("agents", "observation")]))
 
     # optionally discretize the action space or use a controller
     action_transform: str = cfg.task.get("action_transform", None)

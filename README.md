@@ -20,6 +20,9 @@ The initial release of **OmniDrones** is developed based on Isaac Sim 2022.2.0. 
 Isaac Sim (2023.1.0) is expected to bring susbtantial changes but is not yet available, the APIs and usage 
 of **OmniDrones** are subject to change. We will try our best to keep the documentation up-to-date.
 
+## Announcement 2023-10-25
+
+The new release Isaac Sim (2023.1.0) has bring substantial changes as well as new possibilieties, among which the most important is new sensors. We are actively working on it at the `devel` branch. The `release` branch will be still be maintained for compatibility. Feel free to raise issues if your encounter any problem or have ideas to discuss.
 
 ## Citation
 

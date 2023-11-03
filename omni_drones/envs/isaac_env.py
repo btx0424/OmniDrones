@@ -63,8 +63,10 @@ class DebugDraw:
         self._draw.draw_lines(point_list_0, point_list_1, colors, sizes)
         
     def vector(self, x: torch.Tensor, v: torch.Tensor, size=2.0, color=(0., 1., 1., 1.)):
-        x = torch.atleast_2d(x.cpu())
-        v = torch.atleast_2d(v.cpu())
+        x = x.cpu().reshape(-1, 3)
+        v = v.cpu().reshape(-1, 3)
+        if not (x.shape == v.shape):
+            raise ValueError("x and v must have the same shape, got {} and {}.".format(x.shape, v.shape))
         point_list_0 = x.tolist()
         point_list_1 = (x + v).tolist()
         sizes = [size] * len(point_list_0)

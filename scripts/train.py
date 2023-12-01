@@ -26,7 +26,7 @@ from omni_drones.utils.torchrl.transforms import (
     History
 )
 from omni_drones.utils.wandb import init_wandb
-from omni_drones.learning.ppo import PPORNNPolicy, PPOPolicy
+from omni_drones.learning import ALGOS
 
 from setproctitle import setproctitle
 from torchrl.envs.transforms import (
@@ -92,10 +92,7 @@ def main(cfg):
     print(OmegaConf.to_yaml(cfg))
 
     from omni_drones.envs.isaac_env import IsaacEnv
-    algos = {
-        "ppo": PPOPolicy,
-        "ppo_rnn": PPORNNPolicy,
-    }
+
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
     base_env = env_class(cfg, headless=cfg.headless)
 
@@ -152,7 +149,7 @@ def main(cfg):
     env = TransformedEnv(base_env, Compose(*transforms)).train()
     env.set_seed(cfg.seed)
 
-    policy = algos[cfg.algo.name.lower()](
+    policy = ALGOS[cfg.algo.name.lower()](
         cfg.algo, env.observation_spec, env.action_spec, env.reward_spec, device=base_env.device)
 
     frames_per_batch = env.num_envs * int(cfg.algo.train_every)

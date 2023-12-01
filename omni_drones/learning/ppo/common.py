@@ -53,3 +53,13 @@ class GAE(nn.Module):
             advantages[:, step] = gae = delta + (self.gamma * self.lmbda * not_done[:, step] * gae)
         returns = advantages + value
         return advantages, returns
+
+
+def make_mlp(num_units, activation=nn.LeakyReLU):
+    layers = []
+    for n in num_units:
+        layers.append(nn.LazyLinear(n))
+        layers.append(activation())
+        layers.append(nn.LayerNorm(n))
+    return nn.Sequential(*layers)
+

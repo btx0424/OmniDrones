@@ -6,7 +6,6 @@ import hydra
 import torch
 import numpy as np
 import wandb
-from functorch import vmap
 from omegaconf import OmegaConf
 
 from omni_drones import CONFIG_PATH, init_simulation_app

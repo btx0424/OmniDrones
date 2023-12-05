@@ -1,3 +1,29 @@
+# MIT License
+# 
+# Copyright (c) 2023 Botian Xu, Tsinghua University
+# 
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+# 
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+"""
+This is a more concise and readable implementation of MAPPO using TorchRL.
+"""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -60,10 +86,11 @@ class EnsembleModule(_EnsembleModule):
         return self.vmapped_forward(tensordict, self.params_td)
 
 
-def select(td: TensorDict, keys, batch_size):
-    td = td.select(*keys)
-    td.batch_size = batch_size
-    return td
+def init_(module):
+    if isinstance(module, nn.Linear):
+        nn.init.orthogonal_(module.weight, 0.01)
+        nn.init.constant_(module.bias, 0.)
+
 
 class MAPPO:
 
@@ -91,7 +118,7 @@ class MAPPO:
 
         actor_module = TensorDictModule(
             nn.Sequential(
-                make_mlp([256, 256]),
+                make_mlp([256, 256], nn.Mish),
                 Actor(self.action_dim)
             ),
             [("agents", "observation")], ["loc", "scale"]
@@ -100,6 +127,8 @@ class MAPPO:
         
         if not cfg.share_actor:
             actor_module = EnsembleModule(actor_module, self.num_agents)
+        else:
+            actor_module.apply(init_)
 
         self.actor = ProbabilisticActor(
             module=actor_module,
@@ -111,15 +140,17 @@ class MAPPO:
 
         self.critic = TensorDictModule(
             nn.Sequential(
-                make_mlp([256, 256]),
+                make_mlp([512, 256], nn.Mish),
                 nn.LazyLinear(self.num_agents),
                 Rearrange("... -> ... 1")
             ),
             [("agents", "observation_central")], ["state_value"]
         ).to(self.device)
+        self.critic(fake_input)
+        self.critic.apply(init_)
 
-        self.actor_opt = torch.optim.Adam(self.actor.parameters())
-        self.critic_opt = torch.optim.Adam(self.critic.parameters())
+        self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=5e-4)
+        self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=5e-4)
         self.value_norm = ValueNorm1(input_shape=1).to(self.device)
     
     def __call__(self, tensordict: TensorDict):

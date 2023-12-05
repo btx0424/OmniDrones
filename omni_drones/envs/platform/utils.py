@@ -39,6 +39,7 @@ from scipy.spatial.transform.rotation import Rotation
 from omni_drones.robots import RobotBase, RobotCfg
 from omni_drones.robots.drone import MultirotorBase
 from omni_drones.views import RigidPrimView
+from omni_drones.utils.torch import quat_axis
 
 def create_frame(
     prim_path: str,
@@ -257,8 +258,8 @@ class OveractuatedPlatform(RobotBase):
         self.jerk[:] = jerk
         self.acc[:] = acc
         self.vel[:] = vel
-        self.heading[:] = vmap(torch_utils.quat_axis)(self.rot, axis=0)
-        self.up[:] = vmap(torch_utils.quat_axis)(self.rot, axis=2)
+        self.heading[:] = quat_axis(self.rot, axis=0)
+        self.up[:] = quat_axis(self.rot, axis=2)
         state = [self.pos, self.rot, self.vel, self.heading, self.up]
         state = torch.cat(state, dim=-1)
         return state

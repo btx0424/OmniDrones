@@ -24,7 +24,6 @@
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from functorch import vmap
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -120,14 +119,6 @@ class MAPPOPolicy(object):
             f"{self.agent_spec.name}.action_entropy",
         ]
 
-        if cfg.get("rnn", None):
-            self.actor_in_keys.extend(
-                [f"{self.agent_spec.name}.actor_rnn_state", "is_init"]
-            )
-            self.actor_out_keys.append(f"{self.agent_spec.name}.actor_rnn_state")
-            self.minibatch_seq_len = self.cfg.actor.rnn.train_seq_len
-            assert self.minibatch_seq_len <= self.cfg.train_every
-
         create_actor_fn = lambda: TensorDictModule(
             make_ppo_actor(
                 cfg, self.agent_spec.observation_spec, self.agent_spec.action_spec
@@ -159,11 +150,6 @@ class MAPPOPolicy(object):
         if self.cfg.critic_input == "state" and self.agent_spec.state_spec is not None:
             self.critic_in_keys = ["state"]
             self.critic_out_keys = ["state_value"]
-            if cfg.get("rnn", None):
-                self.critic_in_keys.extend([
-                    f"{self.agent_spec.name}.critic_rnn_state", "is_init"
-                ])
-                self.critic_out_keys.append(f"{self.agent_spec.name}.critic_rnn_state")
             reward_spec = self.agent_spec.reward_spec
             reward_spec = reward_spec.expand(self.agent_spec.n, *reward_spec.shape)
             critic = make_critic(cfg, self.agent_spec.state_spec, reward_spec, centralized=True)
@@ -176,18 +162,13 @@ class MAPPOPolicy(object):
         else:
             self.critic_in_keys = [self.obs_name]
             self.critic_out_keys = ["state_value"]
-            if cfg.get("rnn", None):
-                self.critic_in_keys.extend([
-                    f"{self.agent_spec.name}.critic_rnn_state", "is_init"
-                ])
-                self.critic_out_keys.append(f"{self.agent_spec.name}.critic_rnn_state")
             critic = make_critic(cfg, self.agent_spec.observation_spec, self.agent_spec.reward_spec, centralized=False)
             self.critic = TensorDictModule(
                 critic,
                 in_keys=self.critic_in_keys,
                 out_keys=self.critic_out_keys,
             ).to(self.device)
-            self.value_func = vmap(self.critic, in_dims=1, out_dims=1)
+            self.value_func = torch.vmap(self.critic, in_dims=1, out_dims=1)
 
         self.critic_opt = torch.optim.Adam(
             self.critic.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay
@@ -213,25 +194,15 @@ class MAPPOPolicy(object):
 
     def value_op(self, tensordict: TensorDict) -> TensorDict:
         critic_input = tensordict.select(*self.critic_in_keys, strict=False)
-        if "is_init" in critic_input.keys():
-            critic_input["is_init"] = expand_right(
-            critic_input["is_init"], (*critic_input.batch_size, self.agent_spec.n)
-        )
         if self.cfg.critic_input == "obs":
             critic_input.batch_size = [*critic_input.batch_size, self.agent_spec.n]
-        elif "is_init" in critic_input.keys() and critic_input["is_init"].shape[-1] != 1:
-            critic_input["is_init"] = critic_input["is_init"].all(-1, keepdim=True)
         tensordict = self.value_func(critic_input)
         return tensordict
 
     def __call__(self, tensordict: TensorDict, deterministic: bool = False):
         actor_input = tensordict.select(*self.actor_in_keys, strict=False)
-        if "is_init" in actor_input.keys():
-            actor_input["is_init"] = expand_right(
-            actor_input["is_init"], (*actor_input.batch_size, self.agent_spec.n)
-        )
         actor_input.batch_size = [*actor_input.batch_size, self.agent_spec.n]
-        actor_output = vmap(self.actor, in_dims=(1, 0), out_dims=1, randomness="different")(
+        actor_output = torch.vmap(self.actor, in_dims=(1, 0), out_dims=1, randomness="different")(
             actor_input, self.actor_params, deterministic=deterministic
         )
 
@@ -242,21 +213,12 @@ class MAPPOPolicy(object):
     def update_actor(self, batch: TensorDict) -> Dict[str, Any]:
         advantages = batch["advantages"]
         actor_input = batch.select(*self.actor_in_keys)
-        if "is_init" in actor_input.keys():
-            actor_input["is_init"] = expand_right(
-            actor_input["is_init"], (*actor_input.batch_size, self.agent_spec.n)
-        )
         actor_input.batch_size = [*actor_input.batch_size, self.agent_spec.n]
 
         log_probs_old = batch[self.act_logps_name]
-        if hasattr(self, "minibatch_seq_len"): # [N, T, A, *]
-            actor_output = vmap(self.actor, in_dims=(2, 0), out_dims=2)(
-                actor_input, self.actor_params, eval_action=True
-            )
-        else: # [N, A, *]
-            actor_output = vmap(self.actor, in_dims=(1, 0), out_dims=1)(
-                actor_input, self.actor_params, eval_action=True
-            )
+        actor_output = torch.vmap(self.actor, in_dims=(1, 0), out_dims=1)(
+            actor_input, self.actor_params, eval_action=True
+        )
 
         log_probs_new = actor_output[self.act_logps_name]
         dist_entropy = actor_output[f"{self.agent_spec.name}.action_entropy"]
@@ -437,7 +399,6 @@ from .modules.distributions import (
     MultiCategoricalModule,
 )
 
-from .modules.rnn import GRU
 from .common import make_encoder
 
 def make_ppo_actor(cfg, observation_spec: TensorSpec, action_spec: TensorSpec):
@@ -457,33 +418,21 @@ def make_ppo_actor(cfg, observation_spec: TensorSpec, action_spec: TensorSpec):
     else:
         raise NotImplementedError(action_spec)
 
-    if cfg.get("rnn", None):
-        rnn_cls = {"gru": GRU}[cfg.rnn.cls.lower()]
-        rnn = rnn_cls(input_size=encoder.output_shape.numel(), **cfg.rnn.kwargs)
-    else:
-        rnn = None
-
-    return Actor(encoder, act_dist, rnn)
+    return Actor(encoder, act_dist)
 
 
 def make_critic(cfg, state_spec: TensorSpec, reward_spec: TensorSpec, centralized=False):
     assert isinstance(reward_spec, (UnboundedTensorSpec, BoundedTensorSpec))
     encoder = make_encoder(cfg, state_spec)
-    
-    if cfg.get("rnn", None):
-        rnn_cls = {"gru": GRU}[cfg.rnn.cls.lower()]
-        rnn = rnn_cls(input_size=encoder.output_shape.numel(), **cfg.rnn.kwargs)
-    else:
-        rnn = None
 
     if centralized:
         v_out = nn.Linear(encoder.output_shape.numel(), reward_spec.shape[-2:].numel())
         nn.init.orthogonal_(v_out.weight, cfg.gain)
-        return Critic(encoder, rnn, v_out, reward_spec.shape[-2:])
+        return Critic(encoder, v_out, reward_spec.shape[-2:])
     else:
         v_out = nn.Linear(encoder.output_shape.numel(), reward_spec.shape[-1])
         nn.init.orthogonal_(v_out.weight, cfg.gain)
-        return Critic(encoder, rnn, v_out, reward_spec.shape[-1:])
+        return Critic(encoder, v_out, reward_spec.shape[-1:])
 
 
 class Actor(nn.Module):
@@ -491,69 +440,50 @@ class Actor(nn.Module):
         self,
         encoder: nn.Module,
         act_dist: nn.Module,
-        rnn: Optional[nn.Module] = None,
     ) -> None:
         super().__init__()
         self.encoder = encoder
         self.act_dist = act_dist
-        self.rnn = rnn
 
     def forward(
         self,
         obs: Union[torch.Tensor, TensorDict],
         action: torch.Tensor = None,
-        rnn_state=None,
-        is_init=None,
         deterministic=False,
         eval_action=False
     ):
         actor_features = self.encoder(obs)
-        if self.rnn is not None:
-            actor_features, rnn_state = self.rnn(actor_features, rnn_state, is_init)    
-        else:
-            rnn_state = None
         action_dist = self.act_dist(actor_features)
 
         if eval_action:
             action_log_probs = action_dist.log_prob(action).unsqueeze(-1)
             dist_entropy = action_dist.entropy().unsqueeze(-1)
-            return action, action_log_probs, dist_entropy, None
+            return action, action_log_probs, dist_entropy
         else:
             action = action_dist.mode if deterministic else action_dist.sample()
             action_log_probs = action_dist.log_prob(action).unsqueeze(-1)
-            return action, action_log_probs, None, rnn_state
+            dist_entropy = action_dist.entropy().unsqueeze(-1)
+            return action, action_log_probs, dist_entropy
 
 
 class Critic(nn.Module):
     def __init__(
         self,
         base: nn.Module,
-        rnn: nn.Module,
         v_out: nn.Module,
         output_shape: torch.Size=torch.Size((-1,)),
     ):
         super().__init__()
         self.base = base
-        self.rnn = rnn
         self.v_out = v_out
         self.output_shape = output_shape
 
-    def forward(
-        self, 
-        critic_input: torch.Tensor,
-        rnn_state: torch.Tensor=None,
-        is_init: torch.Tensor=None,
-    ):
+    def forward(self, critic_input: torch.Tensor):
         critic_features = self.base(critic_input)
-        if self.rnn is not None:
-            critic_features, rnn_state = self.rnn(critic_features, rnn_state, is_init)
-        else:
-            rnn_state = None
-
         values = self.v_out(critic_features)
 
         if len(self.output_shape) > 1:
             values = values.unflatten(-1, self.output_shape)
-        return values, rnn_state
+        return values
 
 

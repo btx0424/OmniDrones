@@ -21,5 +21,5 @@
 # SOFTWARE.
 
 
-from .env import AgentSpec
+from .env import AgentSpec, RenderCallback, EpisodeStats
 from .collector import SyncDataCollector

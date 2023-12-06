@@ -9,7 +9,7 @@ import pandas as pd
 import wandb
 import matplotlib.pyplot as plt
 
-from functorch import vmap
+from tqdm import tqdm
 from omegaconf import OmegaConf
 
 from omni_drones import init_simulation_app
@@ -26,58 +26,12 @@ from omni_drones.utils.torchrl.transforms import (
     History
 )
 from omni_drones.utils.wandb import init_wandb
+from omni_drones.utils.torchrl import RenderCallback, EpisodeStats
 from omni_drones.learning import ALGOS
 
 from setproctitle import setproctitle
-from torchrl.envs.transforms import (
-    TransformedEnv, 
-    InitTracker, 
-    Compose,
-    CatTensors
-)
+from torchrl.envs.transforms import TransformedEnv, InitTracker, Compose
 
-from tqdm import tqdm
-
-class Every:
-    def __init__(self, func, steps):
-        self.func = func
-        self.steps = steps
-        self.i = 0
-
-    def __call__(self, *args, **kwargs):
-        if self.i % self.steps == 0:
-            self.func(*args, **kwargs)
-        self.i += 1
-
-from typing import Sequence
-from tensordict import TensorDictBase
-
-class EpisodeStats:
-    def __init__(self, in_keys: Sequence[str] = None):
-        self.in_keys = in_keys
-        self._stats = []
-        self._episodes = 0
-
-    def __call__(self, tensordict: TensorDictBase) -> TensorDictBase:
-        done = tensordict.get(("next", "done"))
-        truncated = tensordict.get(("next", "truncated"), None)
-        done_or_truncated = (
-            (done | truncated) if truncated is not None else done.clone()
-        )
-        if done_or_truncated.any():
-            done_or_truncated = done_or_truncated.squeeze(-1)
-            self._episodes += done_or_truncated.sum().item()
-            self._stats.extend(
-                tensordict.select(*self.in_keys)[done_or_truncated].clone().unbind(0)
-            )
-    
-    def pop(self):
-        stats: TensorDictBase = torch.stack(self._stats).to_tensordict()
-        self._stats.clear()
-        return stats
-
-    def __len__(self):
-        return len(self._stats)
 
 FILE_PATH = os.path.dirname(__file__)
 
@@ -131,7 +85,7 @@ def main(cfg):
         elif action_transform == "velocity":
             from omni_drones.controllers import LeePositionController
             controller = LeePositionController(9.81, base_env.drone.params).to(base_env.device)
-            transform = VelController(vmap(controller))
+            transform = VelController(torch.vmap(controller))
             transforms.append(transform)
         elif action_transform == "rate":
             from omni_drones.controllers import RateController as _RateController
@@ -141,7 +95,7 @@ def main(cfg):
         elif action_transform == "attitude":
             from omni_drones.controllers import AttitudeController as _AttitudeController
             controller = _AttitudeController(9.81, base_env.drone.params).to(base_env.device)
-            transform = AttitudeController(vmap(vmap(controller)))
+            transform = AttitudeController(torch.vmap(torch.vmap(controller)))
             transforms.append(transform)
         elif not action_transform.lower() == "none":
             raise NotImplementedError(f"Unknown action transform: {action_transform}")
@@ -149,8 +103,16 @@ def main(cfg):
     env = TransformedEnv(base_env, Compose(*transforms)).train()
     env.set_seed(cfg.seed)
 
-    policy = ALGOS[cfg.algo.name.lower()](
-        cfg.algo, env.observation_spec, env.action_spec, env.reward_spec, device=base_env.device)
+    try:
+        policy = ALGOS[cfg.algo.name.lower()](
+            cfg.algo, 
+            env.observation_spec, 
+            env.action_spec, 
+            env.reward_spec, 
+            device=base_env.device
+        )
+    except KeyError:
+        raise NotImplementedError(f"Unknown algorithm: {cfg.algo.name}")
 
     frames_per_batch = env.num_envs * int(cfg.algo.train_every)
     total_frames = cfg.get("total_frames", -1) // frames_per_batch * frames_per_batch
@@ -177,25 +139,19 @@ def main(cfg):
         seed: int=0, 
         exploration_type: ExplorationType=ExplorationType.MODE
     ):
-        frames = []
 
         base_env.enable_render(True)
         base_env.eval()
         env.eval()
         env.set_seed(seed)
 
-        from tqdm import tqdm
-        t = tqdm(total=base_env.max_episode_length)
-        def record_frame(*args, **kwargs):
-            frame = env.base_env.render(mode="rgb_array")
-            frames.append(frame)
-            t.update(2)
+        render_callback = RenderCallback(interval=2)
         
         with set_exploration_type(exploration_type):
             trajs = env.rollout(
                 max_steps=base_env.max_episode_length,
                 policy=policy,
-                callback=Every(record_frame, 2),
+                callback=render_callback,
                 auto_reset=True,
                 break_when_any_done=False,
                 return_contiguous=False,
@@ -221,10 +177,8 @@ def main(cfg):
         }
 
         # log video
-        video_array = np.stack(frames).transpose(0, 3, 1, 2)
-        frames.clear()
         info["recording"] = wandb.Video(
-            video_array, 
+            render_callback.get_video_array(axes="t c h w"), 
             fps=0.5 / (cfg.sim.dt * cfg.sim.substeps), 
             format="mp4"
         )
@@ -241,7 +195,7 @@ def main(cfg):
     env.train()
     for i, data in enumerate(pbar):
         info = {"env_frames": collector._frames, "rollout_fps": collector._fps}
-        episode_stats(data.to_tensordict())
+        episode_stats.add(data.to_tensordict())
         
         if len(episode_stats) >= base_env.num_envs:
             stats = {
@@ -269,10 +223,7 @@ def main(cfg):
         run.log(info)
         print(OmegaConf.to_yaml({k: v for k, v in info.items() if isinstance(v, float)}))
 
-        pbar.set_postfix({
-            "rollout_fps": collector._fps,
-            "frames": collector._frames,
-        })
+        pbar.set_postfix({"rollout_fps": collector._fps, "frames": collector._frames})
 
         if max_iters > 0 and i >= max_iters - 1:
             break 

@@ -20,12 +20,16 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import torch
+import numpy as np
+import einops
+from tqdm import tqdm
+from typing import Optional, Sequence
 
 from dataclasses import dataclass
 from torchrl.envs import EnvBase
 from torchrl.data import TensorSpec, CompositeSpec
-
-from typing import Optional
+from tensordict import TensorDictBase
 
 
 @dataclass
@@ -76,4 +80,49 @@ class AgentSpec:
             return self._env.output_spec["full_done_spec"][self.done_key]
         except:
             return self._env.done_spec[self.done_key]
+
+
+class RenderCallback:
+
+    def __init__(self, interval: int=2):
+        self.interval = interval
+        self.frames = []
+        self.i = 0
+        self.t = tqdm(desc="Rendering")
+    
+    def __call__(self, env, *args):
+        if self.i % self.interval == 0:
+            frame = env.render(mode="rgb_array")
+            self.frames.append(frame)
+            self.t.update(self.interval)
+        self.i += 1
+        return self.i
+    
+    def get_video_array(self, axes: str = "t c h w"):
+        return einops.rearrange(np.stack(self.frames), "t h w c -> " + axes)
+
+
+class EpisodeStats:
+    def __init__(self, in_keys: Sequence[str] = None):
+        self.in_keys = in_keys
+        self._stats = []
+        self._episodes = 0
+
+    def add(self, tensordict: TensorDictBase) -> TensorDictBase:
+        next_tensordict = tensordict["next"]
+        done = next_tensordict.get("done")
+        if done.any():
+            done = done.squeeze(-1)
+            self._episodes += done.sum().item()
+            next_tensordict = next_tensordict.select(*self.in_keys)
+            self._stats.extend(next_tensordict[done].cpu().unbind(0))
+        return len(self)
+    
+    def pop(self):
+        stats: TensorDictBase = torch.stack(self._stats).to_tensordict()
+        self._stats.clear()
+        return stats
+
+    def __len__(self):
+        return len(self._stats)
 

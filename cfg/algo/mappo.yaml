@@ -27,15 +27,9 @@ actor:
   weight_decay: 0.0
   gain: 0.01
 
-  vision_encoder: MobileNetV3Small
+  vision_encoder: MobileNetV3Small # if applicable
   attn_encoder: PartialAttentionEncoder # if applicable
   use_orthogonal: true
-
-  # rnn:
-  #   cls: gru
-  #   kwargs:
-  #     hidden_size: 128
-  #   train_seq_len: 16
 
 critic:
   num_critics: 1
@@ -58,13 +52,7 @@ critic:
   use_huber_loss: true
   huber_delta: 10
 
-  # rnn:
-  #   cls: gru
-  #   kwargs:
-  #     hidden_size: 128
-  #   train_seq_len: 16
-
-  vision_encoder: MobileNetV3Small
+  vision_encoder: MobileNetV3Small # if applicable
   attn_encoder: PartialAttentionEncoder # if applicable
   use_feature_normalization: true
   use_orthogonal: true

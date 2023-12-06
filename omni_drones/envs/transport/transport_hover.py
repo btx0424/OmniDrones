@@ -21,22 +21,19 @@
 # SOFTWARE.
 
 
-from functorch import vmap
-
-import omni.isaac.core.utils.torch as torch_utils
 from omni_drones.utils.torch import euler_to_quaternion
 import torch
 import torch.distributions as D
 from omni.isaac.core.objects import DynamicCuboid
 from tensordict.tensordict import TensorDict, TensorDictBase
-from torchrl.data import CompositeSpec, UnboundedContinuousTensorSpec
+from torchrl.data import CompositeSpec, UnboundedContinuousTensorSpec, DiscreteTensorSpec
 
 import omni_drones.utils.kit as kit_utils
 import omni_drones.utils.scene as scene_utils
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.views import RigidPrimView
-from omni_drones.utils.torch import cpos, off_diag, others
+from omni_drones.utils.torch import cpos, off_diag, others, quat_axis
 from omni_drones.robots.drone import MultirotorBase
 
 from .utils import TransportationGroup, TransportationCfg
@@ -193,6 +190,9 @@ class TransportHover(IsaacEnv):
                 "reward": UnboundedContinuousTensorSpec((self.drone.n, 1))
             }
         }).expand(self.num_envs).to(self.device)
+        self.done_spec = CompositeSpec({
+            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
+        }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", self.drone.n,
             observation_key=("agents", "observation"),
@@ -221,8 +221,7 @@ class TransportHover(IsaacEnv):
         pos = self.init_pos_dist.sample(env_ids.shape)
         rpy = self.init_rpy_dist.sample(env_ids.shape)
         rot = euler_to_quaternion(rpy)
-        heading = torch_utils.quat_axis(rot, 0)
-        # up = torch_utils.quat_axis(rot, 2)
+        heading = quat_axis(rot, 0)
 
         self.group._reset_idx(env_ids)
         self.group.set_world_poses(pos + self.envs_positions[env_ids], rot, env_ids)
@@ -233,7 +232,7 @@ class TransportHover(IsaacEnv):
 
         payload_target_rpy = self.payload_target_rpy_dist.sample(env_ids.shape)
         payload_target_rot = euler_to_quaternion(payload_target_rpy)
-        payload_target_heading = torch_utils.quat_axis(payload_target_rot, 0)
+        payload_target_heading = quat_axis(payload_target_rot, 0)
         payload_masses = self.payload_mass_dist.sample(env_ids.shape)
 
         self.payload_target_heading[env_ids] = payload_target_heading
@@ -263,11 +262,11 @@ class TransportHover(IsaacEnv):
         drone_pos = self.drone_states[..., :3]
 
         self.payload_pos, self.payload_rot = self.get_env_poses(self.payload.get_world_poses())
-        self.payload_heading: torch.Tensor = torch_utils.quat_axis(self.payload_rot, axis=0)
-        self.payload_up: torch.Tensor = torch_utils.quat_axis(self.payload_rot, axis=2)
+        self.payload_heading: torch.Tensor = quat_axis(self.payload_rot, axis=0)
+        self.payload_up: torch.Tensor = quat_axis(self.payload_rot, axis=2)
         
-        self.drone_rpos = vmap(cpos)(drone_pos, drone_pos)
-        self.drone_rpos = vmap(off_diag)(self.drone_rpos)
+        self.drone_rpos = torch.vmap(cpos)(drone_pos, drone_pos)
+        self.drone_rpos = torch.vmap(off_diag)(self.drone_rpos)
         self.drone_pdist = torch.norm(self.drone_rpos, dim=-1, keepdim=True)
         payload_drone_rpos = self.payload_pos.unsqueeze(1) - drone_pos
 
@@ -294,7 +293,7 @@ class TransportHover(IsaacEnv):
             [-payload_drone_rpos, self.drone_states[..., 3:], identity], dim=-1
         ).unsqueeze(2) # [..., 1, state_dim]
         obs["obs_others"] = torch.cat(
-            [self.drone_rpos, self.drone_pdist, vmap(others)(self.drone_states[..., 3:13])], dim=-1
+            [self.drone_rpos, self.drone_pdist, torch.vmap(others)(self.drone_states[..., 3:13])], dim=-1
         ) # [..., n-1, state_dim + 1]
         obs["obs_payload"] = payload_state.expand(-1, self.drone.n, -1).unsqueeze(2) # [..., 1, 22]
 

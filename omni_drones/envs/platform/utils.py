@@ -26,12 +26,10 @@ from dataclasses import dataclass
 
 import omni.isaac.core.utils.prims as prim_utils
 import omni.isaac.core.utils.stage as stage_utils
-import omni.isaac.core.utils.torch as torch_utils
 import omni_drones.utils.kit as kit_utils
 import omni.physx.scripts.utils as script_utils
 from omni.kit.commands import execute
 import torch
-from functorch import vmap
 
 from pxr import Gf, Usd, UsdGeom, UsdPhysics, PhysxSchema
 from scipy.spatial.transform.rotation import Rotation

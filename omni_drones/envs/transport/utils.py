@@ -25,10 +25,8 @@ from typing import Sequence, Union
 
 import omni.isaac.core.objects as objects
 import omni.isaac.core.utils.prims as prim_utils
-import omni.isaac.core.utils.torch as torch_utils
 import omni.physx.scripts.utils as script_utils
 import torch
-from functorch import vmap
 
 from omni.isaac.core.prims import RigidPrimView
 from omni.kit.commands import execute
@@ -37,8 +35,9 @@ from pxr import Gf, PhysxSchema, UsdGeom, UsdPhysics
 import omni_drones.utils.kit as kit_utils
 import omni_drones.utils.scene as scene_utils
 
-from omni_drones.robots import ASSET_PATH, RobotBase, RobotCfg
+from omni_drones.robots import RobotBase, RobotCfg
 from omni_drones.robots.drone import MultirotorBase
+from omni_drones.utils.torch import quat_axis
 from dataclasses import dataclass
 
 @dataclass
@@ -208,8 +207,8 @@ class TransportationGroup(RobotBase):
         self.jerk[:] = jerk
         self.acc[:] = acc
         self.vel[:] = vel
-        self.heading[:] = vmap(torch_utils.quat_axis)(self.rot, axis=0)
-        self.up[:] = vmap(torch_utils.quat_axis)(self.rot, axis=2)
+        self.heading[:] = quat_axis(self.rot, axis=0)
+        self.up[:] = quat_axis(self.rot, axis=2)
         state = [self.pos, self.rot, self.vel, self.heading, self.up]
         state = torch.cat(state, dim=-1)
         return state

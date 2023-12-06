@@ -240,7 +240,7 @@ def main(cfg):
 
         if len(episode_stats) >= base_env.num_envs:
             stats = {
-                "train/" + (".".join(k) if isinstance(k, tuple) else k): torch.mean(v).item() 
+                "train/" + (".".join(k) if isinstance(k, tuple) else k): torch.mean(v.float()).item() 
                 for k, v in episode_stats.pop().items(True, True)
             }
             info.update(stats)
@@ -275,10 +275,12 @@ def main(cfg):
     info.update(evaluate())
     run.log(info)
 
-    if hasattr(policy, "state_dict"):
+    try:
         ckpt_path = os.path.join(run.dir, "checkpoint_final.pt")
-        logging.info(f"Save checkpoint to {str(ckpt_path)}")
         torch.save(policy.state_dict(), ckpt_path)
+        logging.info(f"Saved checkpoint to {str(ckpt_path)}")
+    except AttributeError:
+        logging.warning(f"Policy {policy} does not implement `.state_dict()`")
 
 
     wandb.finish()

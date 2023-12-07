@@ -359,7 +359,7 @@ class MultirotorBase(RobotBase):
         if "com" in distributions:
             coms = distributions["com"].sample((*shape, 3))
             self.base_link.set_coms(coms, env_indices=env_ids)
-            self.intrinsics["com"][env_ids] = coms.reshape(*self.shape, 3)
+            self.intrinsics["com"][env_ids] = coms.reshape(*shape, 1, 3)
         if "thrust2weight" in distributions:
             thrust2weight = distributions["thrust2weight"].sample(shape)
             KF = thrust2weight * self.masses[env_ids] * 9.81 

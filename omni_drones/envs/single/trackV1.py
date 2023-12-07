@@ -23,10 +23,8 @@
 
 import omni.isaac.core.utils.prims as prim_utils
 
-import omni.isaac.core.utils.torch as torch_utils
 import torch
 import torch.distributions as D
-from functorch import vmap
 from omni.isaac.debug_draw import _debug_draw
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import (
@@ -39,7 +37,7 @@ import omni_drones.utils.kit as kit_utils
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.robots.drone import MultirotorBase
-from omni_drones.utils.torch import euler_to_quaternion, normalize, quat_axis
+from omni_drones.utils.torch import euler_to_quaternion, normalize, quat_rotate
 from omni_drones.views import RigidPrimView
 
 from ..utils import lemniscate, scale_time
@@ -454,8 +452,8 @@ class TrackV1(IsaacEnv):
         t = self.traj_t0 + scale_time(self.traj_w[env_ids].unsqueeze(1) * t * self.dt)
         traj_rot = self.traj_rot[env_ids].unsqueeze(1).expand(-1, t.shape[1], 4)
 
-        ref_pos = vmap(lemniscate)(t, self.traj_c[env_ids])
-        ref_pos = vmap(torch_utils.quat_rotate)(traj_rot, ref_pos) * self.traj_scale[
+        ref_pos = torch.vmap(lemniscate)(t, self.traj_c[env_ids])
+        ref_pos = quat_rotate(traj_rot, ref_pos) * self.traj_scale[
             env_ids
         ].unsqueeze(1)
 

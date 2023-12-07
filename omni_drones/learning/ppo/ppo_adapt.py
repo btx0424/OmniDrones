@@ -42,7 +42,7 @@ from .common import GAE
 
 @dataclass
 class PPOConfig:
-    name: str = "ppo_adaptive_separate"
+    name: str = "ppo_adapt"
     train_every: int = 32
     ppo_epochs: int = 4
     num_minibatches: int = 16

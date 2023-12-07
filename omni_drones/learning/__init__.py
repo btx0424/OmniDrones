@@ -39,6 +39,7 @@ ALGOS = {
     "happo": HAPPOPolicy,
     "ppo": PPOPolicy,
     "ppo_rnn": PPORNNPolicy,
+    "ppo_adapt": PPOAdaptivePolicy,
     "sac": SACPolicy,
     "td3": TD3Policy,
 }

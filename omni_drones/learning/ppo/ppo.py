@@ -170,9 +170,9 @@ class PPOPolicy(TensorDictModuleBase):
         self.value_norm = ValueNorm1(reward_spec.shape[-2:]).to(self.device)
     
     def __call__(self, tensordict: TensorDict):
-        tensordict = self.actor(tensordict)
-        tensordict = self.critic(tensordict)
-        tensordict = tensordict.exclude("loc", "scale", "feature")
+        self.actor(tensordict)
+        self.critic(tensordict)
+        tensordict.exclude("loc", "scale", "feature", inplace=True)
         return tensordict
 
     def train_op(self, tensordict: TensorDict):

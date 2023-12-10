@@ -23,7 +23,7 @@
 
 import torch
 import torch.nn as nn
-
+from typing import Sequence
 
 class GAE(nn.Module):
     def __init__(self, gamma, lmbda):
@@ -55,7 +55,7 @@ class GAE(nn.Module):
         return advantages, returns
 
 
-def make_mlp(num_units, activation=nn.LeakyReLU):
+def make_mlp(num_units: Sequence[int,], activation=nn.LeakyReLU):
     layers = []
     for n in num_units:
         layers.append(nn.LazyLinear(n))

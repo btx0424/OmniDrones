@@ -288,9 +288,9 @@ class MultirotorBase(RobotBase):
         self.throttle_difference[:] = torch.norm(self.throttle - last_throttle, dim=-1)
         return self.throttle.sum(-1)
 
-    def get_state(self, check_nan: bool=False):
+    def get_state(self, check_nan: bool=False, env_frame: bool=True):
         self.pos[:], self.rot[:] = self.get_world_poses(True)
-        if hasattr(self, "_envs_positions"):
+        if env_frame and hasattr(self, "_envs_positions"):
             self.pos.sub_(self._envs_positions)
         
         vel_w = self.get_velocities(True)

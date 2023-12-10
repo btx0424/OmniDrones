@@ -20,10 +20,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-
-import functorch
 import torch
 import torch.distributions as D
+import einops
 
 import omni.isaac.core.utils.prims as prim_utils
 
@@ -35,30 +34,20 @@ from omni_drones.utils.torch import euler_to_quaternion, quat_axis
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec, DiscreteTensorSpec
 
-
-def attach_payload(parent_path):
-    from omni.isaac.core import objects
-    import omni.physx.scripts.utils as script_utils
-    from pxr import UsdPhysics
-
-    payload_prim = objects.DynamicCuboid(
-        prim_path=parent_path + "/payload",
-        scale=torch.tensor([0.1, 0.1, .15]),
-        mass=0.0001
-    ).prim
-
-    parent_prim = prim_utils.get_prim_at_path(parent_path + "/base_link")
-    stage = prim_utils.get_current_stage()
-    joint = script_utils.createJoint(stage, "Prismatic", payload_prim, parent_prim)
-    UsdPhysics.DriveAPI.Apply(joint, "linear")
-    joint.GetAttribute("physics:lowerLimit").Set(-0.15)
-    joint.GetAttribute("physics:upperLimit").Set(0.15)
-    joint.GetAttribute("physics:axis").Set("Z")
-    joint.GetAttribute("drive:linear:physics:damping").Set(10.)
-    joint.GetAttribute("drive:linear:physics:stiffness").Set(10000.)
+import omni.isaac.orbit.sim as sim_utils
+from omni.isaac.orbit.assets import AssetBaseCfg
+from omni.isaac.orbit.sensors import RayCaster, RayCasterCfg, patterns
+from omni.isaac.orbit.terrains import (
+    TerrainImporterCfg, 
+    TerrainImporter, 
+    TerrainGeneratorCfg,
+    HfDiscreteObstaclesTerrainCfg,
+)
+from omni.isaac.orbit.utils.assets import NVIDIA_NUCLEUS_DIR
+from omni.isaac.core.utils.viewports import set_camera_view
 
 
-class Hover(IsaacEnv):
+class Forest(IsaacEnv):
     r"""
     A basic control task. The goal for the agent is to maintain a stable
     position and heading in mid-air without drifting. This task is designed
@@ -113,115 +102,135 @@ class Hover(IsaacEnv):
     """
     def __init__(self, cfg, headless):
         self.reward_effort_weight = cfg.task.reward_effort_weight
-        self.reward_action_smoothness_weight = cfg.task.reward_action_smoothness_weight
-        self.reward_distance_scale = cfg.task.reward_distance_scale
         self.time_encoding = cfg.task.time_encoding
         self.randomization = cfg.task.get("randomization", {})
         self.has_payload = "payload" in self.randomization.keys()
 
         super().__init__(cfg, headless)
+        
+        self.lidar_vfov = (
+            max(-89., cfg.task.lidar_vfov[0]), 
+            min(89., cfg.task.lidar_vfov[1])
+        )
+        self.lidar_range = cfg.task.lidar_range
+        ray_caster_cfg = RayCasterCfg(
+            prim_path="/World/envs/env_*/Hummingbird_0/base_link",
+            offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.0)),
+            attach_yaw_only=False,
+            pattern_cfg=patterns.BpearlPatternCfg(
+                vertical_ray_angles=torch.linspace(*self.lidar_vfov, 4)
+            ),
+            debug_vis=False,
+            mesh_prim_paths=["/World/ground"],
+        )
+        self.lidar: RayCaster = ray_caster_cfg.class_type(ray_caster_cfg)
+        self.lidar._initialize_impl()
+        self.lidar_resolution = (36, 4)
 
         self.drone.initialize()
         if "drone" in self.randomization:
             self.drone.setup_randomization(self.randomization["drone"])
-        if "payload" in self.randomization:
-            payload_cfg = self.randomization["payload"]
-            self.payload_z_dist = D.Uniform(
-                torch.tensor([payload_cfg["z"][0]], device=self.device),
-                torch.tensor([payload_cfg["z"][1]], device=self.device)
-            )
-            self.payload_mass_dist = D.Uniform(
-                torch.tensor([payload_cfg["mass"][0]], device=self.device),
-                torch.tensor([payload_cfg["mass"][1]], device=self.device)
-            )
-            self.payload = RigidPrimView(
-                f"/World/envs/env_*/{self.drone.name}_*/payload",
-                reset_xform_properties=False,
-                shape=(-1, self.drone.n)
-            )
-            self.payload.initialize()
         
-        self.target_vis = ArticulationView(
-            "/World/envs/env_*/target",
-            reset_xform_properties=False
-        )
-        self.target_vis.initialize()
         self.init_poses = self.drone.get_world_poses(clone=True)
         self.init_vels = torch.zeros_like(self.drone.get_velocities())
 
-        self.init_pos_dist = D.Uniform(
-            torch.tensor([-2.5, -2.5, 1.], device=self.device),
-            torch.tensor([2.5, 2.5, 2.5], device=self.device)
-        )
         self.init_rpy_dist = D.Uniform(
             torch.tensor([-.2, -.2, 0.], device=self.device) * torch.pi,
             torch.tensor([0.2, 0.2, 2.], device=self.device) * torch.pi
         )
-        self.target_rpy_dist = D.Uniform(
-            torch.tensor([0., 0., 0.], device=self.device) * torch.pi,
-            torch.tensor([0., 0., 2.], device=self.device) * torch.pi
-        )
 
-        self.target_pos = torch.tensor([[0.0, 0.0, 2.]], device=self.device)
-        self.target_heading = torch.zeros(self.num_envs, 1, 3, device=self.device)
+        with torch.device(self.device):
+            self.target_pos = torch.zeros(self.num_envs, 1, 3)
+            self.target_pos[:, 0, 0] = torch.linspace(-0.5, 0.5, self.num_envs) * 32.
+            self.target_pos[:, 0, 1] = 24.
+            self.target_pos[:, 0, 2] = 2.
+
         self.alpha = 0.8
 
     def _design_scene(self):
         import omni_drones.utils.kit as kit_utils
-        import omni.isaac.core.utils.prims as prim_utils
+        from pxr import PhysxSchema, UsdPhysics
+        from omni_drones.utils.poisson_disk import poisson_disk_sampling
 
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
         cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
         self.drone: MultirotorBase = drone_model(cfg=cfg)
 
-        target_vis_prim = prim_utils.create_prim(
-            prim_path="/World/envs/env_0/target",
-            usd_path=self.drone.usd_path,
-            translation=(0.0, 0.0, 2.),
-        )
-
-        kit_utils.set_nested_collision_properties(
-            target_vis_prim.GetPath(), 
-            collision_enabled=False
-        )
-        kit_utils.set_nested_rigid_body_properties(
-            target_vis_prim.GetPath(),
-            disable_gravity=True
-        )
-
-        kit_utils.create_ground_plane(
-            "/World/defaultGroundPlane",
-            static_friction=1.0,
-            dynamic_friction=1.0,
-            restitution=0.0,
-        )
         drone_prim = self.drone.spawn(translations=[(0.0, 0.0, 2.)])[0]
-        if self.has_payload:
-            attach_payload(drone_prim.GetPath().pathString)
-        return ["/World/defaultGroundPlane"]
+
+        light = AssetBaseCfg(
+            prim_path="/World/light",
+            spawn=sim_utils.DistantLightCfg(color=(0.75, 0.75, 0.75), intensity=3000.0),
+        )
+        sky_light = AssetBaseCfg(
+            prim_path="/World/skyLight",
+            spawn=sim_utils.DomeLightCfg(color=(0.2, 0.2, 0.3), intensity=2000.0),
+        )
+        rot = euler_to_quaternion(torch.tensor([0., 0.1, 0.1]))
+        light.spawn.func(light.prim_path, light.spawn, light.init_state.pos, rot)
+        sky_light.spawn.func(sky_light.prim_path, sky_light.spawn)
+        
+        terrain_cfg = TerrainImporterCfg(
+            num_envs=self.num_envs,
+            prim_path="/World/ground",
+            terrain_type="generator",
+            terrain_generator=TerrainGeneratorCfg(
+                seed=0,
+                size=(8.0, 8.0),
+                border_width=20.0,
+                num_rows=5,
+                num_cols=5,
+                horizontal_scale=0.1,
+                vertical_scale=0.005,
+                slope_threshold=0.75,
+                use_cache=False,
+                sub_terrains={
+                    "obstacles": HfDiscreteObstaclesTerrainCfg(
+                        size=(8.0, 8.0),
+                        horizontal_scale=0.1,
+                        vertical_scale=0.1,
+                        border_width=0.0,
+                        num_obstacles=40,
+                        obstacle_height_mode="choice",
+                        obstacle_width_range=(0.4, 0.8),
+                        obstacle_height_range=(3.0, 4.0),
+                        platform_width=1.5,
+                    )
+                },
+            ),
+            max_init_terrain_level=5,
+            collision_group=-1,
+            # visual_material=sim_utils.MdlFileCfg(
+            #     mdl_path=f"{NVIDIA_NUCLEUS_DIR}/Materials/Base/Architecture/Shingles_01.mdl",
+            #     project_uvw=True,
+            # ),
+            debug_vis=False,
+        )
+        terrain: TerrainImporter = terrain_cfg.class_type(terrain_cfg)
+
+        return ["/World/ground"]
 
     def _set_specs(self):
         drone_state_dim = self.drone.state_spec.shape[-1]
-        observation_dim = drone_state_dim + 3
-
-        if self.cfg.task.time_encoding:
-            self.time_encoding_dim = 4
-            observation_dim += self.time_encoding_dim
+        observation_dim = drone_state_dim
 
         self.observation_spec = CompositeSpec({
             "agents": CompositeSpec({
-                "observation": UnboundedContinuousTensorSpec((1, observation_dim), device=self.device),
-                "intrinsics": self.drone.intrinsics_spec.unsqueeze(0).to(self.device)
-            })
-        }).expand(self.num_envs).to(self.device)
+                "observation": CompositeSpec({
+                    "state": UnboundedContinuousTensorSpec((observation_dim,), device=self.device),
+                    "lidar": UnboundedContinuousTensorSpec((1, 36, 4), device=self.device),
+                }),
+                "intrinsics": self.drone.intrinsics_spec.to(self.device)
+            }).expand(self.num_envs)
+        }, shape=[self.num_envs], device=self.device)
         self.action_spec = CompositeSpec({
             "agents": CompositeSpec({
-                "action": self.drone.action_spec.unsqueeze(0),
+                "action": self.drone.action_spec,
             })
         }).expand(self.num_envs).to(self.device)
         self.reward_spec = CompositeSpec({
             "agents": CompositeSpec({
-                "reward": UnboundedContinuousTensorSpec((1, 1))
+                "reward": UnboundedContinuousTensorSpec((1,))
             })
         }).expand(self.num_envs).to(self.device)
         self.done_spec = CompositeSpec({
@@ -240,14 +249,12 @@ class Hover(IsaacEnv):
         stats_spec = CompositeSpec({
             "return": UnboundedContinuousTensorSpec(1),
             "episode_len": UnboundedContinuousTensorSpec(1),
-            "pos_error": UnboundedContinuousTensorSpec(1),
-            "heading_alignment": UnboundedContinuousTensorSpec(1),
-            "uprightness": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(1),
+            "safety": UnboundedContinuousTensorSpec(1)
         }).expand(self.num_envs).to(self.device)
         info_spec = CompositeSpec({
             "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13), device=self.device),
-            "prev_action": torch.stack([self.drone.action_spec] * self.drone.n, 0).to(self.device),
+            "prev_action": self.drone.action_spec.to(self.device),
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
         self.observation_spec["info"] = info_spec
@@ -258,105 +265,102 @@ class Hover(IsaacEnv):
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids, self.training)
         
-        pos = self.init_pos_dist.sample((*env_ids.shape, 1))
+        pos = torch.zeros(len(env_ids), 1, 3, device=self.device)
+        pos[:, 0, 0] = (env_ids / self.num_envs - 0.5) * 32.
+        pos[:, 0, 1] = -24.
+        pos[:, 0, 2] = 2.
+
         rpy = self.init_rpy_dist.sample((*env_ids.shape, 1))
         rot = euler_to_quaternion(rpy)
         self.drone.set_world_poses(
-            pos + self.envs_positions[env_ids].unsqueeze(1), rot, env_ids
+            pos, rot, env_ids
         )
         self.drone.set_velocities(self.init_vels[env_ids], env_ids)
-
-        if self.has_payload:
-            # TODO@btx0424: workout a better way 
-            payload_z = self.payload_z_dist.sample(env_ids.shape)
-            joint_indices = torch.tensor([self.drone._view._dof_indices["PrismaticJoint"]], device=self.device)
-            self.drone._view.set_joint_positions(
-                payload_z, env_indices=env_ids, joint_indices=joint_indices)
-            self.drone._view.set_joint_position_targets(
-                payload_z, env_indices=env_ids, joint_indices=joint_indices)
-            self.drone._view.set_joint_velocities(
-                torch.zeros(len(env_ids), 1, device=self.device), 
-                env_indices=env_ids, joint_indices=joint_indices)
-            
-            payload_mass = self.payload_mass_dist.sample(env_ids.shape+(1,)) * self.drone.masses[env_ids]
-            self.payload.set_masses(payload_mass, env_indices=env_ids)
-
-        target_rpy = self.target_rpy_dist.sample((*env_ids.shape, 1))
-        target_rot = euler_to_quaternion(target_rpy)
-        self.target_heading[env_ids] = quat_axis(target_rot.squeeze(1), 0).unsqueeze(1)
-        self.target_vis.set_world_poses(orientations=target_rot, env_indices=env_ids)
 
         self.stats[env_ids] = 0.
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("agents", "action")]
-        self.effort = self.drone.apply_action(actions)
+        self.effort = self.drone.apply_action(actions.unsqueeze(1))
 
+    def _post_sim_step(self, tensordict: TensorDictBase):
+        self.lidar.update(self.dt) 
+        
     def _compute_state_and_obs(self):
-        self.root_state = self.drone.get_state()
+        self.root_state = self.drone.get_state(env_frame=False)
         self.info["drone_state"][:] = self.root_state[..., :13]
-
         # relative position and heading
         self.rpos = self.target_pos - self.root_state[..., :3]
-        self.rheading = self.target_heading - self.root_state[..., 13:16]
         
-        obs = [self.rpos, self.root_state[..., 3:], self.rheading,]
-        if self.time_encoding:
-            t = (self.progress_buf / self.max_episode_length).unsqueeze(-1)
-            obs.append(t.expand(-1, self.time_encoding_dim).unsqueeze(1))
-        obs = torch.cat(obs, dim=-1)
+        self.lidar_scan = self.lidar_range - (
+            (self.lidar.data.ray_hits_w - self.lidar.data.pos_w.unsqueeze(1))
+            .norm(dim=-1)
+            .clamp_max(self.lidar_range)
+            .reshape(self.num_envs, 1, *self.lidar_resolution)
+        )
+
+        distance = self.rpos.norm(dim=-1, keepdim=True)
+        rpos_clipped = self.rpos / distance.clamp(1e-6)
+        obs = {
+            "state": torch.cat([rpos_clipped, self.root_state[..., 3:]], dim=-1).squeeze(1),
+            "lidar": self.lidar_scan
+        }
+
+        if self._should_render(0):
+            self.debug_draw.clear()
+            x = self.lidar.data.pos_w[0]
+            set_camera_view(
+                eye=x.cpu() + torch.as_tensor(self.cfg.viewer.eye),
+                target=x.cpu() + torch.as_tensor(self.cfg.viewer.lookat)                        
+            )
+            v = (self.lidar.data.ray_hits_w[0] - x).reshape(*self.lidar_resolution, 3)
+            self.debug_draw.vector(x.expand_as(v[:, 0]), v[:, 0])
+            self.debug_draw.vector(x.expand_as(v[:, -1]), v[:, -1])
 
         return TensorDict({
-            "agents": {
-                "observation": obs,
-                "intrinsics": self.drone.intrinsics
-            },
+            "agents": TensorDict(
+                {
+                    "observation": obs,
+                    "intrinsics": self.drone.intrinsics
+                }, 
+                [self.num_envs]
+            ),
             "stats": self.stats.clone(),
             "info": self.info
         }, self.batch_size)
 
     def _compute_reward_and_done(self):
         # pose reward
-        pos_error = torch.norm(self.rpos, dim=-1)
-        heading_alignment = torch.sum(self.drone.heading * self.target_heading, dim=-1)
+        distance = self.rpos.norm(dim=-1, keepdim=True)
+        vel_direction = self.rpos / distance.clamp_min(1e-6)
+
+        reward_safety = torch.log(self.lidar_range-self.lidar_scan).mean(dim=(2, 3))
+        reward_vel = (self.drone.vel_w[..., :3] * vel_direction).sum(-1).clip(max=2.0)
         
-        distance = torch.norm(torch.cat([self.rpos, self.rheading], dim=-1), dim=-1)
-
-        reward_pose = 1.0 / (1.0 + torch.square(self.reward_distance_scale * distance))
-        # pose_reward = torch.exp(-distance * self.reward_distance_scale)
-        # uprightness
         reward_up = torch.square((self.drone.up[..., 2] + 1) / 2)
-
-        # spin reward
-        spinnage = torch.square(self.drone.vel[..., -1])
-        reward_spin = 1.0 / (1.0 + torch.square(spinnage))
 
         # effort
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort)
-        reward_action_smoothness = self.reward_action_smoothness_weight * torch.exp(-self.drone.throttle_difference)
 
-        assert reward_pose.shape == reward_up.shape == reward_spin.shape
-        reward = (
-            reward_pose 
-            + reward_pose * (reward_up + reward_spin) 
-            + reward_effort 
-            + reward_action_smoothness
-        )
+        reward = reward_vel + reward_up + 1. + reward_safety * 0.2
         
-        terminated = (self.drone.pos[..., 2] < 0.2) | (distance > 4)
+
+        terminated = (
+            (self.drone.pos[..., 2] < 0.2) 
+            | (self.drone.pos[..., 2] > 4.)
+            | (self.drone.vel_w[..., :3].norm(dim=-1) > 2.5)
+            | (einops.reduce(self.lidar_scan, "n 1 w h -> n 1", "max") >  (self.lidar_range - 0.3))
+        )
         truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
-        self.stats["pos_error"].lerp_(pos_error, (1-self.alpha))
-        self.stats["heading_alignment"].lerp_(heading_alignment, (1-self.alpha))
-        self.stats["uprightness"].lerp_(self.root_state[..., 18], (1-self.alpha))
-        self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
+        self.stats["safety"].add_(reward_safety)
         self.stats["return"] += reward
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
 
         return TensorDict(
             {
                 "agents": {
-                    "reward": reward.unsqueeze(-1)
+                    "reward": reward
                 },
                 "done": terminated | truncated,
                 "terminated": terminated,

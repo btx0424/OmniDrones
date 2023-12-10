@@ -51,9 +51,9 @@ class ArticulationRootPropertiesCfg:
 
     enable_self_collisions: Optional[bool] = None
     """Whether to enable or disable self-collisions."""
-    solver_position_iteration_count: Optional[int] = None
+    solver_position_iteration_count: Optional[int] = 4
     """Solver position iteration counts for the body."""
-    solver_velocity_iteration_count: Optional[int] = None
+    solver_velocity_iteration_count: Optional[int] = 0
     """Solver position iteration counts for the body."""
 
 

@@ -4,21 +4,22 @@
 
 # OmniDrones
 
-[![IsaacSim](https://img.shields.io/badge/Isaac%20Sim-2022.2.0-orange.svg)](https://docs.omniverse.nvidia.com/app_isaacsim/app_isaacsim/overview.html)
-[![Python](https://img.shields.io/badge/python-3.7-blue.svg)](https://docs.python.org/3/whatsnew/3.7.html)
+[![IsaacSim](https://img.shields.io/badge/Isaac%20Sim-2023.1.0-orange.svg)](https://docs.omniverse.nvidia.com/app_isaacsim/app_isaacsim/overview.html)
+[![Python](https://img.shields.io/badge/python-3.10-blue.svg)](https://docs.python.org/3/whatsnew/3.7.html)
 [![Docs status](https://img.shields.io/badge/docs-passing-brightgreen.svg)](https://omnidrones.readthedocs.io/en/latest/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Discord Forum](https://dcbadge.vercel.app/api/server/J4QvXR6tQj)](https://discord.gg/J4QvXR6tQj)
 
 
 *OmniDrones* is an open-source platform designed for reinforcement learning research on multi-rotor drone systems. Built on [Nvidia Isaac Sim](https://docs.omniverse.nvidia.com/app_isaacsim/app_isaacsim/overview.html), *OmniDrones* features highly efficient and flxeible simulation that can be adopted for various research purposes. We also provide a suite of benchmark tasks and algorithm baselines to provide preliminary results for subsequent works.
 
 For usage and more details, please refer to the [documentation](https://omnidrones.readthedocs.io/en/latest/).
 
-## Announcement 2023-09-25
+Welcome to join our [Discord](https://discord.gg/J4QvXR6tQj) for discussions and questions!
 
-The initial release of **OmniDrones** is developed based on Isaac Sim 2022.2.0. As the next version of 
-Isaac Sim (2023.1.0) is expected to bring susbtantial changes but is not yet available, the APIs and usage 
-of **OmniDrones** are subject to change. We will try our best to keep the documentation up-to-date.
+## Notice
+
+The initial release of **OmniDrones** is developed based on Isaac Sim 2022.2.0. It can be found at the [release](https://github.com/btx0424/OmniDrones/tree/release) branch. The current version is developed based on Isaac Sim 2023.1.0. 
 
 
 ## Citation

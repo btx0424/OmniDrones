@@ -39,9 +39,6 @@ and the target exceeds a threshold, or when the maximum episode length
 is reached.
 
 ## Config
-- `bar_length`: The length of the pendulum's bar (or pole).
-
-## Config
 
 | Parameter               | Type  | Default       | Description |
 |-------------------------|-------|---------------|-------------|

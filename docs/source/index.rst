@@ -44,10 +44,17 @@ If you use **OmniDrones** in your research, please cite the paper with the follo
 
 .. toctree::
    :caption: Getting Started
-   :maxdepth: 1
+   :maxdepth: 2
 
    installation
    rl
+
+.. toctree::
+   :caption: Demos
+   :maxdepth: 2
+
+   demo/crazyflie
+   demo/lidar
 
 .. toctree::
    :caption: Tutorials

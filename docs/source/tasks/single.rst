@@ -77,6 +77,12 @@ Single-Agent Tasks
             </video>
           </center>
 
+.. code-block:: bash
+  :caption: OmniDrones/scripts/
+
+  python train.py task=Track algo=ppo_rnn headless=true eval_interval=300 total_frames=100_000_000
+
+
 .. toctree::
     :hidden:
 

@@ -38,7 +38,7 @@ Multi-Agent Tasks
 
 .. grid:: 1
 
-  .. grid-item-card:: :ref:`tasks/multi/TransportTrack:TransportTrack`
+  .. grid-item-card:: :ref:`tasks/multi/Formation:Formation`
     :text-align: center
       
     .. raw:: html
@@ -49,6 +49,15 @@ Multi-Agent Tasks
         </video>
       </center>
 
+Quick Start
+-----------
+
+.. code-block:: bash
+  :caption: OmniDrones/scripts/
+
+  python train.py task=PlatformHover algo=mappo headless=true eval_interval=300 total_frames=150_000_000
+
+
 .. toctree::
     :hidden:
 
@@ -56,3 +65,4 @@ Multi-Agent Tasks
     multi/PlatformTrack
     multi/TransportHover
     multi/TransportTrack
+    multi/Formation

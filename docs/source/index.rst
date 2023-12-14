@@ -73,9 +73,9 @@ If you use **OmniDrones** in your research, please cite the paper with the follo
    tasks/multi
 
 .. .. toctree::
-..    :caption: Misc.
+   :caption: Misc.
 
-..    roadmap
+   roadmap
 
 Indices and tables
 ==================

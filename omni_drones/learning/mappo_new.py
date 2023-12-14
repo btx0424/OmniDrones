@@ -32,6 +32,7 @@ import einops
 from tensordict import TensorDict
 from tensordict.nn import (
     EnsembleModule as _EnsembleModule, 
+    TensorDictSequential,
     TensorDictModule, 
     TensorDictModuleBase, 
     make_functional, 
@@ -39,12 +40,42 @@ from tensordict.nn import (
 )
 from torchrl.modules import ProbabilisticActor
 from torchrl.data import TensorSpec, CompositeSpec
-from einops.layers.torch import Rearrange
+from torchrl.envs.transforms import CatTensors
+from einops.layers.torch import Rearrange, Reduce
 
 from .ppo.common import GAE, make_mlp
 from .modules.distributions import IndependentNormal
 from .utils.valuenorm import ValueNorm1
 
+def make_transformer(
+    obs_spec: CompositeSpec, 
+    embed_dim: int=128,
+    nhead: int=1,
+    num_layers: int=1
+):
+    
+    embedding_keys = []
+    embeddings = []
+
+    for key, spec in obs_spec.items(True, True):
+        embeddings.append(TensorDictModule(nn.LazyLinear(embed_dim), [key], [key + "_embedding"]))
+        embedding_keys.append(key + "_embedding")
+
+    encoder_layer = nn.TransformerEncoderLayer(d_model=embed_dim, nhead=nhead, dim_feedforward=256)
+    encoder = nn.Sequential(
+        nn.TransformerEncoder(encoder_layer, num_layers=num_layers),
+        Reduce("b t n e -> b n e", "mean")
+    )
+
+    module = TensorDictSequential(
+        *embeddings,
+        CatTensors(embedding_keys, "embedding", del_keys=True),
+        TensorDictModule(encoder, ["embedding"], ["embedding"]),
+    )
+
+    return module
+
+    
 class Actor(nn.Module):
     def __init__(self, action_dim: int, predict_std: bool=False) -> None:
         super().__init__()

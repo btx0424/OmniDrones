@@ -21,9 +21,6 @@
 # SOFTWARE.
 
 
-from functorch import vmap
-
-import omni.isaac.core.utils.torch as torch_utils
 import omni_drones.utils.kit as kit_utils
 import omni_drones.utils.scene as scene_utils
 import torch
@@ -63,6 +60,31 @@ def sample_from_grid(cells: torch.Tensor, n):
     return cells[idx]
 
 class Formation(IsaacEnv):
+    """
+    This is a formation control task. The goal is to control the drone to form a
+    regular polygon formation. The reward is the negative of the formation cost.
+
+    ## Observation
+    - `obs_self`: the relative position, velocity, and orientation of the drone
+    - `obs_others`: the relative position, velocity, and orientation of other drones
+
+    ## Reward
+    
+    - `formation`: the negative of the formation cost.
+    - `pos`: the negative of the distance to the target position.
+    - `heading`: the negative of the heading error.
+
+    ## Episode End
+
+    The episode terminates when any of the following conditions are met:
+    - The drone crashes.
+    - The minimum distance between any two drones is less than a threshold.
+
+    or is truncated when it reaches the maximum length.
+
+    ## Config 
+
+    """
     def __init__(self, cfg, headless):
         self.time_encoding = cfg.task.time_encoding
         self.safe_distance = cfg.task.safe_distance
@@ -176,7 +198,7 @@ class Formation(IsaacEnv):
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
         
-        pos = vmap(sample_from_grid, randomness="different")(
+        pos = torch.vmap(sample_from_grid, randomness="different")(
             self.cells.expand(len(env_ids), *self.cells.shape), n=self.drone.n
         ) + self.envs_positions[env_ids].unsqueeze(1)
         rpy = self.init_rpy_dist.sample((*env_ids.shape, self.drone.n))
@@ -185,7 +207,7 @@ class Formation(IsaacEnv):
         self.drone.set_world_poses(pos, rot, env_ids)
         self.drone.set_velocities(vel, env_ids)
 
-        self.last_cost_h[env_ids] = vmap(cost_formation_hausdorff)(
+        self.last_cost_h[env_ids] = torch.vmap(cost_formation_hausdorff)(
             pos, desired_p=self.formation
         )
         # self.last_cost_l[env_ids] = vmap(cost_formation_laplacian)(
@@ -213,14 +235,14 @@ class Formation(IsaacEnv):
             obs_self.append(t.expand(-1, self.drone.n, self.time_encoding_dim))
         obs_self = torch.cat(obs_self, dim=-1)
 
-        relative_pos = vmap(cpos)(pos, pos)
-        self.drone_pdist = vmap(off_diag)(torch.norm(relative_pos, dim=-1, keepdim=True))
-        relative_pos = vmap(off_diag)(relative_pos)
+        relative_pos = torch.vmap(cpos)(pos, pos)
+        self.drone_pdist = torch.vmap(off_diag)(torch.norm(relative_pos, dim=-1, keepdim=True))
+        relative_pos = torch.vmap(off_diag)(relative_pos)
 
         obs_others = torch.cat([
             relative_pos,
             self.drone_pdist,
-            vmap(others)(self.root_states[..., 3:13])
+            torch.vmap(others)(self.root_states[..., 3:13])
         ], dim=-1)
 
         obs = TensorDict({
@@ -239,10 +261,10 @@ class Formation(IsaacEnv):
         }, self.batch_size)
 
     def _compute_reward_and_done(self):
-        pos, rot = self.get_env_poses(self.drone.get_world_poses())
-
         # cost_l = vmap(cost_formation_laplacian)(pos, desired_L=self.formation_L)
-        cost_h = vmap(cost_formation_hausdorff)(pos, desired_p=self.formation)
+        pos = self.drone.pos
+
+        cost_h = cost_formation_hausdorff(pos, desired_p=self.formation)
         
         distance = torch.norm(pos.mean(-2, keepdim=True) - self.target_pos, dim=-1)
 
@@ -322,7 +344,7 @@ def laplacian(p: torch.Tensor, normalize=False):
         L = D - A
     return L
 
-
+@torch.vmap
 def cost_formation_hausdorff(p: torch.Tensor, desired_p: torch.Tensor) -> torch.Tensor:
     p = p - p.mean(-2, keepdim=True)
     desired_p = desired_p - desired_p.mean(-2, keepdim=True)

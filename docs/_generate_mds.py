@@ -8,7 +8,7 @@ if __name__ == "__main__":
     print(IsaacEnv.REGISTRY)
 
     single_tasks = [
-        "Hover", "Track",
+        "Hover", "Track", "Forest",
         "InvPendulumHover", "InvPendulumTrack", "InvPendulumFlyThrough",
         "PayloadTrack", "PayloadFlyThrough"
     ]

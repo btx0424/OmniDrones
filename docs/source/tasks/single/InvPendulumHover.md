@@ -8,7 +8,7 @@ is to keep balance while maintaining its position around a target position.
 
 ## Observation
 - `drone_payload_rpos` (3): The position of the drone relative to the payload's position.
-- `root_state` (16 + num_rotors): The basic information of the drone (except its position),
+- `root_state` (19 + num_rotors): The basic information of the drone,
 containing its rotation (in quaternion), velocities (linear and angular),
 heading and up vectors, and the current throttle.
 - `target_payload_rpos` (3): The position of the reference relative to the payload's position.
@@ -16,20 +16,19 @@ heading and up vectors, and the current throttle.
 - `time_encoding` (optional): The time encoding, which is a 4-dimensional
 vector encoding the current progress of the episode.
 
-Reward
-------
+## Reward
+
 - `pos`: Reward for maintaining the position of the payload around the target position.
 - `bar_up`: Reward for keeping the bar up.
 - `effort`: Reward computed from the effort of the drone to optimize the
 energy consumption.
 - `spin`: Reward computed from the spin of the drone to discourage spinning.
 - `swing`: Reward computed from the swing of the payload to discourage swinging.
-- `action_smoothness`: Reward that encourages smoother drone actions, computed based on the throttle difference of the drone.
 
-The total reward is
+The total reward is computed as follows:
 
 ```{math}
-r = r_\text{bar_up} + r_\text{pos} + r_\text{bar_up} * (r_\text{spin} + r_\text{swing}) + r_\text{effort} + r_\text{action_smoothness}
+r = r_\text{bar_up} + r_\text{pos} + r_\text{bar_up} * (r_\text{spin} + r_\text{swing}) + r_\text{effort}
 ```
 
 ## Episode End

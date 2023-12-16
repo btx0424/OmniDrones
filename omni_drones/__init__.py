@@ -32,7 +32,7 @@ CONFIG_PATH = os.path.join(os.path.dirname(__file__), os.path.pardir, "cfg")
 
 def init_simulation_app(cfg):
     # launch the simulator
-    config = {"headless": cfg["headless"], "anti_aliasing": 0}
+    config = {"headless": cfg["headless"], "anti_aliasing": 1}
     # load cheaper kit config in headless
     # if cfg.headless:
     #     app_experience = f"{os.environ['EXP_PATH']}/omni.isaac.sim.python.gym.headless.kit"

@@ -25,10 +25,15 @@ extensions = [
     'sphinx.ext.autodoc',
     "sphinx.ext.autosummary",
     "sphinx.ext.autosectionlabel",
+    "sphinx.ext.todo",
     "sphinx_copybutton",
     "sphinx_design",
     'myst_parser',
+    "sphinxcontrib.bibtex",
 ]
+
+# BibTeX configuration
+bibtex_bibfiles = ["_static/refs.bib"]
 
 templates_path = ['_templates']
 exclude_patterns = []

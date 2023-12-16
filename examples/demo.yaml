@@ -36,3 +36,4 @@ viewer:
   lookat: [0., 0., 1.]
 
 drone_model: Hummingbird
+steps: 1000

@@ -229,6 +229,7 @@ class Hover(IsaacEnv):
             "terminated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
             "truncated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
         }).expand(self.num_envs).to(self.device)
+        
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,
             observation_key=("agents", "observation"),

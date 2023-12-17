@@ -21,9 +21,6 @@
 # SOFTWARE.
 
 
-import functorch
-
-import omni.isaac.core.utils.torch as torch_utils
 import omni_drones.utils.kit as kit_utils
 from omni_drones.utils.torch import euler_to_quaternion, normalize
 import omni.isaac.core.utils.prims as prim_utils
@@ -37,12 +34,17 @@ from omni_drones.robots.drone import MultirotorBase
 from omni_drones.views import RigidPrimView
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import (
-    UnboundedContinuousTensorSpec, CompositeSpec, DiscreteTensorSpec
+    UnboundedContinuousTensorSpec, 
+    CompositeSpec, 
+    DiscreteTensorSpec
 )
 from pxr import UsdShade
 
 
-class PinballV0(IsaacEnv):
+class Pinball(IsaacEnv):
+    """
+    
+    """
     def __init__(self, cfg, headless):
         super().__init__(cfg, headless)
 
@@ -122,14 +124,26 @@ class PinballV0(IsaacEnv):
             observation_dim += self.time_encoding_dim
 
         self.observation_spec = CompositeSpec({
-            "drone.obs": UnboundedContinuousTensorSpec((1, observation_dim)) ,
+            "agents": CompositeSpec({
+                "observation": UnboundedContinuousTensorSpec((1, observation_dim)),
+            })
         }).expand(self.num_envs).to(self.device)
         self.action_spec = CompositeSpec({
-            "drone.action": self.drone.action_spec.unsqueeze(0),
+            "agents": CompositeSpec({
+                "action": self.drone.action_spec.unsqueeze(0),
+            })
         }).expand(self.num_envs).to(self.device)
         self.reward_spec = CompositeSpec({
-            "drone.reward": UnboundedContinuousTensorSpec((1, 1))
+            "agents": CompositeSpec({
+                "reward": UnboundedContinuousTensorSpec((1, 1))
+            })
         }).expand(self.num_envs).to(self.device)
+        self.done_spec = CompositeSpec({
+            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
+            "terminated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
+            "truncated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
+        }).expand(self.num_envs).to(self.device)
+
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,
             observation_key="drone.obs",
@@ -173,7 +187,7 @@ class PinballV0(IsaacEnv):
         self.stats[env_ids] = 0.
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
-        actions = tensordict[("action", "drone.action")]
+        actions = tensordict[("agents", "action")]
         self.effort = self.drone.apply_action(actions)
 
     def _compute_state_and_obs(self):
@@ -192,39 +206,44 @@ class PinballV0(IsaacEnv):
         obs = torch.cat(obs, dim=-1)
 
         return TensorDict({
-            "drone.obs": obs,
-            "stats": self.stats,
+            "agents": {
+                "observation": obs
+            },
+            "stats": self.stats.clone(),
             "info": self.info
         }, self.batch_size)
 
     def _compute_reward_and_done(self):
-        
-        # score = self.drone.base_link.get_net_contact_forces().any(-1).float()
+
+        score = self.ball.get_net_contact_forces().any(-1).float()
+
         reward_pos = 1 / (1 + torch.norm(self.rpos[..., :2], dim=-1))
         reward_height = self.ball_pos[..., 2] - self.drone.pos[..., 2].clip(1.0)
-        # reward_score = score * 3.
-        reward = reward_pos + 0.8 * reward_height# + reward_score
+        reward_score = score * 3.
 
-        misbehave = (
+        reward = reward_pos + 0.8 * reward_height + reward_score
+
+        terminated = (
             (self.drone.pos[..., 2] < 0.3) 
             | (self.ball_pos[..., 2] < 0.2)
             | (self.ball_pos[..., 2] > 4.)
             | (self.ball_pos[..., :2].abs() > 2.).any(-1)
         )
         
-        done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-            | misbehave
-        )
+        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
-        # self.stats["score"].add_(score)
+        self.stats["score"].add_(score)
         self.stats["return"].add_(reward)
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
 
         return TensorDict(
             {
-                "reward": {"drone.reward": reward.unsqueeze(-1)},
-                "done": done,
+                "agents": {
+                    "reward": reward.unsqueeze(-1)
+                },
+                "done": terminated | truncated,
+                "terminated": terminated,
+                "truncated": truncated,
             },
             self.batch_size,
         )

@@ -38,8 +38,9 @@ from torchrl.data import (
     CompositeSpec, 
     DiscreteTensorSpec
 )
-from pxr import UsdShade
+from pxr import UsdShade, PhysxSchema
 
+from omni.isaac.orbit.sensors import ContactSensorCfg, ContactSensor
 
 class Pinball(IsaacEnv):
     """
@@ -59,10 +60,15 @@ class Pinball(IsaacEnv):
         self.ball = RigidPrimView(
             "/World/envs/env_*/ball",
             reset_xform_properties=False,
-            track_contact_forces=True,
+            track_contact_forces=False,
             shape=(-1, 1)
         )
         self.ball.initialize()
+        contact_sensor_cfg = ContactSensorCfg(
+            prim_path="/World/envs/env_.*/ball",
+        )
+        self.contact_sensor: ContactSensor = contact_sensor_cfg.class_type(contact_sensor_cfg)
+        self.contact_sensor._initialize_impl()
 
         self.init_ball_pos_dist = D.Uniform(
             torch.tensor([-1., -1., 2.5], device=self.device),
@@ -93,13 +99,16 @@ class Pinball(IsaacEnv):
             prim_path="/World/Physics_Materials/physics_material_0",
             restitution=0.8,
         )
-        objects.DynamicSphere(
+        ball = objects.DynamicSphere(
             prim_path="/World/envs/env_0/ball",
             radius=0.05,
             mass=0.05,
             color=torch.tensor([1., .2, .2]),
             physics_material=material,
         )
+        cr_api = PhysxSchema.PhysxContactReportAPI.Apply(ball.prim)
+        cr_api.CreateThresholdAttr().Set(0.)
+
         kit_utils.create_ground_plane(
             "/World/defaultGroundPlane",
             static_friction=1.0,
@@ -190,6 +199,9 @@ class Pinball(IsaacEnv):
         actions = tensordict[("agents", "action")]
         self.effort = self.drone.apply_action(actions)
 
+    def _post_sim_step(self, tensordict: TensorDictBase):
+        self.contact_sensor.update(self.dt)
+
     def _compute_state_and_obs(self):
         self.root_state = self.drone.get_state()
         self.info["drone_state"][:] = self.root_state[..., :13]
@@ -215,8 +227,10 @@ class Pinball(IsaacEnv):
 
     def _compute_reward_and_done(self):
 
-        score = self.ball.get_net_contact_forces().any(-1).float()
-
+        # score = self.ball.get_net_contact_forces().any(-1).float()
+        # self.drone.base_link.get_net_contact_forces().any(-1).float()
+        score = self.contact_sensor.data.net_forces_w.any(-1).float()
+        
         reward_pos = 1 / (1 + torch.norm(self.rpos[..., :2], dim=-1))
         reward_height = self.ball_pos[..., 2] - self.drone.pos[..., 2].clip(1.0)
         reward_score = score * 3.
@@ -232,7 +246,7 @@ class Pinball(IsaacEnv):
         
         truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
-        self.stats["score"].add_(score)
+        # self.stats["score"].add_(score)
         self.stats["return"].add_(reward)
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
 

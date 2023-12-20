@@ -126,7 +126,7 @@ class Pinball(IsaacEnv):
 
     def _set_specs(self):
         drone_state_dim = self.drone.state_spec.shape[-1]
-        observation_dim = drone_state_dim + 3
+        observation_dim = drone_state_dim + 3 + 3
 
         if self.cfg.task.time_encoding:
             self.time_encoding_dim = 4
@@ -211,7 +211,7 @@ class Pinball(IsaacEnv):
         # relative position and heading
         self.rpos =  self.ball_pos - self.drone.pos
         
-        obs = [self.rpos, self.root_state[..., 3:], self.ball_vel[..., :3]]
+        obs = [self.root_state, self.rpos, self.ball_vel[..., :3]]
         if self.time_encoding:
             t = (self.progress_buf / self.max_episode_length).unsqueeze(-1)
             obs.append(t.expand(-1, self.time_encoding_dim).unsqueeze(1))
@@ -232,7 +232,7 @@ class Pinball(IsaacEnv):
         score = self.contact_sensor.data.net_forces_w.any(-1).float()
         
         reward_pos = 1 / (1 + torch.norm(self.rpos[..., :2], dim=-1))
-        reward_height = self.ball_pos[..., 2] - self.drone.pos[..., 2].clip(1.0)
+        reward_height = (self.ball_pos[..., 2] - self.drone.pos[..., 2].clip(1.0)).clip(0., 2.)
         reward_score = score * 3.
 
         reward = reward_pos + 0.8 * reward_height + reward_score
@@ -240,13 +240,13 @@ class Pinball(IsaacEnv):
         terminated = (
             (self.drone.pos[..., 2] < 0.3) 
             | (self.ball_pos[..., 2] < 0.2)
-            | (self.ball_pos[..., 2] > 4.)
-            | (self.ball_pos[..., :2].abs() > 2.).any(-1)
+            | (self.ball_pos[..., 2] > 4.5)
+            | (self.ball_pos[..., :2].abs() > 2.5).any(-1)
         )
         
         truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
-        # self.stats["score"].add_(score)
+        self.stats["score"].add_(score)
         self.stats["return"].add_(reward)
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
 

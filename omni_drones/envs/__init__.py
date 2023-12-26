@@ -29,6 +29,6 @@ from .formation import Formation
 from .payload import PayloadTrack, PayloadFlyThrough
 from .dragon import DragonHover
 from .rearrange import Rearrange
-from .pinballV0 import PinballV0
+from .pinball import Pinball
 from .isaac_env import IsaacEnv
 from .forest import Forest

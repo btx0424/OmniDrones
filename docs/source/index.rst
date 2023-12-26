@@ -13,13 +13,6 @@ Built on `Nvidia Isaac Sim <https://docs.omniverse.nvidia.com/app_isaacsim/app_i
 .. image:: _static/visualization.jpg
    :align: center
 
-.. note::
-
-   2023-9-25: The initial release of **OmniDrones** is developed based on Isaac Sim 2022.2.0. As the next version of 
-   Isaac Sim (2023.1.0) is expected to bring susbtantial changes but is not yet available, the APIs and usage 
-   of **OmniDrones** are subject to change. We will try our best to keep the documentation up-to-date.
-
-
 The platform, as released with `our paper <https://arxiv.org/abs/2309.12825>`__, currently focus on end-to-end 
 learning of agile controllers for drones. It offers a suite of benchmark tasks and algorithm baselines to provide 
 preliminary results for subsequent works. 
@@ -48,11 +41,13 @@ If you use **OmniDrones** in your research, please cite the paper with the follo
 
    installation
    rl
+   troubleshooting
 
 .. toctree::
    :caption: Demos
    :maxdepth: 2
 
+   demo/downwash
    demo/crazyflie
    demo/lidar
 
@@ -63,7 +58,6 @@ If you use **OmniDrones** in your research, please cite the paper with the follo
    tutorials/drone
    tutorials/environment
    tutorials/controller
-   tutorials/tips
 
 .. toctree::
    :caption: Tasks
@@ -72,7 +66,7 @@ If you use **OmniDrones** in your research, please cite the paper with the follo
    tasks/single
    tasks/multi
 
-.. .. toctree::
+.. toctree::
    :caption: Misc.
 
    roadmap

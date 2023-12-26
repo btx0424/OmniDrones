@@ -64,7 +64,7 @@ Single-Agent Tasks
         :align: center
         :scale: 50%
 
-.. grid:: 1
+.. grid:: 2
   
       .. grid-item-card::  :ref:`tasks/single/Forest:Forest`
         :text-align: center
@@ -74,6 +74,17 @@ Single-Agent Tasks
           <center>
             <video width="320" height="240" controls>
               <source src="../_static/demo/thin_obstacles.mp4" type="video/mp4">
+            </video>
+          </center>
+      
+      .. grid-item-card:: :ref:`tasks/single/Pinball:Pinball`
+        :text-align: center
+
+        .. raw:: html
+          
+          <center>
+            <video width="320" height="240" controls>
+              <source src="../_static/tasks/Pinball.mp4" type="video/mp4">
             </video>
           </center>
 
@@ -94,3 +105,4 @@ Single-Agent Tasks
     single/InvPendulumTrack
     single/InvPendulumFlyThrough
     single/Forest
+    single/Pinball

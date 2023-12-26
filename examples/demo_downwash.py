@@ -2,7 +2,6 @@ import os
 
 from typing import Dict, Optional
 import torch
-from functorch import vmap
 
 import hydra
 from omegaconf import OmegaConf
@@ -78,7 +77,7 @@ def main(cfg):
     
     frames = []
     from tqdm import tqdm
-    t = tqdm(range(2000))
+    t = tqdm(range(cfg.steps))
     for i in t:
         if sim.is_stopped():
             break
@@ -103,7 +102,7 @@ def main(cfg):
         for i, vv in enumerate(v.unbind(1)):
             if vv.shape[1] == 4: # rgba
                 video_array = einops.rearrange(vv[:, :3], "b c h w -> b h w c")
-                write_video(f"downwash.mp4", video_array, fps=30)
+                write_video(f"downwash.mp4", video_array, fps=0.5 * (1. / cfg.sim.dt))
 
     simulation_app.close()
 

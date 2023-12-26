@@ -29,7 +29,7 @@ extensions = [
     "sphinx_copybutton",
     "sphinx_design",
     'myst_parser',
-    "sphinxcontrib.bibtex",
+    # "sphinxcontrib.bibtex",
 ]
 
 # BibTeX configuration

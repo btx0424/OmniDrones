@@ -21,12 +21,9 @@
 # SOFTWARE.
 
 
-from functorch import vmap
 import torch
 import torch.distributions as D
 
-import omni.isaac.core.utils.torch as torch_utils
-import omni.isaac.core.utils.prims as prim_utils
 import omni.isaac.core.objects as objects
 from omni.isaac.debug_draw import _debug_draw
 
@@ -37,7 +34,7 @@ from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec, DiscreteT
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.views import RigidPrimView
-from omni_drones.utils.torch import cpos, off_diag, others, normalize
+from omni_drones.utils.torch import cpos, off_diag, others, normalize, quat_rotate
 from omni_drones.robots.drone import MultirotorBase
 from omni_drones.utils.scene import design_scene
 from omni_drones.utils.torch import euler_to_quaternion
@@ -158,8 +155,7 @@ class PlatformTrack(IsaacEnv):
 
     def _design_scene(self):
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
-        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
-        self.drone: MultirotorBase = drone_model(cfg=cfg)
+        self.drone: MultirotorBase = drone_model()
 
         platform_cfg = PlatformCfg(
             num_drones=self.cfg.task.num_drones,
@@ -211,16 +207,13 @@ class PlatformTrack(IsaacEnv):
         }).expand(self.num_envs).to(self.device)
         self.action_spec = CompositeSpec({
             "agents": {
-                "action": self.drone.action_spec.expand(self.drone.n),
+                "action": torch.stack([self.drone.action_spec] * self.drone.n, dim=0),
             }
         }).expand(self.num_envs).to(self.device)
         self.reward_spec = CompositeSpec({
             "agents": {
                 "reward": UnboundedContinuousTensorSpec((self.drone.n, 1))
             }
-        }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
         }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", self.drone.n,
@@ -287,8 +280,8 @@ class PlatformTrack(IsaacEnv):
         self.drone_states = self.drone.get_state()
         self.platform_state = self.platform.get_state()
         drone_pos = self.drone_states[..., :3]
-        self.drone_rpos = vmap(cpos)(drone_pos, drone_pos)
-        self.drone_rpos = vmap(off_diag)(self.drone_rpos)
+        self.drone_rpos = torch.vmap(cpos)(drone_pos, drone_pos)
+        self.drone_rpos = torch.vmap(off_diag)(self.drone_rpos)
 
         target_pos = self._compute_traj(self.future_traj_steps, step_size=5)
         target_up = normalize(self.up_target.unsqueeze(1) - self.platform.pos)
@@ -314,7 +307,7 @@ class PlatformTrack(IsaacEnv):
             [-platform_drone_rpos, self.drone_states[..., 3:], identity], dim=-1
         ).unsqueeze(2)
         obs["obs_others"] = torch.cat(
-            [self.drone_rpos, vmap(others)(self.drone_states[..., 3:13])], dim=-1
+            [self.drone_rpos, torch.vmap(others)(self.drone_states[..., 3:13])], dim=-1
         )
         obs["obs_frame"] = platform_state.unsqueeze(1).expand(-1, self.drone.n, 1, -1)
 
@@ -333,7 +326,7 @@ class PlatformTrack(IsaacEnv):
                 "observation": obs,
                 "observation_central": state,
             },
-            "stats": self.stats
+            "stats": self.stats.clone()
         }, self.batch_size)
 
     def _compute_reward_and_done(self):
@@ -363,9 +356,9 @@ class PlatformTrack(IsaacEnv):
         done_misbehave = (self.drone_states[..., 2] < 0.2).any(-1, keepdim=True)
         done_hasnan = done_hasnan = torch.isnan(self.drone_states).any(-1)
 
-        done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-            | done_misbehave
+        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
+        terminated = (
+            done_misbehave
             | done_hasnan.any(-1, keepdim=True)
             | (self.target_distance > self.reset_thres)
         )
@@ -376,7 +369,9 @@ class PlatformTrack(IsaacEnv):
         return TensorDict(
             {
                 "agents": {"reward": reward.unsqueeze(1)},
-                "done": done,
+                "done": terminated | truncated,
+                "terminated": terminated,
+                "truncated": truncated
             },
             self.batch_size,
         )
@@ -388,8 +383,8 @@ class PlatformTrack(IsaacEnv):
         t = scale_time(self.traj_w[env_ids].unsqueeze(1) * t * self.dt)
         traj_rot = self.traj_rot[env_ids].unsqueeze(1).expand(-1, t.shape[1], 4)
         
-        target_pos = vmap(lemniscate)(self.traj_t0 + t, self.traj_c[env_ids])
-        target_pos = vmap(torch_utils.quat_rotate)(traj_rot, target_pos) * self.traj_scale[env_ids].unsqueeze(1)
+        target_pos = torch.vmap(lemniscate)(self.traj_t0 + t, self.traj_c[env_ids])
+        target_pos = quat_rotate(traj_rot, target_pos) * self.traj_scale[env_ids].unsqueeze(1)
 
         return self.origin + target_pos
 

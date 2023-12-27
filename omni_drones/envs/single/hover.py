@@ -21,7 +21,6 @@
 # SOFTWARE.
 
 
-import functorch
 import torch
 import torch.distributions as D
 
@@ -170,9 +169,10 @@ class Hover(IsaacEnv):
         import omni_drones.utils.kit as kit_utils
         import omni.isaac.core.utils.prims as prim_utils
 
-        drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
-        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
-        self.drone: MultirotorBase = drone_model(cfg=cfg)
+        drone_model_cfg = self.cfg.task.drone_model
+        self.drone, self.controller = MultirotorBase.make(
+            drone_model_cfg.name, drone_model_cfg.controller
+        )
 
         target_vis_prim = prim_utils.create_prim(
             prim_path="/World/envs/env_0/target",
@@ -224,11 +224,6 @@ class Hover(IsaacEnv):
                 "reward": UnboundedContinuousTensorSpec((1, 1))
             })
         }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-            "terminated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-            "truncated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-        }).expand(self.num_envs).to(self.device)
         
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,
@@ -246,15 +241,9 @@ class Hover(IsaacEnv):
             "uprightness": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
-        info_spec = CompositeSpec({
-            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13), device=self.device),
-            "prev_action": torch.stack([self.drone.action_spec] * self.drone.n, 0).to(self.device),
-        }).expand(self.num_envs).to(self.device)
-        self.observation_spec["stats"] = stats_spec
-        self.observation_spec["info"] = info_spec
-        self.stats = stats_spec.zero()
-        self.info = info_spec.zero()
 
+        self.observation_spec["stats"] = stats_spec
+        self.stats = stats_spec.zero()
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids, self.training)
@@ -295,7 +284,6 @@ class Hover(IsaacEnv):
 
     def _compute_state_and_obs(self):
         self.root_state = self.drone.get_state()
-        self.info["drone_state"][:] = self.root_state[..., :13]
 
         # relative position and heading
         self.rpos = self.target_pos - self.root_state[..., :3]
@@ -313,7 +301,6 @@ class Hover(IsaacEnv):
                 "intrinsics": self.drone.intrinsics
             },
             "stats": self.stats.clone(),
-            "info": self.info
         }, self.batch_size)
 
     def _compute_reward_and_done(self):

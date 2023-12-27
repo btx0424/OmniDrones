@@ -21,7 +21,6 @@
 # SOFTWARE.
 
 
-import functorch
 import torch
 import torch.distributions as D
 from tensordict.tensordict import TensorDict, TensorDictBase
@@ -32,7 +31,6 @@ import omni.isaac.core.objects as objects
 import omni_drones.utils.kit as kit_utils
 from omni_drones.utils.torch import euler_to_quaternion, normalize
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
-from omni_drones.robots.config import RobotCfg
 from omni_drones.robots.drone import MultirotorBase
 from omni_drones.views import RigidPrimView
 
@@ -136,8 +134,7 @@ class InvPendulumHover(IsaacEnv):
 
     def _design_scene(self):
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
-        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
-        self.drone: MultirotorBase = drone_model(cfg=cfg)
+        self.drone: MultirotorBase = drone_model()
 
         kit_utils.create_ground_plane(
             "/World/defaultGroundPlane",
@@ -180,9 +177,6 @@ class InvPendulumHover(IsaacEnv):
                 "reward": UnboundedContinuousTensorSpec((1, 1))
             })
         }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
-        }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,
             observation_key=("agents", "observation"),
@@ -195,13 +189,8 @@ class InvPendulumHover(IsaacEnv):
             "pos_error": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
-        info_spec = CompositeSpec({
-            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13)),
-        }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
-        self.observation_spec["info"] = info_spec
         self.stats = stats_spec.zero()
-        self.info = info_spec.zero()
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
@@ -229,7 +218,6 @@ class InvPendulumHover(IsaacEnv):
 
     def _compute_state_and_obs(self):
         self.drone_state = self.drone.get_state()
-        self.info["drone_state"][:] = self.drone_state[..., :13]
         self.drone_up = self.drone_state[..., 16:19]
         payload_pos, payload_rot = self.get_env_poses(self.payload.get_world_poses())
         self.payload_vels = self.payload.get_velocities()
@@ -258,8 +246,7 @@ class InvPendulumHover(IsaacEnv):
             "agents":{
                 "observation": obs,
             },
-            "stats": self.stats,
-            "info": self.info,
+            "stats": self.stats.clone(),
         }, self.batch_size)
 
     def _compute_reward_and_done(self):        
@@ -285,12 +272,9 @@ class InvPendulumHover(IsaacEnv):
         done_misbehave = (self.drone.pos[..., 2] < 0.2) | (reward_bar_up < 0.2)
         done_hasnan = torch.isnan(self.drone_state).any(-1)
 
-        done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-            | done_misbehave
-            | done_hasnan
-            | (self.pos_error > 3.3)
-        )
+        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
+        terminated = done_misbehave | done_hasnan | (self.pos_error > 3.3)
+        
         self.stats["return"] += reward
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(-1)
 
@@ -299,7 +283,9 @@ class InvPendulumHover(IsaacEnv):
                 "agents": {
                     "reward": reward.unsqueeze(-1)
                 },
-                "done": done,
+                "done": terminated | truncated,
+                "terminated": terminated,
+                "truncated": truncated
             },
             self.batch_size,
         )

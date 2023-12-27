@@ -21,9 +21,9 @@
 # SOFTWARE.
 
 
-from functorch import vmap
 import torch
 import torch.distributions as D
+import einops
 
 import omni.isaac.core.utils.torch as torch_utils
 import omni.isaac.core.utils.prims as prim_utils
@@ -134,8 +134,7 @@ class PlatformHover(IsaacEnv):
 
     def _design_scene(self):
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
-        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
-        self.drone: MultirotorBase = drone_model(cfg=cfg)
+        self.drone: MultirotorBase = drone_model()
 
         platform_cfg = PlatformCfg(
             num_drones=self.num_drones,
@@ -192,9 +191,6 @@ class PlatformHover(IsaacEnv):
             "agents": {
                 "reward": UnboundedContinuousTensorSpec((self.drone.n, 1))
             }
-        }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
         }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", self.drone.n,
@@ -260,8 +256,8 @@ class PlatformHover(IsaacEnv):
     def _compute_state_and_obs(self):
         self.drone_states = self.drone.get_state()
         drone_pos = self.drone_states[..., :3]
-        self.drone_rpos = vmap(cpos)(drone_pos, drone_pos)
-        self.drone_rpos = vmap(off_diag)(self.drone_rpos)
+        self.drone_rpos = torch.vmap(cpos)(drone_pos, drone_pos)
+        self.drone_rpos = torch.vmap(off_diag)(self.drone_rpos)
 
         self.platform_state = self.platform.get_state()
 
@@ -295,9 +291,9 @@ class PlatformHover(IsaacEnv):
             [-platform_drone_rpos, self.drone_states[..., 3:], identity], dim=-1
         ).unsqueeze(2)
         obs["obs_others"] = torch.cat(
-            [self.drone_rpos, vmap(others)(self.drone_states[..., 3:13])], dim=-1
+            [self.drone_rpos, torch.vmap(others)(self.drone_states[..., 3:13])], dim=-1
         )
-        obs["state_frame"] = platform_state.unsqueeze(1).expand(-1, self.drone.n, 1, -1)
+        obs["state_frame"] = einops.rearrange(platform_state, "n 1 d -> n a 1 d", a=self.drone.n)
 
         state = TensorDict({}, [self.num_envs])
         state["state_drones"] = obs["obs_self"].squeeze(2)    # [num_envs, drone.n, drone_state_dim]
@@ -312,7 +308,7 @@ class PlatformHover(IsaacEnv):
                     "observation": obs,
                     "observation_central": state,
                 },
-                "stats": self.stats
+                "stats": self.stats.clone()
             },
             self.batch_size,
         )
@@ -348,11 +344,8 @@ class PlatformHover(IsaacEnv):
         done_misbehave = (self.drone_states[..., 2] < 0.2).any(-1, keepdim=True) | (distance > 5.0)
         done_hasnan = done_hasnan = torch.isnan(self.drone_states).any(-1)
 
-        done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-            | done_misbehave
-            | done_hasnan.any(-1, keepdim=True)
-        )
+        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
+        terminated = done_misbehave | done_hasnan.any(-1, keepdim=True)
 
         self.stats["return"].add_(reward)
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(-1)
@@ -364,7 +357,9 @@ class PlatformHover(IsaacEnv):
                 "agents": {
                     "reward": reward.unsqueeze(1)
                 },
-                "done": done,
+                "done": truncated | terminated,
+                "terminated": terminated,
+                "truncated": truncated
             },
             self.batch_size,
         )

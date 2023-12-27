@@ -20,10 +20,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-
-from functorch import vmap
-
-import omni.isaac.core.utils.torch as torch_utils
 import omni.isaac.core.utils.prims as prim_utils
 import omni.isaac.core.objects as objects
 import omni_drones.utils.kit as kit_utils
@@ -146,8 +142,7 @@ class PayloadHover(IsaacEnv):
 
     def _design_scene(self):
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
-        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
-        self.drone: MultirotorBase = drone_model(cfg=cfg)
+        self.drone: MultirotorBase = drone_model()
 
         kit_utils.create_ground_plane(
             "/World/defaultGroundPlane",
@@ -188,10 +183,6 @@ class PayloadHover(IsaacEnv):
             action_key=("agents", "action"),
             reward_key=("agents", "reward"),
         )
-        info_spec  = CompositeSpec({
-            "payload_mass": UnboundedContinuousTensorSpec(1),
-            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13)),
-        }).expand(self.num_envs).to(self.device)
         stats_spec = CompositeSpec({
             "return": UnboundedContinuousTensorSpec(1),
             "episode_len": UnboundedContinuousTensorSpec(1),
@@ -199,10 +190,7 @@ class PayloadHover(IsaacEnv):
             "action_smoothness": UnboundedContinuousTensorSpec(1),
             "motion_smoothness": UnboundedContinuousTensorSpec(1)
         }).expand(self.num_envs).to(self.device)
-        info_spec.update(self.drone.info_spec.to(self.device))
-        self.observation_spec["info"] = info_spec
         self.observation_spec["stats"] = stats_spec
-        self.info = info_spec.zero()
         self.stats = stats_spec.zero()
     
     def _reset_idx(self, env_ids: torch.Tensor):
@@ -226,8 +214,6 @@ class PayloadHover(IsaacEnv):
 
         self.stats[env_ids] = 0.
 
-        self.info.update_at_(self.drone.info[env_ids], env_ids)
-
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("agents", "action")]
         self.effort = self.drone.apply_action(actions)
@@ -245,7 +231,6 @@ class PayloadHover(IsaacEnv):
 
     def _compute_state_and_obs(self):
         self.root_state = self.drone.get_state()
-        self.info["drone_state"][:] = self.root_state[..., :13]
         self.payload_pos = self.get_env_poses(self.payload.get_world_poses())[0]
         self.payload_vels = self.payload.get_velocities()
         
@@ -276,8 +261,7 @@ class PayloadHover(IsaacEnv):
             "agents": {
                 "observation": obs,
             },
-            "stats": self.stats,
-            "info": self.info
+            "stats": self.stats.clone(),
         }, self.batch_size)
 
     def _compute_reward_and_done(self):
@@ -303,11 +287,8 @@ class PayloadHover(IsaacEnv):
             + reward_action_smoothness
         )
 
-        done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-            | (self.drone.pos[..., 2] < 0.2)
-            | (self.payload_pos[..., 2] < 0.2).unsqueeze(-1)
-        ) 
+        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
+        terminated = (self.drone.pos[..., 2] < 0.2)| (self.payload_pos[..., 2] < 0.2).unsqueeze(-1)
 
         self.stats["return"] += reward.unsqueeze(-1)
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
@@ -317,7 +298,9 @@ class PayloadHover(IsaacEnv):
                 "agents": {
                     "reward": reward.unsqueeze(-1)
                 },
-                "done": done,
+                "done": terminated | truncated,
+                "truncated": truncated,
+                "terminated": terminated
             },
             self.batch_size,
         )

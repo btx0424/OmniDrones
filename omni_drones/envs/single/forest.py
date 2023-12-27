@@ -24,8 +24,6 @@ import torch
 import torch.distributions as D
 import einops
 
-import omni.isaac.core.utils.prims as prim_utils
-
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.robots.drone import MultirotorBase
 from omni_drones.views import ArticulationView, RigidPrimView
@@ -34,16 +32,6 @@ from omni_drones.utils.torch import euler_to_quaternion, quat_axis
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec, DiscreteTensorSpec
 
-import omni.isaac.orbit.sim as sim_utils
-from omni.isaac.orbit.assets import AssetBaseCfg
-from omni.isaac.orbit.sensors import RayCaster, RayCasterCfg, patterns
-from omni.isaac.orbit.terrains import (
-    TerrainImporterCfg, 
-    TerrainImporter, 
-    TerrainGeneratorCfg,
-    HfDiscreteObstaclesTerrainCfg,
-)
-from omni.isaac.orbit.utils.assets import NVIDIA_NUCLEUS_DIR
 from omni.isaac.core.utils.viewports import set_camera_view
 
 
@@ -114,22 +102,6 @@ class Forest(IsaacEnv):
 
         super().__init__(cfg, headless)
         
-        self.lidar_vfov = (
-            max(-89., cfg.task.lidar_vfov[0]), 
-            min(89., cfg.task.lidar_vfov[1])
-        )
-        self.lidar_range = cfg.task.lidar_range
-        ray_caster_cfg = RayCasterCfg(
-            prim_path="/World/envs/env_*/Hummingbird_0/base_link",
-            offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.0)),
-            attach_yaw_only=False,
-            pattern_cfg=patterns.BpearlPatternCfg(
-                vertical_ray_angles=torch.linspace(*self.lidar_vfov, 4)
-            ),
-            debug_vis=False,
-            mesh_prim_paths=["/World/ground"],
-        )
-        self.lidar: RayCaster = ray_caster_cfg.class_type(ray_caster_cfg)
         self.lidar._initialize_impl()
         self.lidar_resolution = (36, 4)
 
@@ -154,16 +126,25 @@ class Forest(IsaacEnv):
         self.alpha = 0.8
 
     def _design_scene(self):
-        import omni_drones.utils.kit as kit_utils
-        from pxr import PhysxSchema, UsdPhysics
-        from omni_drones.utils.poisson_disk import poisson_disk_sampling
 
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
-        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
-        self.drone: MultirotorBase = drone_model(cfg=cfg)
+        self.drone: MultirotorBase = drone_model()
 
         drone_prim = self.drone.spawn(translations=[(0.0, 0.0, 2.)])[0]
 
+        try:
+            import omni.isaac.orbit.sim as sim_utils
+            from omni.isaac.orbit.assets import AssetBaseCfg
+            from omni.isaac.orbit.sensors import RayCaster, RayCasterCfg, patterns
+            from omni.isaac.orbit.terrains import (
+                TerrainImporterCfg, 
+                TerrainImporter, 
+                TerrainGeneratorCfg,
+                HfDiscreteObstaclesTerrainCfg,
+            )
+        except:
+            raise RuntimeError("Isaac Orbit is not installed.")
+        
         light = AssetBaseCfg(
             prim_path="/World/light",
             spawn=sim_utils.DistantLightCfg(color=(0.75, 0.75, 0.75), intensity=3000.0),
@@ -214,6 +195,22 @@ class Forest(IsaacEnv):
         )
         terrain: TerrainImporter = terrain_cfg.class_type(terrain_cfg)
 
+        self.lidar_vfov = (
+            max(-89., self.cfg.task.lidar_vfov[0]), 
+            min(89., self.cfg.task.lidar_vfov[1])
+        )
+        self.lidar_range = self.cfg.task.lidar_range
+        ray_caster_cfg = RayCasterCfg(
+            prim_path="/World/envs/env_*/Hummingbird_0/base_link",
+            offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.0)),
+            attach_yaw_only=False,
+            pattern_cfg=patterns.BpearlPatternCfg(
+                vertical_ray_angles=torch.linspace(*self.lidar_vfov, 4)
+            ),
+            debug_vis=False,
+            mesh_prim_paths=["/World/ground"],
+        )
+        self.lidar: RayCaster = ray_caster_cfg.class_type(ray_caster_cfg)
         return ["/World/ground"]
 
     def _set_specs(self):
@@ -239,11 +236,6 @@ class Forest(IsaacEnv):
                 "reward": UnboundedContinuousTensorSpec((1,))
             })
         }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-            "terminated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-            "truncated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-        }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,
             observation_key=("agents", "observation"),
@@ -258,15 +250,8 @@ class Forest(IsaacEnv):
             "action_smoothness": UnboundedContinuousTensorSpec(1),
             "safety": UnboundedContinuousTensorSpec(1)
         }).expand(self.num_envs).to(self.device)
-        info_spec = CompositeSpec({
-            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13), device=self.device),
-            "prev_action": self.drone.action_spec.to(self.device),
-        }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
-        self.observation_spec["info"] = info_spec
         self.stats = stats_spec.zero()
-        self.info = info_spec.zero()
-
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids, self.training)
@@ -332,7 +317,6 @@ class Forest(IsaacEnv):
                 [self.num_envs]
             ),
             "stats": self.stats.clone(),
-            "info": self.info
         }, self.batch_size)
 
     def _compute_reward_and_done(self):
@@ -350,7 +334,6 @@ class Forest(IsaacEnv):
 
         reward = reward_vel + reward_up + 1. + reward_safety * 0.2
         
-
         terminated = (
             (self.drone.pos[..., 2] < 0.2) 
             | (self.drone.pos[..., 2] > 4.)

@@ -21,11 +21,9 @@
 # SOFTWARE.
 
 
-from functorch import vmap
-
 import omni.isaac.core.utils.torch as torch_utils
 import omni_drones.utils.kit as kit_utils
-from omni_drones.utils.torch import euler_to_quaternion
+from omni_drones.utils.torch import euler_to_quaternion, quat_rotate
 import omni.isaac.core.utils.prims as prim_utils
 import torch
 import torch.distributions as D
@@ -161,8 +159,7 @@ class PayloadTrack(IsaacEnv):
 
     def _design_scene(self):
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
-        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
-        self.drone: MultirotorBase = drone_model(cfg=cfg)
+        self.drone: MultirotorBase = drone_model()
 
         kit_utils.create_ground_plane(
             "/World/defaultGroundPlane",
@@ -195,9 +192,6 @@ class PayloadTrack(IsaacEnv):
             "agents": {
                 "reward": UnboundedContinuousTensorSpec((1, 1))
             }
-        }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
         }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,
@@ -327,18 +321,16 @@ class PayloadTrack(IsaacEnv):
         self.stats["return"].add_(reward)
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
 
-        done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-            | (self.drone.pos[..., 2] < 0.1)
-            | (pos_rror > self.reset_thres)
-        )
-        
+        terminated = (self.drone.pos[..., 2] < 0.1) | (pos_rror > self.reset_thres)
+        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
         return TensorDict(
             {
                 "agents": {
                     "reward": reward.unsqueeze(-1)
                 },
-                "done": done,
+                "done": terminated | truncated,
+                "truncated": truncated,
+                "terminated": terminated,
             },
             self.batch_size,
         )
@@ -350,8 +342,8 @@ class PayloadTrack(IsaacEnv):
         t = self.traj_t0 + scale_time(self.traj_w[env_ids].unsqueeze(1) * t * self.dt)
         traj_rot = self.traj_rot[env_ids].unsqueeze(1).expand(-1, t.shape[1], 4)
         
-        target_pos = vmap(lemniscate)(t, self.traj_c[env_ids])
-        target_pos = vmap(torch_utils.quat_rotate)(traj_rot, target_pos) * self.traj_scale[env_ids].unsqueeze(1)
+        target_pos = torch.vmap(lemniscate)(t, self.traj_c[env_ids])
+        target_pos = quat_rotate(traj_rot, target_pos) * self.traj_scale[env_ids].unsqueeze(1)
 
         return self.origin + target_pos
 

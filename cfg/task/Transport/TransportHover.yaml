@@ -24,6 +24,6 @@ reward_distance_scale: 1.2
 safe_distance: 0.5
 
 ravel_obs: true
-flatten_state: true
+ravel_obs_central: true
 
 action_transform: null

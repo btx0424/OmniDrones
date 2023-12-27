@@ -31,9 +31,6 @@ from torchrl.data import (
     DiscreteTensorSpec
 )
 
-import omni.isaac.core.utils.torch as torch_utils
-import omni.isaac.core.utils.prims as prim_utils
-import omni.physx.scripts.utils as script_utils
 import omni.isaac.core.objects as objects
 from omni.isaac.debug_draw import _debug_draw
 
@@ -161,8 +158,7 @@ class PayloadFlyThrough(IsaacEnv):
 
     def _design_scene(self):
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
-        cfg = drone_model.cfg_cls()
-        self.drone: MultirotorBase = drone_model(cfg=cfg)
+        self.drone: MultirotorBase = drone_model()
 
         kit_utils.create_ground_plane(
             "/World/defaultGroundPlane",
@@ -217,9 +213,6 @@ class PayloadFlyThrough(IsaacEnv):
             "agents": {
                 "reward": UnboundedContinuousTensorSpec((1, 1))
             }
-        }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
         }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,
@@ -327,8 +320,7 @@ class PayloadFlyThrough(IsaacEnv):
             "agents": {
                 "observation": obs
             },
-            "stats": self.stats,
-            # "info": self.info
+            "stats": self.stats.clone(),
         }, self.batch_size)
 
     def _compute_reward_and_done(self):

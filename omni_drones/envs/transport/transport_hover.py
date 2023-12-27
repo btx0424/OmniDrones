@@ -21,7 +21,6 @@
 # SOFTWARE.
 
 
-from omni_drones.utils.torch import euler_to_quaternion
 import torch
 import torch.distributions as D
 from omni.isaac.core.objects import DynamicCuboid
@@ -33,7 +32,7 @@ import omni_drones.utils.scene as scene_utils
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.views import RigidPrimView
-from omni_drones.utils.torch import cpos, off_diag, others, quat_axis
+from omni_drones.utils.torch import cpos, off_diag, others, quat_axis, euler_to_quaternion
 from omni_drones.robots.drone import MultirotorBase
 
 from .utils import TransportationGroup, TransportationCfg
@@ -131,8 +130,7 @@ class TransportHover(IsaacEnv):
 
     def _design_scene(self):
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
-        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
-        self.drone: MultirotorBase = drone_model(cfg=cfg)
+        self.drone: MultirotorBase = drone_model()
         group_cfg = TransportationCfg(num_drones=self.cfg.task.num_drones)
         self.group = TransportationGroup(drone=self.drone, cfg=group_cfg)
 
@@ -165,19 +163,20 @@ class TransportHover(IsaacEnv):
             payload_state_dim += self.time_encoding_dim
         
         observation_spec = CompositeSpec({
-            "obs_self": UnboundedContinuousTensorSpec((1, drone_state_dim)).to(self.device),
-            "obs_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13+1)).to(self.device),
-            "obs_payload": UnboundedContinuousTensorSpec((1, payload_state_dim)).to(self.device)
-        })
+            "obs_self": UnboundedContinuousTensorSpec((1, drone_state_dim)),
+            "obs_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13+1)),
+            "obs_payload": UnboundedContinuousTensorSpec((1, payload_state_dim))
+        }).to(self.device)
 
-        state_spec = CompositeSpec(
-            drones=UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim)).to(self.device),
-            payload=UnboundedContinuousTensorSpec((1, payload_state_dim)).to(self.device)
-        )
+        observation_central_spec = CompositeSpec({
+            "state_drones": UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim)),
+            "state_payload": UnboundedContinuousTensorSpec((1, payload_state_dim))
+        }).to(self.device)
+        
         self.observation_spec = CompositeSpec({
             "agents": {
                 "observation": observation_spec.expand(self.drone.n),
-                "observation_central": state_spec,
+                "observation_central": observation_central_spec,
             }
         }).expand(self.num_envs).to(self.device)
         self.action_spec = CompositeSpec({
@@ -190,9 +189,6 @@ class TransportHover(IsaacEnv):
                 "reward": UnboundedContinuousTensorSpec((self.drone.n, 1))
             }
         }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
-        }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", self.drone.n,
             observation_key=("agents", "observation"),
@@ -201,9 +197,6 @@ class TransportHover(IsaacEnv):
             state_key=("agents", "state")
         )
 
-        info_spec = CompositeSpec({
-            "payload_mass": UnboundedContinuousTensorSpec(1),
-        }).expand(self.num_envs).to(self.device)
         stats_spec = CompositeSpec({
             "return": UnboundedContinuousTensorSpec(self.drone.n),
             "episode_len": UnboundedContinuousTensorSpec(1),
@@ -212,9 +205,7 @@ class TransportHover(IsaacEnv):
             "uprightness": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(self.drone.n),
         }).expand(self.num_envs).to(self.device)
-        self.observation_spec["info"] = info_spec
         self.observation_spec["stats"] = stats_spec
-        self.info = info_spec.zero()
         self.stats = stats_spec.zero()
     
     def _reset_idx(self, env_ids: torch.Tensor):
@@ -243,7 +234,6 @@ class TransportHover(IsaacEnv):
             env_indices=env_ids
         )
 
-        self.info["payload_mass"][env_ids] = payload_masses.unsqueeze(-1).clone()
         self.stats[env_ids] = 0.
         distance = torch.cat([
             self.payload_target_pos-pos,
@@ -298,8 +288,8 @@ class TransportHover(IsaacEnv):
         obs["obs_payload"] = payload_state.expand(-1, self.drone.n, -1).unsqueeze(2) # [..., 1, 22]
 
         state = TensorDict({}, self.num_envs)
-        state["payload"] = payload_state # [..., 1, 22]
-        state["drones"] = obs["obs_self"].squeeze(2) # [..., n, state_dim]
+        state["state_drones"] = obs["obs_self"].squeeze(2) # [..., n, state_dim]
+        state["state_payload"] = payload_state # [..., 1, 22]
 
         self.pos_error = self.target_payload_rpose[..., :3].norm(dim=-1, keepdim=True)
         self.heading_alignment = torch.sum(
@@ -309,10 +299,9 @@ class TransportHover(IsaacEnv):
         return TensorDict({
             "agents": {
                 "observation": obs, 
-                "state": state,
+                "observation_central": state,
             },
-            "info": self.info,
-            "stats": self.stats
+            "stats": self.stats.clone()
         }, self.num_envs)
 
     def _compute_reward_and_done(self):
@@ -356,11 +345,8 @@ class TransportHover(IsaacEnv):
         done_hasnan = torch.isnan(self.drone_states).any(-1)
         done_fall = self.drone_states[..., 2] < 0.2
 
-        done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1) 
-            | done_fall.any(-1, keepdim=True)
-            | done_hasnan.any(-1, keepdim=True)
-        )
+        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1) 
+        terminated = done_fall.any(-1, keepdim=True) | done_hasnan.any(-1, keepdim=True)
 
         self.stats["return"].add_(reward.mean(1))
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(-1)
@@ -371,7 +357,9 @@ class TransportHover(IsaacEnv):
         return TensorDict(
             {
                 "agents": {"reward": reward},
-                "done": done,
+                "done": truncated | terminated,
+                "terminated": terminated,
+                "truncated": truncated
             },
             self.batch_size,
         )

@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 
-from .dsl_pid_controller import DSLPIDController
+from .controller import ControllerBase
 from .lee_position_controller import (
     LeePositionController,
     AttitudeController,

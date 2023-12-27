@@ -148,8 +148,7 @@ class TransportTrack(IsaacEnv):
 
     def _design_scene(self):
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
-        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
-        self.drone: MultirotorBase = drone_model(cfg=cfg)
+        self.drone: MultirotorBase = drone_model()
         group_cfg = TransportationCfg(num_drones=self.cfg.task.num_drones)
         self.group = TransportationGroup(drone=self.drone, cfg=group_cfg)
 
@@ -192,9 +191,6 @@ class TransportTrack(IsaacEnv):
                 "reward": UnboundedContinuousTensorSpec((self.drone.n, 1))
             }
         }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
-        }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", self.drone.n,
             observation_key=("agents", "observation"),
@@ -202,9 +198,6 @@ class TransportTrack(IsaacEnv):
             reward_key=("agents", "reward"),
         )
         
-        info_spec = CompositeSpec({
-            "payload_mass": UnboundedContinuousTensorSpec(1),
-        }).expand(self.num_envs).to(self.device)
         stats_spec = CompositeSpec({
             "return": UnboundedContinuousTensorSpec(self.drone.n),
             "episode_len": UnboundedContinuousTensorSpec(1),
@@ -213,9 +206,7 @@ class TransportTrack(IsaacEnv):
             "uprightness": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(self.drone.n),
         }).expand(self.num_envs).to(self.device)
-        self.observation_spec["info"] = info_spec
         self.observation_spec["stats"] = stats_spec
-        self.info = info_spec.zero()
         self.stats = stats_spec.zero()
 
     def _reset_idx(self, env_ids: torch.Tensor):
@@ -240,7 +231,6 @@ class TransportTrack(IsaacEnv):
         payload_masses = self.payload_mass_dist.sample(env_ids.shape)
         self.payload.set_masses(payload_masses, env_ids)
 
-        self.info["payload_mass"][env_ids] = payload_masses.unsqueeze(-1).clone()
         self.stats[env_ids] = 0.
 
         if self._should_render(0) and (env_ids == self.central_env_idx).any() :
@@ -311,10 +301,9 @@ class TransportTrack(IsaacEnv):
         return TensorDict({
             "agents": {
                 "observation": obs, 
-                "state": state,
+                "observation_central": state,
             },
-            "info": self.info,
-            "stats": self.stats
+            "stats": self.stats.clone()
         }, self.num_envs)
 
     def _compute_reward_and_done(self):
@@ -358,9 +347,9 @@ class TransportTrack(IsaacEnv):
         done_hasnan = torch.isnan(self.drone_states).any(-1)
         done_fall = self.drone_states[..., 2] < 0.2
 
-        done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1) 
-            | done_fall.any(-1, keepdim=True)
+        terminated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1) 
+        truncated = (
+            done_fall.any(-1, keepdim=True)
             | done_hasnan.any(-1, keepdim=True)
             | (self.target_distance > self.reset_thres)
         )
@@ -373,7 +362,9 @@ class TransportTrack(IsaacEnv):
                 "agents": {
                     "reward": reward
                 },
-                "done": done,
+                "done": terminated | truncated,
+                "terminated": terminated,
+                "truncated": truncated
             },
             self.batch_size,
         )
@@ -386,6 +377,6 @@ class TransportTrack(IsaacEnv):
         traj_rot = self.traj_rot[env_ids].unsqueeze(1).expand(-1, t.shape[1], 4)
         
         target_pos = torch.vmap(lemniscate)(self.traj_t0 + t, self.traj_c[env_ids])
-        target_pos = torch.vmap(quat_rotate)(traj_rot, target_pos) * self.traj_scale[env_ids].unsqueeze(1)
+        target_pos = quat_rotate(traj_rot, target_pos) * self.traj_scale[env_ids].unsqueeze(1)
 
         return self.origin + target_pos

@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 
-from .multirotor import MultirotorBase, MultirotorCfg
+from .multirotor import MultirotorBase
 
 from .crazyflie import Crazyflie
 from .firefly import Firefly

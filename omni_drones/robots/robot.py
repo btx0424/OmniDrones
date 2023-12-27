@@ -79,6 +79,7 @@ class RobotBase(abc.ABC):
         self.cfg = cfg
         self.device = SimulationContext.instance()._device
         self.dt = SimulationContext.instance().get_physics_dt()
+        self.gravity = SimulationContext.instance().get_physics_context().get_gravity()
         self.state_spec: TensorSpec
         self.action_spec: TensorSpec
         self.initialized = False

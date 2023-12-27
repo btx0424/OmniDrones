@@ -29,7 +29,6 @@ from tensordict.nn import make_functional
 from torchrl.data import BoundedTensorSpec, UnboundedContinuousTensorSpec
 
 from omni_drones.actuators.rotor_group import RotorGroup
-from omni_drones.controllers import DSLPIDController
 from omni_drones.robots import ASSET_PATH
 from omni_drones.robots.drone import MultirotorBase
 
@@ -40,4 +39,4 @@ class Crazyflie(MultirotorBase):
     usd_path: str = ASSET_PATH + "/usd/cf2x_pybullet.usd"
     # usd_path: str = ASSET_PATH + "/usd/cf2x_isaac.usd"
     param_path: str = ASSET_PATH + "/usd/crazyflie.yaml"
-    DEFAULT_CONTROLLER = DSLPIDController
+

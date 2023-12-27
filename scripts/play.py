@@ -4,10 +4,6 @@ import time
 
 import hydra
 import torch
-import numpy as np
-import pandas as pd
-import wandb
-import matplotlib.pyplot as plt
 
 from tqdm import tqdm
 from omegaconf import OmegaConf
@@ -20,12 +16,8 @@ from omni_drones.utils.torchrl.transforms import (
     FromMultiDiscreteAction, 
     FromDiscreteAction,
     ravel_composite,
-    AttitudeController,
-    RateController,
-    History
 )
-from omni_drones.utils.wandb import init_wandb
-from omni_drones.utils.torchrl import RenderCallback, EpisodeStats
+from omni_drones.utils.torchrl import EpisodeStats
 from omni_drones.learning import ALGOS
 
 from setproctitle import setproctitle
@@ -40,8 +32,8 @@ def main(cfg):
     OmegaConf.resolve(cfg)
     OmegaConf.set_struct(cfg, False)
     simulation_app = init_simulation_app(cfg)
-    run = init_wandb(cfg)
-    setproctitle(run.name)
+    
+    setproctitle(cfg.task.name)
     print(OmegaConf.to_yaml(cfg))
 
     from omni_drones.envs.isaac_env import IsaacEnv
@@ -90,11 +82,7 @@ def main(cfg):
     except KeyError:
         raise NotImplementedError(f"Unknown algorithm: {cfg.algo.name}")
 
-    frames_per_batch = env.num_envs * int(cfg.algo.train_every)
-    total_frames = cfg.get("total_frames", -1) // frames_per_batch * frames_per_batch
-    max_iters = cfg.get("max_iters", -1)
-    eval_interval = cfg.get("eval_interval", -1)
-    save_interval = cfg.get("save_interval", -1)
+    frames_per_batch = env.num_envs * 32
 
     stats_keys = [
         k for k in base_env.observation_spec.keys(True, True) 
@@ -105,69 +93,12 @@ def main(cfg):
         env,
         policy=policy,
         frames_per_batch=frames_per_batch,
-        total_frames=total_frames,
+        total_frames=cfg.total_frames,
         device=cfg.sim.device,
         return_same_td=True,
     )
 
-    @torch.no_grad()
-    def evaluate(
-        seed: int=0, 
-        exploration_type: ExplorationType=ExplorationType.MODE
-    ):
-
-        base_env.enable_render(True)
-        base_env.eval()
-        env.eval()
-        env.set_seed(seed)
-
-        render_callback = RenderCallback(interval=2)
-        
-        with set_exploration_type(exploration_type):
-            trajs = env.rollout(
-                max_steps=base_env.max_episode_length,
-                policy=policy,
-                callback=render_callback,
-                auto_reset=True,
-                break_when_any_done=False,
-                return_contiguous=False,
-            )
-        base_env.enable_render(not cfg.headless)
-        env.reset()
-
-        done = trajs.get(("next", "done"))
-        first_done = torch.argmax(done.long(), dim=1).cpu()
-
-        def take_first_episode(tensor: torch.Tensor):
-            indices = first_done.reshape(first_done.shape+(1,)*(tensor.ndim-2))
-            return torch.take_along_dim(tensor, indices, dim=1).reshape(-1)
-
-        traj_stats = {
-            k: take_first_episode(v)
-            for k, v in trajs[("next", "stats")].cpu().items()
-        }
-
-        info = {
-            "eval/stats." + k: torch.mean(v.float()).item() 
-            for k, v in traj_stats.items()
-        }
-
-        # log video
-        info["recording"] = wandb.Video(
-            render_callback.get_video_array(axes="t c h w"), 
-            fps=0.5 / (cfg.sim.dt * cfg.sim.substeps), 
-            format="mp4"
-        )
-        
-        # log distributions
-        # df = pd.DataFrame(traj_stats)
-        # table = wandb.Table(dataframe=df)
-        # info["eval/return"] = wandb.plot.histogram(table, "return")
-        # info["eval/episode_len"] = wandb.plot.histogram(table, "episode_len")
-
-        return info
-
-    pbar = tqdm(collector, total=total_frames//frames_per_batch)
+    pbar = tqdm(collector)
     env.train()
     for i, data in enumerate(pbar):
         info = {"env_frames": collector._frames, "rollout_fps": collector._fps}
@@ -180,44 +111,9 @@ def main(cfg):
             }
             info.update(stats)
 
-        info.update(policy.train_op(data.to_tensordict()))
-
-        if eval_interval > 0 and i % eval_interval == 0:
-            logging.info(f"Eval at {collector._frames} steps.")
-            info.update(evaluate())
-            env.train()
-            base_env.train()
-
-        if save_interval > 0 and i % save_interval == 0:
-            try:
-                ckpt_path = os.path.join(run.dir, f"checkpoint_{collector._frames}.pt")
-                torch.save(policy.state_dict(), ckpt_path)
-                logging.info(f"Saved checkpoint to {str(ckpt_path)}")
-            except AttributeError:
-                logging.warning(f"Policy {policy} does not implement `.state_dict()`")
-
-        run.log(info)
         print(OmegaConf.to_yaml({k: v for k, v in info.items() if isinstance(v, float)}))
 
         pbar.set_postfix({"rollout_fps": collector._fps, "frames": collector._frames})
-
-        if max_iters > 0 and i >= max_iters - 1:
-            break 
-    
-    logging.info(f"Final Eval at {collector._frames} steps.")
-    info = {"env_frames": collector._frames}
-    info.update(evaluate())
-    run.log(info)
-
-    try:
-        ckpt_path = os.path.join(run.dir, "checkpoint_final.pt")
-        torch.save(policy.state_dict(), ckpt_path)
-        logging.info(f"Saved checkpoint to {str(ckpt_path)}")
-    except AttributeError:
-        logging.warning(f"Policy {policy} does not implement `.state_dict()`")
-        
-
-    wandb.finish()
     
     simulation_app.close()
 

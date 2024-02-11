@@ -29,6 +29,14 @@ from .formation import Formation
 from .payload import PayloadTrack, PayloadFlyThrough
 from .dragon import DragonHover
 from .rearrange import Rearrange
-from .pinball import Pinball
 from .isaac_env import IsaacEnv
-from .forest import Forest
+
+try:
+    from .pinball import Pinball
+    from .forest import Forest
+except ModuleNotFoundError:
+    print(
+        "To run the environments which use `ContactSensor` and `RayCaster`,"
+        "please install Isaac Orbit (https://github.com/NVIDIA-Omniverse/orbit)."
+    )
+

@@ -202,7 +202,7 @@ def ravel_composite(
         in_keys = [k for k in spec.keys(True, True) if k[:len(key)] == key]
         return Compose(
             FlattenObservation(start_dim, end_dim, in_keys),
-            CatTensors(in_keys, out_key=key)
+            CatTensors(in_keys, out_key=key, del_keys=False)
         )
     else:
         raise TypeError

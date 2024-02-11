@@ -61,15 +61,11 @@ def main(cfg):
         transform = ravel_composite(base_env.observation_spec, ("agents", "observation_central"))
         transforms.append(transform)
     if (
-        cfg.task.get("flatten_intrinsics", True)
+        cfg.task.get("ravel_intrinsics", True)
         and ("agents", "intrinsics") in base_env.observation_spec.keys(True)
         and isinstance(base_env.observation_spec[("agents", "intrinsics")], CompositeSpec)
     ):
         transforms.append(ravel_composite(base_env.observation_spec, ("agents", "intrinsics"), start_dim=-1))
-
-    # if cfg.task.get("history", False):
-    #     # transforms.append(History([("info", "drone_state"), ("info", "prev_action")]))
-    #     transforms.append(History([("agents", "observation")]))
 
     # optionally discretize the action space or use a controller
     action_transform: str = cfg.task.get("action_transform", None)

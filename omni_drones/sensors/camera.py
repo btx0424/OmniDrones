@@ -131,10 +131,18 @@ class Camera:
             self.sim.render()
         
     def get_images(self) -> TensorDict:
-        return torch.stack([TensorDict({
-            k: wp.to_torch(v.get_data(device=self.device)).permute(2, 0, 1)
-            for k, v in annotators.items()
-        }, []) for annotators in self.annotators])
+        images_list = []
+        for annotators in self.annotators:
+            images_dict = {}
+            for k, v in annotators.items():
+                img_tensor = wp.to_torch(v.get_data(device=self.device))
+                if img_tensor.dim() == 2:
+                    img_tensor = img_tensor.unsqueeze(0)
+                else:
+                    img_tensor = img_tensor.permute(2, 0, 1)
+                images_dict[k] = img_tensor
+            images_list.append(TensorDict(images_dict, []))
+        return torch.stack(images_list)
 
     def _define_usd_camera_attributes(self, prim_path):
         """Creates and sets USD camera attributes.

@@ -198,10 +198,10 @@ class Camera:
         yaw_rad = math.radians(yaw)
         roll_rad = math.radians(roll)
 
-        # Create Gf.Quatd objects for each rotation
+        # Create Gf.Quatf objects for each rotation
         rx = Gf.Rotation(Gf.Vec3d(1, 0, 0), pitch_rad)
-        ry = Gf.Rotation(Gf.Vec3d(0, 1, 0), yaw_rad)
-        rz = Gf.Rotation(Gf.Vec3d(0, 0, 1), roll_rad)
+        ry = Gf.Rotation(Gf.Vec3d(0, 1, 0), roll_rad)
+        rz = Gf.Rotation(Gf.Vec3d(0, 0, 1), yaw_rad)
 
         # Combine the quaternions
         matrix = rx * ry * rz

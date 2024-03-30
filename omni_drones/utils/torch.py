@@ -159,23 +159,25 @@ def make_cells(
     return cells
 
 import functools
-def manual_batch(func):
+
+
+def manual_batch(func, broadcast=True):
     @functools.wraps(func)
     def wrapped(*args, **kwargs):
-        batch_shapes = set(arg.shape[:-1] for arg in args if isinstance(arg, torch.Tensor))
-        if not len(batch_shapes) == 1:
-            raise ValueError
-        batch_shape = batch_shapes.pop()
-        args = (
-            arg.reshape(-1, arg.shape[-1]) if isinstance(arg, torch.Tensor) else arg 
+        batch_shapes = [arg.shape[:-1] for arg in args]
+        if broadcast:
+            batch_shape = torch.broadcast_shapes(*batch_shapes)
+        else:
+            batch_shape = set(batch_shapes)
+            if len(batch_shape) != 1:
+                raise ValueError()
+            batch_shape = batch_shape.pop()
+        args = [
+            arg.expand(*batch_shape, arg.shape[-1]).reshape(-1, arg.shape[-1]) 
             for arg in args
-        )
-        kwargs = {
-            k: v.reshape(-1, v.shape[-1]) if isinstance(v, torch.Tensor) else v
-            for k, v in kwargs.items()
-        }
-        out = func(*args, **kwargs)
-        return out.unflatten(0, batch_shape)
+        ]
+        ret = func(*args, **kwargs)
+        return ret.reshape(*batch_shape, *ret.shape[1:])
     return wrapped
 
 

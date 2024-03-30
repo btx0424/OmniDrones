@@ -25,7 +25,6 @@ import omni.isaac.core.utils.prims as prim_utils
 
 import torch
 import torch.distributions as D
-from omni.isaac.debug_draw import _debug_draw
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import (
     BinaryDiscreteTensorSpec,
@@ -34,6 +33,7 @@ from torchrl.data import (
 )
 
 import omni_drones.utils.kit as kit_utils
+import omni_drones.envs.mdp as mdp
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.robots.drone import MultirotorBase
@@ -137,9 +137,6 @@ class TrackV1(IsaacEnv):
         self.ref_heading = torch.zeros(self.num_envs, 2, device=self.device)
 
         self.alpha = 0.8
-
-        # debug visualizations
-        self.draw = _debug_draw.acquire_debug_draw_interface()
 
     def _design_scene(self):
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]

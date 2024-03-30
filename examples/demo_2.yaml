@@ -55,4 +55,11 @@ task:
   actions:
     - key: [agents, action]
       items:
-        RotorCommand: {asset_name: drone, actuator_name: rotor}
+        LeePositionController: 
+          asset_name: drone
+          pos_gain: [4, 4, 4]
+          vel_gain: [2.2, 2.2, 2.2]
+          attitute_gain: [0.7, 0.7, 0.035]
+          ang_rate_gain: [0.1, 0.1, 0.025]
+          inertia: [0.007, 0.007, 0.012]
+        

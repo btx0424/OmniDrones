@@ -68,6 +68,8 @@ def make_mlp(num_units):
         layers.append(nn.LayerNorm(n))
     return nn.Sequential(*layers)
 
+REWARD_KEY = ("next", "reward")
+DONE_KEY = ("next", "terminated")
 
 class Actor(nn.Module):
     def __init__(self, action_dim: int) -> None:
@@ -167,7 +169,7 @@ class PPOPolicy(TensorDictModuleBase):
 
         self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=5e-4)
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=5e-4)
-        self.value_norm = ValueNorm1(reward_spec.shape[-2:]).to(self.device)
+        self.value_norm = ValueNorm1(reward_spec["reward"].shape[-1]).to(self.device)
     
     def __call__(self, tensordict: TensorDict):
         self.actor(tensordict)
@@ -179,12 +181,8 @@ class PPOPolicy(TensorDictModuleBase):
         next_tensordict = tensordict["next"]
         with torch.no_grad():
             next_values = self.critic(next_tensordict)["state_value"]
-        rewards = tensordict[("next", "agents", "reward")]
-        dones = einops.repeat(
-            tensordict[("next", "terminated")],
-            "t e 1 -> t e a 1",
-            a=self.n_agents
-        )
+        rewards = tensordict[REWARD_KEY]
+        dones = tensordict[DONE_KEY]
         values = tensordict["state_value"]
         values = self.value_norm.denormalize(values)
         next_values = self.value_norm.denormalize(next_values)

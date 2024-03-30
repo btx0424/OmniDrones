@@ -24,23 +24,27 @@
 import os
 
 import torch
-from omni.isaac.kit import SimulationApp
+from omni.isaac.orbit.app import AppLauncher
 from tensordict import TensorDict
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), os.path.pardir, "cfg")
 
 
-def init_simulation_app(cfg):
+def init_simulation_app(cfg=None):
+    if cfg is None:
+        cfg = {}
     # launch the simulator
-    config = {"headless": cfg["headless"], "anti_aliasing": 1}
-    # load cheaper kit config in headless
-    # if cfg.headless:
-    #     app_experience = f"{os.environ['EXP_PATH']}/omni.isaac.sim.python.gym.headless.kit"
-    # else:
-    #     app_experience = f"{os.environ['EXP_PATH']}/omni.isaac.sim.python.kit"
-    app_experience = f"{os.environ['EXP_PATH']}/omni.isaac.sim.python.kit"
-    simulation_app = SimulationApp(config, experience=app_experience)
-    # simulation_app = SimulationApp(config)
+    launcher_args = {
+        "headless": cfg.get("headless", False), 
+        "anti_aliasing": 1,
+        "offscreen_render": cfg.get("offscreen_render", False),
+    }
+    if cfg.get("headless", False):
+        app_experience = f"{os.environ['EXP_PATH']}/omni.isaac.sim.python.gym.headless.kit"
+    else:
+        app_experience = f"{os.environ['EXP_PATH']}/omni.isaac.sim.python.kit"
+    app_launcher = AppLauncher(launcher_args, experience=app_experience)
+    simulation_app = app_launcher.app
     return simulation_app
 
 

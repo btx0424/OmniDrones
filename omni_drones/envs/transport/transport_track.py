@@ -26,7 +26,6 @@ import torch.distributions as D
 
 import omni_drones.utils.kit as kit_utils
 import omni_drones.utils.scene as scene_utils
-from omni.isaac.debug_draw import _debug_draw
 
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import CompositeSpec, UnboundedContinuousTensorSpec, DiscreteTensorSpec
@@ -143,8 +142,6 @@ class TransportTrack(IsaacEnv):
         self.traj_w = torch.ones(self.num_envs, device=self.device)
 
         self.alpha = 0.8
-
-        self.draw = _debug_draw.acquire_debug_draw_interface()
 
     def _design_scene(self):
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]

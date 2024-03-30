@@ -8,6 +8,10 @@ defaults:
 env:
   max_episode_length: 600
 
+termination:
+  PositionOutOfRange: {z_range: [0.1, 4.0]}
+  TrackingErrorExceeds: {target_pos_key: target_pos, thres: 0.6}
+
 drone_model: Hummingbird
 force_sensor: false
 time_encoding: false

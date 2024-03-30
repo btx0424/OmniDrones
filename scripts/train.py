@@ -32,6 +32,10 @@ from omni_drones.learning import ALGOS
 from setproctitle import setproctitle
 from torchrl.envs.transforms import TransformedEnv, InitTracker, Compose
 
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+torch.backends.cudnn.deterministic = False
+torch.backends.cudnn.benchmark = False
 
 FILE_PATH = os.path.dirname(__file__)
 
@@ -48,7 +52,7 @@ def main(cfg):
     from omni_drones.envs.isaac_env import IsaacEnv
 
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
-    base_env = env_class(cfg, headless=cfg.headless)
+    base_env = env_class(cfg)
 
     transforms = [InitTracker()]
 
@@ -99,16 +103,13 @@ def main(cfg):
     env = TransformedEnv(base_env, Compose(*transforms)).train()
     env.set_seed(cfg.seed)
 
-    try:
-        policy = ALGOS[cfg.algo.name.lower()](
-            cfg.algo, 
-            env.observation_spec, 
-            env.action_spec, 
-            env.reward_spec, 
-            device=base_env.device
-        )
-    except KeyError:
-        raise NotImplementedError(f"Unknown algorithm: {cfg.algo.name}")
+    policy = ALGOS[cfg.algo.name.lower()](
+        cfg.algo, 
+        env.observation_spec, 
+        env.action_spec, 
+        env.reward_spec, 
+        device=base_env.device
+    )
 
     frames_per_batch = env.num_envs * int(cfg.algo.train_every)
     total_frames = cfg.get("total_frames", -1) // frames_per_batch * frames_per_batch
@@ -117,7 +118,7 @@ def main(cfg):
     save_interval = cfg.get("save_interval", -1)
 
     stats_keys = [
-        k for k in base_env.observation_spec.keys(True, True) 
+        k for k in base_env.reward_spec.keys(True, True) 
         if isinstance(k, tuple) and k[0]=="stats"
     ]
     episode_stats = EpisodeStats(stats_keys)

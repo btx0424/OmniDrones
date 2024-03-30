@@ -139,7 +139,7 @@ def create_bar(
     return bar
         
 
-def lemniscate(t, c):
+def lemniscate(t: torch.Tensor, c: torch.Tensor):
     sin_t = torch.sin(t)
     cos_t = torch.cos(t)
     sin2p1 = torch.square(sin_t) + 1

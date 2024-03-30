@@ -17,6 +17,7 @@ time_encoding: true
 safe_distance: 0.4
 formation: hexagon # tetragon
 
-flatten_state: false
+ravel_obs: false
+ravel_obs_central: false
 
 action_transform: null

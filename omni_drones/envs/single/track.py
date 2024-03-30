@@ -21,8 +21,6 @@
 # SOFTWARE.
 
 
-from functorch import vmap
-
 import omni.isaac.core.utils.torch as torch_utils
 import omni_drones.utils.kit as kit_utils
 from omni_drones.utils.torch import euler_to_quaternion
@@ -31,10 +29,9 @@ import torch
 import torch.distributions as D
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
-from omni_drones.robots.drone import MultirotorBase
+from omni_drones.robots.multirotor import Multirotor
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec, DiscreteTensorSpec
-from omni.isaac.debug_draw import _debug_draw
 
 from ..utils import lemniscate, scale_time
 
@@ -100,26 +97,12 @@ class Track(IsaacEnv):
 
         super().__init__(cfg, headless)
 
-        self.drone.initialize()
-        randomization = self.cfg.task.get("randomization", None)
-        if randomization is not None:
-            if "drone" in self.cfg.task.randomization:
-                self.drone.setup_randomization(self.cfg.task.randomization["drone"])
+        self.drone: Multirotor = self.scene["drone"]
 
-        if self.wind:
-            if randomization is not None:
-                if "wind" in self.cfg.task.randomization:
-                    cfg = self.cfg.task.randomization["wind"]
-                    # for phase in ("train", "eval"):
-                    wind_intensity_scale = cfg['train'].get("intensity", None)
-                    self.wind_intensity_low = wind_intensity_scale[0]
-                    self.wind_intensity_high = wind_intensity_scale[1]
-            else:
-                self.wind_intensity_low = 0
-                self.wind_intensity_high = 2
-            self.wind_w = torch.zeros(self.num_envs, 3, 8, device=self.device)
-            self.wind_i = torch.zeros(self.num_envs, 1, device=self.device)
-        
+        self.init_root_state = self.drone.data.default_root_state.clone()
+        self.init_joint_pos = self.drone.data.default_joint_pos.clone()
+        self.init_joint_vel = self.drone.data.default_joint_vel.clone()
+
         self.init_rpy_dist = D.Uniform(
             torch.tensor([-.2, -.2, 0.], device=self.device) * torch.pi,
             torch.tensor([0.2, 0.2, 2.], device=self.device) * torch.pi
@@ -142,80 +125,42 @@ class Track(IsaacEnv):
         )
         self.origin = torch.tensor([0., 0., 2.], device=self.device)
 
-        self.traj_t0 = torch.pi / 2
-        self.traj_c = torch.zeros(self.num_envs, device=self.device)
-        self.traj_scale = torch.zeros(self.num_envs, 3, device=self.device)
-        self.traj_rot = torch.zeros(self.num_envs, 4, device=self.device)
-        self.traj_w = torch.ones(self.num_envs, device=self.device)
-
-        self.target_pos = torch.zeros(self.num_envs, self.future_traj_steps, 3, device=self.device)
+        self.waypoints = torch.zeros(self.num_envs, self.future_traj_steps, 3, device=self.device)
+        self.target_pos = self.waypoints[:, 0]
 
         self.alpha = 0.8
 
-        self.draw = _debug_draw.acquire_debug_draw_interface()
-
     def _design_scene(self):
-        drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
-        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
-        self.drone: MultirotorBase = drone_model(cfg=cfg)
+        from omni.isaac.orbit.scene import InteractiveSceneCfg
+        from omni.isaac.orbit.assets import AssetBaseCfg
+        from omni.isaac.orbit.terrains import TerrainImporterCfg
 
-        kit_utils.create_ground_plane(
-            "/World/defaultGroundPlane",
-            static_friction=1.0,
-            dynamic_friction=1.0,
-            restitution=0.0,
-        )
-        self.drone.spawn(translations=[(0.0, 0.0, 1.5)])
-        return ["/World/defaultGroundPlane"]
-    
-    def _set_specs(self):
-        drone_state_dim = self.drone.state_spec.shape[-1]
-        obs_dim = drone_state_dim + 3 * (self.future_traj_steps-1)
-        if self.time_encoding:
-            self.time_encoding_dim = 4
-            obs_dim += self.time_encoding_dim
-        if self.intrinsics:
-            obs_dim += sum(spec.shape[-1] for name, spec in self.drone.info_spec.items())
+        import omni.isaac.orbit.sim as sim_utils
         
-        self.observation_spec = CompositeSpec({
-            "agents": {
-                "observation": UnboundedContinuousTensorSpec((1, obs_dim))
-            }
-        }).expand(self.num_envs).to(self.device)
-        self.action_spec = CompositeSpec({
-            "agents": {
-                "action": self.drone.action_spec.unsqueeze(0),
-            }
-        }).expand(self.num_envs).to(self.device)
-        self.reward_spec = CompositeSpec({
-            "agents": {
-                "reward": UnboundedContinuousTensorSpec((1, 1))
-            }
-        }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
-        }).expand(self.num_envs).to(self.device)
-        self.agent_spec["drone"] = AgentSpec(
-            "drone", 1,
-            observation_key=("agents", "observation"),
-            action_key=("agents", "action"),
-            reward_key=("agents", "reward"),
-        )
-        stats_spec = CompositeSpec({
-            "return": UnboundedContinuousTensorSpec(1),
-            "episode_len": UnboundedContinuousTensorSpec(1),
-            "tracking_error": UnboundedContinuousTensorSpec(1),
-            "tracking_error_ema": UnboundedContinuousTensorSpec(1),
-            "action_smoothness": UnboundedContinuousTensorSpec(1),
-        }).expand(self.num_envs).to(self.device)
-        info_spec = CompositeSpec({
-            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13)),
-        }).expand(self.num_envs).to(self.device)
-        # info_spec = self.drone.info_spec.to(self.device)
-        self.observation_spec["info"] = info_spec
-        self.observation_spec["stats"] = stats_spec
-        self.info = info_spec.zero()
-        self.stats = stats_spec.zero()
+        from omni_drones.robots.assets import HUMMINGBIRD_CFG
+        
+        class SceneCfg(InteractiveSceneCfg):
+
+            terrain = TerrainImporterCfg(
+                prim_path="/World/ground",
+                terrain_type="plane",
+                collision_group=-1,
+            )
+            
+            # lights
+            light = AssetBaseCfg(
+                prim_path="/World/light",
+                spawn=sim_utils.DistantLightCfg(color=(0.75, 0.75, 0.75), intensity=3000.0),
+            )
+            sky_light = AssetBaseCfg(
+                prim_path="/World/skyLight",
+                spawn=sim_utils.DomeLightCfg(color=(0.13, 0.13, 0.13), intensity=1000.0),
+            )
+            
+            drone = HUMMINGBIRD_CFG
+            drone.prim_path="{ENV_REGEX_NS}/Robot_0"
+
+        return SceneCfg(num_envs=self.cfg.num_envs, env_spacing=2.5)
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)

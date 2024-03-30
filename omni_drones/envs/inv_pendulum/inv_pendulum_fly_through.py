@@ -31,7 +31,6 @@ from torchrl.data import (
 )
 
 import omni.isaac.core.objects as objects
-from omni.isaac.debug_draw import _debug_draw
 
 import omni_drones.utils.kit as kit_utils
 from omni_drones.utils.torch import euler_to_quaternion, normalize
@@ -158,7 +157,6 @@ class InvPendulumFlyThrough(IsaacEnv):
 
         self.alpha = 0.8
 
-        self.draw = _debug_draw.acquire_debug_draw_interface()
         self.payload_traj_vis = []
         self.drone_traj_vis = []
 
@@ -278,10 +276,10 @@ class InvPendulumFlyThrough(IsaacEnv):
         self.stats.exclude("success")[env_ids] = 0.
         self.stats["success"][env_ids] = False
 
-        if (env_ids == self.central_env_idx).any():
-            self.payload_traj_vis.clear()
-            self.drone_traj_vis.clear()
-            self.draw.clear_lines()
+        # if (env_ids == self.central_env_idx).any():
+        #     self.payload_traj_vis.clear()
+        #     self.drone_traj_vis.clear()
+        #     self.draw.clear_lines()
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("agents", "action")]
@@ -319,12 +317,12 @@ class InvPendulumFlyThrough(IsaacEnv):
             drone_pos = (self.drone.pos[self.central_env_idx, 0]+central_env_pos).tolist()
             payload_pos = (self.payload_pos[self.central_env_idx]+central_env_pos).tolist()
             
-            if len(self.payload_traj_vis)>1:
-                point_list_0 = [self.payload_traj_vis[-1], self.drone_traj_vis[-1]]
-                point_list_1 = [payload_pos, drone_pos]
-                colors = [(1., .1, .1, 1.), (.1, 1., .1, 1.)]
-                sizes = [1.5, 1.5]
-                self.draw.draw_lines(point_list_0, point_list_1, colors, sizes)
+            # if len(self.payload_traj_vis)>1:
+            #     point_list_0 = [self.payload_traj_vis[-1], self.drone_traj_vis[-1]]
+            #     point_list_1 = [payload_pos, drone_pos]
+            #     colors = [(1., .1, .1, 1.), (.1, 1., .1, 1.)]
+            #     sizes = [1.5, 1.5]
+            #     self.draw.draw_lines(point_list_0, point_list_1, colors, sizes)
             
             self.drone_traj_vis.append(drone_pos)
             self.payload_traj_vis.append(payload_pos)

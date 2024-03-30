@@ -154,6 +154,16 @@ class MultirotorBase(RobotBase):
         self.torques = torch.zeros(*self.shape, 3, device=self.device)
         self.forces = torch.zeros(*self.shape, 3, device=self.device)
 
+        with torch.device(self.device):
+            self.root_pos_w = torch.zeros(*self.shape, 3)
+            self.root_pos_e = torch.zeros(*self.shape, 3)
+            self.root_quat_w = torch.zeros(*self.shape, 4)
+            self.root_rpy_w = torch.zeros(*self.shape, 3)
+            self.root_lin_vel_w = torch.zeros(*self.shape, 3)
+            self.root_ang_vel_w = torch.zeros(*self.shape, 3)
+            self.root_lin_vel_b = torch.zeros(*self.shape, 3)
+            self.root_ang_vel_b = torch.zeros(*self.shape, 3)
+
         self.pos, self.rot = self.get_world_poses(True)
         self.throttle_difference = torch.zeros(self.throttle.shape[:-1], device=self.device)
         self.heading = torch.zeros(*self.shape, 3, device=self.device)
@@ -247,7 +257,7 @@ class MultirotorBase(RobotBase):
         logging.info(f"Setup randomization:\n" + pprint.pformat(dict(self.randomization)))
 
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
-        rotor_cmds = actions.expand(*self.shape, self.num_rotors)
+        rotor_cmds = actions.unsqueeze(1).expand(*self.shape, self.num_rotors)
         last_throttle = self.throttle.clone()
         thrusts, moments = vmap(vmap(self.rotors, randomness="different"), randomness="same")(
             rotor_cmds, self.rotor_params
@@ -268,7 +278,7 @@ class MultirotorBase(RobotBase):
         self.forces.zero_()
         # TODO: global downwash
         if self.n > 1:
-            self.forces[:] += vmap(self.downwash)(
+            self.forces[:] += torch.vmap(self.downwash)(
                 self.pos,
                 self.pos,
                 quat_rotate(self.rot, self.thrusts.sum(-2)),
@@ -287,6 +297,17 @@ class MultirotorBase(RobotBase):
         )
         self.throttle_difference[:] = torch.norm(self.throttle - last_throttle, dim=-1)
         return self.throttle.sum(-1)
+
+    def update(self):
+        pos_w, quat_w = self.get_world_poses()
+        self.root_pos_w[:] = pos_w
+        self.root_quat_w[:] = quat_w
+        self.root_pos_e[:] = pos_w - self.env.envs_positions.view((-1,) + (1,) * (len(self.shape)-1) + (3,))
+        vel_w = self.get_velocities()
+        self.root_lin_vel_w[:] = vel_w[..., :3]
+        self.root_ang_vel_w[:] = vel_w[..., 3:]
+        self.root_lin_vel_b[:] = quat_rotate_inverse(quat_w, vel_w[..., :3])
+        self.root_ang_vel_b[:] = quat_rotate_inverse(quat_w, vel_w[..., 3:])
 
     def get_state(self, check_nan: bool=False, env_frame: bool=True):
         self.pos[:], self.rot[:] = self.get_world_poses(True)

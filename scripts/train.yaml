@@ -10,7 +10,7 @@ hydra:
 # memory. The difference is, "headless=false" will opens up a GUI and is suited
 # for local debugging, and "offscreen_render=true" is suited for recording
 # videos during training.
-headless: false
+headless: true
 offscreen_render: ${eval_render}
 
 sim: ${task.sim}

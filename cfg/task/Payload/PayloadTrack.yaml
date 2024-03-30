@@ -13,7 +13,7 @@ observations: # computed in this order
   - key: [agents, observation]
     items:
       DynamicState: {asset_name: drone}
-      DynamicStatePayload: {}
+      BodyDynamicState: {asset_name: drone, body_name: payload}
       Waypoints: {}
 
 actions:
@@ -29,9 +29,19 @@ termination:
   PositionOutOfRange: {z_range: [0.1, 4.0]}
   TrackingErrorExceeds: {thres: 0.8}
 
+randomizations:
+  RandomizeRotorParams:
+    asset_name: drone
+    actuator_name: rotor
+    kf_range: [0.7, 1.3]
+    km_range: [0.7, 1.3]
+    tau_range: [0.4, 1.0]
+  RandomizeBodyMass:
+    asset_name: drone
+    body_name: payload
+    mass_range: [0.1, 0.3]
+
 drone_model: Hummingbird
 
 future_traj_steps: 6
-payload_mass_scale: [0.2, 0.3]
-bar_length: 1.
 action_transform: null

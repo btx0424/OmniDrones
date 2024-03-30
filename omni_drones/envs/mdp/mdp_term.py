@@ -13,7 +13,7 @@ class MDPTerm():
     def update(self):
         pass
 
-    def reset(self):
+    def reset(self, env_ids: torch.Tensor):
         pass
     
     def __call__(self) -> torch.Tensor:

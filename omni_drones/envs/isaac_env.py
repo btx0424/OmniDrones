@@ -93,6 +93,7 @@ class TaskCfg:
     actions: List[Dict[str, Dict]] = field(default_factory=list)
     rewards: Dict[str, Dict] = field(default_factory=dict)
     termination: Dict[str, Dict] = field(default_factory=dict)
+    randomizations: Dict[str, Dict] = field(default_factory=dict)
 
 
 class IsaacEnv(EnvBase):
@@ -195,9 +196,12 @@ class IsaacEnv(EnvBase):
         REW_FUNCS.update({k: v for k, v in members.items() if issubclass(v, mdp.RewardFunc)})
         TERM_FUNCS = mdp.TERM_FUNCS
         TERM_FUNCS.update({k: v for k, v in members.items() if issubclass(v, mdp.TerminationFunc)})
-        
+        RAND_FUNCS = mdp.RAND_FUNCS
+        RAND_FUNCS.update({k: v for k, v in members.items() if issubclass(v, mdp.Randomization)})
+
         self._update_callbacks = [self.update]
         self._debug_vis_callbacks = [self.debug_vis]
+        self._reset_callbacks = []
 
         reward_spec = CompositeSpec({
             "reward": UnboundedContinuousTensorSpec(1),
@@ -212,6 +216,12 @@ class IsaacEnv(EnvBase):
             if isinstance(key, str):
                 return key
             return tuple(key)
+
+        for key, params in task_cfg.randomizations.items():
+            randomization = RAND_FUNCS[key](self, **params)
+            self._reset_callbacks.append(randomization.reset)
+        # to flush the changes to the physics sim
+        self.sim.physics_sim_view.flush()
 
         self.observation_funcs = OrderedDict()
         for group in task_cfg.observations:
@@ -317,13 +327,14 @@ class IsaacEnv(EnvBase):
             env_mask = torch.ones(self.num_envs, dtype=bool, device=self.device)
         env_ids = env_mask.nonzero().squeeze(-1)
         self._reset_idx(env_ids)
+        for callback in self._reset_callbacks:
+            callback(env_ids)
         self.sim._physics_sim_view.flush()
         # self.scene.update(self.step_dt)
         self.progress_buf[env_ids] = 0.
         self.stats[env_ids] = 0.
         tensordict = TensorDict({}, self.batch_size, device=self.device)
         tensordict.update(self._compute_observation())
-        tensordict.set("truncated", (self.progress_buf > self.max_episode_length).unsqueeze(1))
         return tensordict
 
     @abc.abstractmethod

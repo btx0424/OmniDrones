@@ -18,11 +18,9 @@ class DynamicState(ObservationFunc):
         state = torch.cat([
             self.asset.data.root_pos_w[..., [2]],
             self.asset.data.root_quat_w,
-            self.asset.data.root_ang_vel_w,
-            self.asset.data.root_lin_vel_w,
+            self.asset.data.root_vel_w,
             self.asset.data.projected_gravity_b,
             # self.asset.data.heading,
-            # self.asset.data.up,
             *self.asset.data.throttle.values()
         ], dim=-1)
         return state.reshape(*self.asset.shape, -1)
@@ -47,7 +45,7 @@ class BodyDynamicState(ObservationFunc):
         )
         state = torch.cat([
             body_pos,
-            self.asset.data.body_ang_vel_w[..., self.body_id, :],
-            self.asset.data.body_lin_vel_w[..., self.body_id, :],
+            self.asset.data.body_quat_w[..., self.body_id, :],
+            self.asset.data.body_vel_w[..., self.body_id, :],
         ], dim=-1)
         return state.reshape(*self.asset.shape, -1)

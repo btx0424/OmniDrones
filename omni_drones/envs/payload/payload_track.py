@@ -21,17 +21,14 @@
 # SOFTWARE.
 
 
-import omni_drones.utils.kit as kit_utils
-from omni_drones.utils.torch import euler_to_quaternion, quat_rotate
 import torch
 import torch.distributions as D
-import einops
 
 from omni_drones.envs.isaac_env import IsaacEnv
-from omni_drones.robots.drone import MultirotorBase
-from omni_drones.views import RigidPrimView
 from omni_drones.envs import mdp
-from omni_drones.robots.multirotor import Multirotor
+from omni_drones.robots.multirotor import Multirotor, Rotor
+from omni_drones.utils.torch import euler_to_quaternion, quat_rotate
+import omni_drones.utils.kit as kit_utils
 
 from tensordict.tensordict import TensorDict, TensorDictBase
 
@@ -64,12 +61,14 @@ class LemniscateTrajectory:
         
         c = self.c[ids].unsqueeze(-1)
         w = self.w[ids].unsqueeze(-1)
+        rot = self.rot[ids].unsqueeze(-2)
         scale = self.scale[ids]
         t_ = dt * torch.arange(steps, device=self.device) # [env, steps]
         t = w * (t.unsqueeze(-1) + t_) # [env, steps]
         x = lemniscate(self.T0 + scale_time(t), c) # [env, steps, 3]
 
-        return (x * scale.unsqueeze(-2)) + self.origin[ids].unsqueeze(1)
+        x = quat_rotate(rot, x) * scale.unsqueeze(1)
+        return x + self.origin[ids].unsqueeze(1)
 
 
 class PayloadTrack(IsaacEnv):
@@ -216,7 +215,7 @@ class PayloadTrack(IsaacEnv):
         init_root_state[..., :3] = (
             pos_t0 
             + self.scene.env_origins[env_ids] 
-            + torch.tensor([0., 0., BAR_LENGTH], device=self.device)
+            + torch.tensor([0., 0., 0.8], device=self.device)
         )
 
         self.drone.write_root_state_to_sim(init_root_state, env_ids)
@@ -258,21 +257,6 @@ class PayloadTrack(IsaacEnv):
             payload_pos,
             self.target_pos - (payload_pos - self.scene.env_origins)
         )
-
-    class DynamicStatePayload(mdp.ObservationFunc):
-
-        def __init__(self, env: IsaacEnv):
-            super().__init__(env)
-            self.drone: Multirotor = self.env.scene["drone"]
-            self.body_id = self.drone.find_bodies("payload")[0][0]
-
-        def compute(self) -> torch.Tensor:
-            pos_w = self.drone.data.body_pos_w[:, self.body_id]
-            state = torch.cat([
-                pos_w - self.drone.data.root_pos_w,
-                self.drone.data.body_vel_w[:, self.body_id],
-            ], dim=-1)
-            return state.reshape(self.num_envs, -1)
 
 
     class Waypoints(mdp.ObservationFunc):
@@ -350,29 +334,30 @@ from omni.isaac.orbit.sim.spawners.from_files.from_files_cfg import UsdFileCfg
 from omni_drones.utils.orbit import _spawn_from_usd_file, clone, multi
 from pxr import Usd, UsdPhysics
 
-BAR_LENGTH = 0.8
-PAYLOAD_RADIUS = 0.04
-PAYLOAD_MASS = 0.15
 
 def spawn_with_payload(
     prim_path: str,
     cfg: UsdFileCfg,
     translation: tuple[float, float, float] | None = None,
     orientation: tuple[float, float, float, float] | None = None,
+    parent_prim: str = "base_link",
+    bar_length: float = 0.8,
+    payload_radius: float = 0.04,
+    payload_mass: float = 0.15
 ) -> Usd.Prim:
     prim = _spawn_from_usd_file(prim_path, cfg.usd_path, cfg, translation, orientation)
     bar = prim_utils.create_prim(
         prim_path=prim_path + "/bar",
         prim_type="Capsule",
-        translation=(0., 0., -BAR_LENGTH / 2.),
-        attributes={"radius": 0.01, "height": BAR_LENGTH}
+        translation=(0., 0., -bar_length / 2.),
+        attributes={"radius": 0.01, "height": bar_length}
     )
     UsdPhysics.RigidBodyAPI.Apply(bar)
     UsdPhysics.CollisionAPI.Apply(bar)
     massAPI = UsdPhysics.MassAPI.Apply(bar)
     massAPI.CreateMassAttr().Set(0.001)
 
-    base_link = prim_utils.get_prim_at_path(prim_path + "/base_link")
+    base_link = prim_utils.get_prim_at_path(prim_path + "/" + parent_prim)
     stage = prim_utils.get_current_stage()
     joint = script_utils.createJoint(stage, "D6", bar, base_link)
     joint.GetAttribute("limit:rotX:physics:low").Set(-120)
@@ -386,9 +371,9 @@ def spawn_with_payload(
 
     payload = objects.DynamicSphere(
         prim_path=prim_path + "/payload",
-        translation=(0., 0., -BAR_LENGTH),
-        radius=PAYLOAD_RADIUS,
-        mass=PAYLOAD_MASS
+        translation=(0., 0., -bar_length),
+        radius=payload_radius,
+        mass=payload_mass
     )
     joint = script_utils.createJoint(stage, "Fixed", bar, payload.prim)
     kit_utils.set_collision_properties(
@@ -401,3 +386,5 @@ def spawn_with_payload(
 
 spawn_with_payload = clone(spawn_with_payload)
 spawn_with_payload = multi(spawn_with_payload)
+
+

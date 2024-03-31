@@ -186,15 +186,9 @@ class PPOPolicy(TensorDictModuleBase):
         policy_loss = - torch.mean(torch.min(surr1, surr2)) * self.action_dim
         entropy_loss = - self.entropy_coef * torch.mean(entropy)
 
-        b_values = tensordict["state_value"]
         b_returns = tensordict["ret"]
         values = self.critic(tensordict)["state_value"]
-        values_clipped = b_values + (values - b_values).clamp(
-            -self.clip_param, self.clip_param
-        )
-        value_loss_clipped = self.critic_loss_fn(b_returns, values_clipped)
-        value_loss_original = self.critic_loss_fn(b_returns, values)
-        value_loss = torch.max(value_loss_original, value_loss_clipped)
+        value_loss = self.critic_loss_fn(b_returns, values)
 
         loss = policy_loss + entropy_loss + value_loss
         self.actor_opt.zero_grad()

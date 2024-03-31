@@ -56,9 +56,6 @@ class PPOConfig:
 
 cs = ConfigStore.instance()
 cs.store("ppo", node=PPOConfig, group="algo")
-cs.store("ppo_priv", node=PPOConfig(priv_actor=True, priv_critic=True), group="algo")
-cs.store("ppo_priv_critic", node=PPOConfig(priv_critic=True), group="algo")
-
 
 def make_mlp(num_units):
     layers = []
@@ -105,25 +102,10 @@ class PPOPolicy(TensorDictModuleBase):
 
         fake_input = observation_spec.zero()
         
-        if self.cfg.priv_actor:
-            intrinsics_dim = observation_spec[("agents", "intrinsics")].shape[-1]
-            actor_module = TensorDictSequential(
-                TensorDictModule(make_mlp([128, 128]), [("agents", "observation")], ["feature"]),
-                TensorDictModule(
-                    nn.Sequential(nn.LayerNorm(intrinsics_dim), make_mlp([64, 64])),
-                    [("agents", "intrinsics")], ["context"]
-                ),
-                CatTensors(["feature", "context"], "feature"),
-                TensorDictModule(
-                    nn.Sequential(make_mlp([256, 256]), Actor(self.action_dim)),
-                    ["feature"], ["loc", "scale"]
-                )
-            )
-        else:
-            actor_module=TensorDictModule(
-                nn.Sequential(make_mlp([256, 256, 256]), Actor(self.action_dim)),
-                [("agents", "observation")], ["loc", "scale"]
-            )
+        actor_module = TensorDictModule(
+            nn.Sequential(make_mlp([256, 256, 256]), Actor(self.action_dim)),
+            [("agents", "observation")], ["loc", "scale"]
+        )
         self.actor: ProbabilisticActor = ProbabilisticActor(
             module=actor_module,
             in_keys=["loc", "scale"],
@@ -132,25 +114,10 @@ class PPOPolicy(TensorDictModuleBase):
             return_log_prob=True
         ).to(self.device)
 
-        if self.cfg.priv_critic:
-            intrinsics_dim = observation_spec[("agents", "intrinsics")].shape[-1]
-            self.critic = TensorDictSequential(
-                TensorDictModule(make_mlp([128, 128]), [("agents", "observation")], ["feature"]),
-                TensorDictModule(
-                    nn.Sequential(nn.LayerNorm(intrinsics_dim), make_mlp([64, 64])), 
-                    [("agents", "intrinsics")], ["context"]
-                ),
-                CatTensors(["feature", "context"], "feature"),
-                TensorDictModule(
-                    nn.Sequential(make_mlp([256, 256]), nn.LazyLinear(1)),
-                    ["feature"], ["state_value"]
-                )
-            ).to(self.device)
-        else:
-            self.critic = TensorDictModule(
-                nn.Sequential(make_mlp([256, 256, 256]), nn.LazyLinear(1)),
-                [("agents", "observation")], ["state_value"]
-            ).to(self.device)
+        self.critic = TensorDictModule(
+            nn.Sequential(make_mlp([256, 256, 256]), nn.LazyLinear(1)),
+            [("agents", "observation")], ["state_value"]
+        ).to(self.device)
 
         self.actor(fake_input)
         self.critic(fake_input)

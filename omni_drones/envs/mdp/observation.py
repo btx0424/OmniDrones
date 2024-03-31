@@ -130,6 +130,8 @@ class AppliedActuation(ObservationFunc):
                 raise ValueError(f"Actuator {actuator_name} not found in asset {asset_name}")
             
             self.default_masses_total = self.asset.data.default_masses_total.to(self.device)
+            self.default_masses_total *= 9.81
+
             self.default_inertia = self.asset.data.default_inertia.to(self.device)
 
             self.applied_thrusts = self.asset.data.applied_thrusts[actuator_name]
@@ -141,6 +143,28 @@ class AppliedActuation(ObservationFunc):
                 self.applied_moments / self.default_inertia[..., [2]],
             ], dim=-1)
             return actuation.reshape(*self.asset.shape, -1)
+
+
+class AppliedDrag(ObservationFunc):
+
+        def __init__(
+            self, 
+            env: "IsaacEnv", 
+            asset_name: str="drone",
+            body_name: str="base_link"
+        ):
+            super().__init__(env)
+            self.asset: Multirotor = self.env.scene[asset_name]
+            self.body_ids, self.body_names = self.asset.find_bodies(body_name)
+            self.default_masses_total = self.asset.data.default_masses_total.to(self.device)
+            self.default_masses_total *= 9.81
+            
+        def compute(self) -> torch.Tensor:
+            applied_drag = (
+                self.asset._data.applied_drag_b[:, self.body_ids]
+                / self.default_masses_total.unsqueeze(1)
+            )
+            return applied_drag.reshape(*self.asset.shape, -1)
 
 
 def _get(t: torch.Tensor) -> torch.Tensor:

@@ -233,7 +233,7 @@ class PayloadTrack(IsaacEnv):
                 - self.env.waypoints
             )
             pos = quat_rotate_inverse(
-                self.drone.data.root_quat_w.reshape(pos.shape[:-1] + (4,)),
+                self.drone.data.root_quat_w.unsqueeze(1),
                 pos
             )
             return pos.reshape(self.num_envs, -1)

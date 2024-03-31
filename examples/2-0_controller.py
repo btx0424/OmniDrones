@@ -39,8 +39,8 @@ def main(cfg):
 
             # set a target position for the drone
             self.target_pos = self.default_init_state[:, :3].clone()
-            # self.target_pos[:, 0] -= 1.0
-            # self.target_pos[:, 1] -= 1.0
+            self.target_pos[:, 0] -= 1.0
+            self.target_pos[:, 1] -= 1.0
             # self.target_pos[:, 2] += 1.0
             self.target_yaw = torch.zeros(self.drone.shape, device=self.device)
             self.target_yaw[:] = torch.pi / 2
@@ -80,6 +80,7 @@ def main(cfg):
             self.drone.write_root_state_to_sim(init_state, env_ids)
     
     env: MyEnv = MyEnv(cfg)
+    env.drone.data.drag_coef[:] = 0.5
 
     def policy(tensordict: TensorDict):
         root_pos_e = (

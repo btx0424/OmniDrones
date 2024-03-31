@@ -258,6 +258,7 @@ class IsaacEnv(EnvBase):
         if not len(self.reward_funcs):
             logging.warning("No reward functions specified. Using a default reward function of 1.0.")
             self.reward_funcs["_"] = lambda: torch.ones(self.num_envs, 1, device=self.device)
+            reward_spec["stats", "_"] = UnboundedContinuousTensorSpec(1, device=self.device)
         self.reward_spec = reward_spec.expand(self.num_envs).to(self.device)
         self.stats = self.reward_spec["stats"].zero()
 
@@ -327,6 +328,7 @@ class IsaacEnv(EnvBase):
             env_mask = torch.ones(self.num_envs, dtype=bool, device=self.device)
         env_ids = env_mask.nonzero().squeeze(-1)
         self._reset_idx(env_ids)
+        self.scene.reset(env_ids)
         for callback in self._reset_callbacks:
             callback(env_ids)
         self.sim._physics_sim_view.flush()
@@ -461,15 +463,10 @@ class IsaacEnv(EnvBase):
             raise TypeError("enable_render must be a bool or callable.")
     
     def render(self, mode: str="human"):
+        self.sim.render()
         if mode == "human":
             return None
         elif mode == "rgb_array":
-            # check if viewport is enabled -- if not, then complain because we won't get any data
-            if not self.enable_viewport:
-                raise RuntimeError(
-                    f"Cannot render '{mode}' when enable viewport is False. Please check the provided"
-                    "arguments to the environment class at initialization."
-                )
             # obtain the rgb data
             rgb_data = self._rgb_annotator.get_data()
             # convert to numpy array

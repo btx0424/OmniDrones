@@ -26,49 +26,10 @@ import torch.distributions as D
 
 from omni_drones.envs.isaac_env import IsaacEnv
 from omni_drones.envs import mdp
+from omni_drones.envs.utils.trajectory import LemniscateTrajectory
 from omni_drones.robots.multirotor import Multirotor, Rotor
-from omni_drones.utils.torch import euler_to_quaternion, quat_rotate
+from omni_drones.utils.torch import euler_to_quaternion, quat_rotate_inverse, normalize
 import omni_drones.utils.kit as kit_utils
-
-from tensordict.tensordict import TensorDict, TensorDictBase
-
-from ..utils import lemniscate, scale_time
-from .utils import attach_payload
-
-
-class LemniscateTrajectory:
-    
-    T0 = torch.pi / 2
-
-    def __init__(
-        self,
-        batch_shape: torch.Size, 
-        device: str,
-        origin = (0., 0., 2.), 
-    ):
-        self.batch_shape = batch_shape
-        self.device = device
-
-        with torch.device(device):
-            self.c = torch.zeros(batch_shape)
-            self.w = torch.ones(batch_shape) # a time scale factor
-            self.scale = torch.ones(batch_shape + (3,))
-            self.rot = torch.zeros(batch_shape + (4,))
-            self.origin = torch.as_tensor(origin).expand(batch_shape + (3,))
-    
-    def compute(self, t: torch.Tensor, dt: float, steps: int=1, ids: torch.Tensor=None):
-        if ids is None: ids = slice(None)
-        
-        c = self.c[ids].unsqueeze(-1)
-        w = self.w[ids].unsqueeze(-1)
-        rot = self.rot[ids].unsqueeze(-2)
-        scale = self.scale[ids]
-        t_ = dt * torch.arange(steps, device=self.device) # [env, steps]
-        t = w * (t.unsqueeze(-1) + t_) # [env, steps]
-        x = lemniscate(self.T0 + scale_time(t), c) # [env, steps, 3]
-
-        x = quat_rotate(rot, x) * scale.unsqueeze(1)
-        return x + self.origin[ids].unsqueeze(1)
 
 
 class PayloadTrack(IsaacEnv):
@@ -156,8 +117,6 @@ class PayloadTrack(IsaacEnv):
         #     torch.as_tensor(payload_mass_scale[0] * self.drone.MASS_0, device=self.device),
         #     torch.as_tensor(payload_mass_scale[1] * self.drone.MASS_0, device=self.device)
         # )
-        self.origin = torch.tensor([0., 0., 2.], device=self.device)
-        self.traj_t0 = torch.pi / 2
 
         self.traj_manager = LemniscateTrajectory((self.num_envs,), self.device)
         self.traj_vis = torch.zeros(self.num_envs, self.max_episode_length, 3, device=self.device)
@@ -224,7 +183,6 @@ class PayloadTrack(IsaacEnv):
             self.init_joint_vel[env_ids], 
             env_ids=env_ids
         )
-        self.scene.reset(env_ids)
 
         if self.sim.has_gui():
             self.traj_vis[env_ids] = (
@@ -274,10 +232,14 @@ class PayloadTrack(IsaacEnv):
                 - self.env.scene.env_origins.unsqueeze(1)
                 - self.env.waypoints
             )
+            pos = quat_rotate_inverse(
+                self.drone.data.root_quat_w.reshape(pos.shape[:-1] + (4,)),
+                pos
+            )
             return pos.reshape(self.num_envs, -1)
 
 
-    class TrackingErrorExp(mdp.RewardFunc):
+    class PosTrackingErrorExp(mdp.RewardFunc):
         def __init__(self, env, scale: float, weight: float = 1.):
             super().__init__(env, weight)
             self.scale = scale
@@ -293,6 +255,17 @@ class PayloadTrack(IsaacEnv):
             error = torch.norm(error, dim=-1, keepdim=True)
             return torch.exp(- self.scale * error)
 
+    class YawTrackingDot(mdp.RewardFunc):
+        def __init__(self, env: IsaacEnv, weight: float = 1):
+            super().__init__(env, weight)
+            self.drone: Multirotor = self.env.scene["drone"]
+        
+        def compute(self) -> torch.Tensor:
+            dot = (
+                self.drone.data.heading_w_vec[:, :2]
+                * normalize(self.drone.data.root_lin_vel_w[:, :2])
+            ).sum(-1, True)
+            return dot
 
     class SpinPenaltyRational(mdp.RewardFunc):
         def __init__(self, env, weight: float = 1.):

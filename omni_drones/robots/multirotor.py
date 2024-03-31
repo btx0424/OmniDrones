@@ -6,7 +6,7 @@ from omni.isaac.orbit.assets import Articulation, ArticulationData, Articulation
 from omni.isaac.orbit.actuators import ActuatorBaseCfg, ActuatorBase
 from omni.isaac.orbit.utils import configclass
 import omni.isaac.orbit.utils.string as string_utils
-from omni_drones.utils.torch import quaternion_to_euler
+from omni_drones.utils.torch import quaternion_to_euler, quat_rotate
 
 from dataclasses import dataclass, MISSING, field
 from typing import Sequence, Mapping
@@ -16,8 +16,15 @@ from typing import Sequence, Mapping
 class MultirotorData(ArticulationData):
 
     rpy_w: torch.Tensor = None
+    heading_w_vec: torch.Tensor = None
+
     throttle: Mapping[str, torch.Tensor] = field(default_factory=dict)
+    drag_coef: torch.Tensor = None
     
+    default_masses: torch.Tensor = None
+    default_masses_total: torch.Tensor = None
+    default_inertia: torch.Tensor = None
+
     applied_thrusts: Mapping[str, torch.Tensor] = field(default_factory=dict)
     applied_moments: Mapping[str, torch.Tensor] = field(default_factory=dict)
 
@@ -48,7 +55,11 @@ class Multirotor(Articulation):
     def update(self, dt: float):
         super().update(dt)
         self._data.rpy_w[:] = quaternion_to_euler(self._data.root_quat_w)
-    
+        self._data.heading_w_vec[:] = quat_rotate(
+            self._data.root_quat_w, 
+            torch.tensor([1., 0., 0.], device=self.device)
+        )
+
     def reset(self, env_ids: Sequence[int] | None = None):
         super().reset(env_ids)
         for value in self._data.throttle.values():
@@ -90,10 +101,18 @@ class Multirotor(Articulation):
                 thrusts = thrusts.reshape(self.num_instances, len(actuator.body_ids))
                 momentum = momentum.reshape(self.num_instances, len(actuator.body_ids))
                 
-                forces[..., actuator.body_ids, 2] = thrusts
+                forces[..., actuator.body_ids, 2] += thrusts
+                # torques[..., actuator.body_ids, 2] = momentum
                 # mannually aggregate the torques along the z-axis
-                torques[..., self.base_id, 2] = momentum.sum(dim=-1, keepdim=True)
+                torques[..., self.base_id, 2] += momentum.sum(dim=-1, keepdim=True)
                 
+                drag = (
+                    self._data.drag_coef.unsqueeze(-1)
+                    * -self._data.body_lin_vel_w 
+                    * self._data.default_masses_total.unsqueeze(-1)
+                )
+                forces.add_(drag)
+
                 self.set_external_force_and_torque(
                     forces=forces,
                     torques=torques,
@@ -121,7 +140,13 @@ class Multirotor(Articulation):
         super()._initialize_impl()
         self.base_id, self.base_name = self.find_bodies("base_link")
         self._data.rpy_w = torch.zeros(self.shape + (3,), device=self.device).flatten(0, -2)
-    
+        self._data.heading_w_vec = torch.zeros(self.shape + (3,), device=self.device).flatten(0, -2)
+        
+        self._data.default_masses = self.root_physx_view.get_masses().clone()
+        self._data.default_masses_total = self._data.default_masses.sum(dim=-1, keepdim=True).to(self.device)
+        self._data.default_inertia = self.root_physx_view.get_inertias()[:, self.base_id[0], [0, 4, 8]].clone()
+        self._data.drag_coef = torch.zeros(*self.shape, self.num_bodies, device=self.device)
+
     def resolve_ids(self, env_ids: torch.Tensor):
         return self._ALL_INDICES.reshape(self.shape)[env_ids].flatten()
 

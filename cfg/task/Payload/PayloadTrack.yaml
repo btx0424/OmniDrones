@@ -15,6 +15,17 @@ observations: # computed in this order
       DynamicState: {asset_name: drone}
       BodyDynamicState: {asset_name: drone, body_name: payload}
       Waypoints: {}
+      RotorParam: {asset_name: drone, actuator_name: rotor}
+      BodyMass: {asset_name: drone, body_name: ["base_link", "payload"]}
+      DragCoef: {asset_name: drone, body_name: ["base_link", "payload"]}
+  - key: [agents, priv]
+    items:
+      AppliedActuation: {asset_name: drone, actuator_name: rotor}
+  - key: [agents, param]
+    items:
+      RotorParam: {asset_name: drone, actuator_name: rotor}
+      BodyMass: {asset_name: drone, body_name: ["base_link", "payload"]}
+      DragCoef: {asset_name: drone, body_name: ["base_link", "payload"]}
 
 actions:
   - key: [agents, action]
@@ -22,7 +33,8 @@ actions:
       RotorCommand: {asset_name: drone, actuator_name: rotor}
 
 rewards:
-  TrackingErrorExp: {weight: 1.0, scale: 1.6}
+  PosTrackingErrorExp: {weight: 1.0, scale: 1.6}
+  # YawTrackingDot: {weight: 0.25}
   SpinPenaltyRational: {weight: 0.1}
 
 termination:
@@ -33,15 +45,20 @@ randomizations:
   RandomizeRotorParams:
     asset_name: drone
     actuator_name: rotor
-    kf_range: [0.7, 1.3]
-    km_range: [0.7, 1.3]
-    tau_range: [0.4, 1.0]
+    kf_range: [0.8, 2.0]
+    km_range: [0.8, 2.0]
+    tau_range: [0.2, 1.0]
   RandomizeBodyMass:
     asset_name: drone
-    body_name: payload
-    mass_range: [0.1, 0.3]
+    mass_range: 
+      base_link: [0.5, 0.9]
+      payload: [0.05, 0.35]
+  RandomizeDragCoef:
+    asset_name: drone
+    drag_coef_range:
+      base_link: [0.0, 0.5]
+      payload: [0.0, 0.2]
 
 drone_model: Hummingbird
-
 future_traj_steps: 6
 action_transform: null

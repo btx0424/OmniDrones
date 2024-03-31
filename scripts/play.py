@@ -39,14 +39,12 @@ torch.backends.cudnn.benchmark = False
 
 FILE_PATH = os.path.dirname(__file__)
 
-@hydra.main(config_path=FILE_PATH, config_name="train", version_base=None)
+@hydra.main(config_path=FILE_PATH, config_name="play", version_base=None)
 def main(cfg):
     OmegaConf.register_new_resolver("eval", eval)
     OmegaConf.resolve(cfg)
     OmegaConf.set_struct(cfg, False)
     simulation_app = init_simulation_app(cfg)
-    run = init_wandb(cfg)
-    setproctitle(run.name)
     print(OmegaConf.to_yaml(cfg))
 
     from omni_drones.envs.isaac_env import IsaacEnv
@@ -111,132 +109,20 @@ def main(cfg):
         device=base_env.device
     )
 
-    frames_per_batch = env.num_envs * int(cfg.algo.train_every)
-    total_frames = cfg.get("total_frames", -1) // frames_per_batch * frames_per_batch
-    max_iters = cfg.get("max_iters", -1)
-    eval_interval = cfg.get("eval_interval", -1)
-    save_interval = cfg.get("save_interval", -1)
-    
-    log_interval = (base_env.max_episode_length // cfg.algo.train_every) + 1
-    logging.info(f"Log interval: {log_interval} steps")
-
     stats_keys = [
         k for k in base_env.reward_spec.keys(True, True) 
         if isinstance(k, tuple) and k[0]=="stats"
     ]
     episode_stats = EpisodeStats(stats_keys)
-    collector = SyncDataCollector(
-        env,
-        policy=policy,
-        frames_per_batch=frames_per_batch,
-        total_frames=total_frames,
-        device=cfg.sim.device,
-        return_same_td=True,
-    )
 
-    @torch.no_grad()
-    def evaluate(
-        seed: int=0, 
-        exploration_type: ExplorationType=ExplorationType.MODE
-    ):
+    tensordict = env.reset()
 
-        base_env.eval()
-        env.eval()
-        env.set_seed(seed)
-
-        render_callback = RenderCallback(interval=2)
-        
-        with set_exploration_type(exploration_type):
-            trajs = env.rollout(
-                max_steps=base_env.max_episode_length,
-                policy=policy,
-                callback=render_callback,
-                auto_reset=True,
-                break_when_any_done=False,
-                return_contiguous=False,
-            )
-        env.reset()
-
-        done = trajs.get(("next", "done"))
-        first_done = torch.argmax(done.long(), dim=1).cpu()
-
-        def take_first_episode(tensor: torch.Tensor):
-            indices = first_done.reshape(first_done.shape+(1,)*(tensor.ndim-2))
-            return torch.take_along_dim(tensor, indices, dim=1).reshape(-1)
-
-        traj_stats = {
-            k: take_first_episode(v)
-            for k, v in trajs[("next", "stats")].cpu().items()
-        }
-
-        info = {
-            "eval/stats." + k: torch.mean(v.float()).item() 
-            for k, v in traj_stats.items()
-        }
-
-        # log video
-        info["recording"] = wandb.Video(
-            render_callback.get_video_array(axes="t c h w"), 
-            fps=0.5 / (cfg.sim.dt * cfg.sim.substeps), 
-            format="mp4"
-        )
-        
-        # log distributions
-        # df = pd.DataFrame(traj_stats)
-        # table = wandb.Table(dataframe=df)
-        # info["eval/return"] = wandb.plot.histogram(table, "return")
-        # info["eval/episode_len"] = wandb.plot.histogram(table, "episode_len")
-
-        return info
-
-    pbar = tqdm(collector)
-    env.train()
-    for i, data in enumerate(pbar):
-        info = {"env_frames": collector._frames, "rollout_fps": collector._fps}
-        episode_stats.add(data.to_tensordict())
-        
-        if i % log_interval == 0:
-            for k, v in sorted(episode_stats.pop().items(True, True)):
-                key = "train/" + (".".join(k) if isinstance(k, tuple) else k)
-                info[key] = torch.mean(v.float()).item()
-
-        info.update(policy.train_op(data.to_tensordict()))
-
-        if eval_interval > 0 and i % eval_interval == 0:
-            logging.info(f"Eval at {collector._frames} steps.")
-            info.update(evaluate())
-            env.train()
-            base_env.train()
-
-        if save_interval > 0 and i % save_interval == 0:
-            try:
-                ckpt_path = os.path.join(run.dir, f"checkpoint_{collector._frames}.pt")
-                torch.save(policy.state_dict(), ckpt_path)
-                logging.info(f"Saved checkpoint to {str(ckpt_path)}")
-            except AttributeError:
-                logging.warning(f"Policy {policy} does not implement `.state_dict()`")
-
-        run.log(info)
-        print(OmegaConf.to_yaml({k: v for k, v in info.items() if isinstance(v, float)}))
-
-        pbar.set_postfix({"rollout_fps": collector._fps, "frames": collector._frames})
-
-        if max_iters > 0 and i >= max_iters - 1:
-            break 
-    
-    try:
-        ckpt_path = os.path.join(run.dir, "checkpoint_final.pt")
-        torch.save(policy.state_dict(), ckpt_path)
-        logging.info(f"Saved checkpoint to {str(ckpt_path)}")
-    except AttributeError:
-        logging.warning(f"Policy {policy} does not implement `.state_dict()`")
-    
-    logging.info(f"Final Eval at {collector._frames} steps.")
-    info = {"env_frames": collector._frames}
-    info.update(evaluate())
-    run.log(info)
-
-    wandb.finish()
+    while True:
+        try:
+            tensordict = policy(tensordict)
+            _, tensordict = env.step_and_maybe_reset(tensordict)
+        except KeyboardInterrupt:
+            break
     
     simulation_app.close()
 

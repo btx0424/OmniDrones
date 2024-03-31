@@ -137,22 +137,7 @@ def create_bar(
         # ).do()
     
     return bar
-        
-
-def lemniscate(t: torch.Tensor, c: torch.Tensor):
-    sin_t = torch.sin(t)
-    cos_t = torch.cos(t)
-    sin2p1 = torch.square(sin_t) + 1
-
-    x = torch.stack([
-        cos_t, sin_t * cos_t, c * sin_t
-    ], dim=-1) / sin2p1.unsqueeze(-1)
-
-    return x
-
-def scale_time(t, a: float=1.0):
-    return t / (1 + 1/(a*torch.abs(t)))
-
+    
 
 class TimeEncoding:
     def __init__(self, max_t):

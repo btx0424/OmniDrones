@@ -23,17 +23,17 @@
 
 import omni.isaac.core.utils.torch as torch_utils
 import omni_drones.utils.kit as kit_utils
-from omni_drones.utils.torch import euler_to_quaternion
+from omni_drones.utils.torch import euler_to_quaternion, normalize, quat_rotate_inverse
 import omni.isaac.core.utils.prims as prim_utils
 import torch
 import torch.distributions as D
 
-from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
+from omni_drones.envs.isaac_env import IsaacEnv
+from omni_drones.envs import mdp
+from omni_drones.envs.utils.trajectory import LemniscateTrajectory
 from omni_drones.robots.multirotor import Multirotor
 from tensordict.tensordict import TensorDict, TensorDictBase
-from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec, DiscreteTensorSpec
 
-from ..utils import lemniscate, scale_time
 
 class Track(IsaacEnv):
     r"""
@@ -84,18 +84,11 @@ class Track(IsaacEnv):
 
 
     """
-    def __init__(self, cfg, headless):
-        self.reset_thres = cfg.task.reset_thres
-        self.reward_effort_weight = cfg.task.reward_effort_weight
-        self.reward_action_smoothness_weight = cfg.task.reward_action_smoothness_weight
-        self.reward_distance_scale = cfg.task.reward_distance_scale
-        self.time_encoding = cfg.task.time_encoding
+    def __init__(self, cfg):
         self.future_traj_steps = int(cfg.task.future_traj_steps)
         assert self.future_traj_steps > 0
-        self.intrinsics = cfg.task.intrinsics
-        self.wind = cfg.task.wind
 
-        super().__init__(cfg, headless)
+        super().__init__(cfg)
 
         self.drone: Multirotor = self.scene["drone"]
 
@@ -123,12 +116,13 @@ class Track(IsaacEnv):
             torch.tensor(0.8, device=self.device),
             torch.tensor(1.1, device=self.device)
         )
-        self.origin = torch.tensor([0., 0., 2.], device=self.device)
+        
+        self.traj_manager = LemniscateTrajectory((self.num_envs,), self.device)
+        self.traj_vis = torch.zeros(self.num_envs, self.max_episode_length, 3, device=self.device)
 
         self.waypoints = torch.zeros(self.num_envs, self.future_traj_steps, 3, device=self.device)
         self.target_pos = self.waypoints[:, 0]
-
-        self.alpha = 0.8
+        self.target_heading_vec = torch.zeros(self.num_envs, 3, device=self.device)
 
     def _design_scene(self):
         from omni.isaac.orbit.scene import InteractiveSceneCfg
@@ -137,7 +131,7 @@ class Track(IsaacEnv):
 
         import omni.isaac.orbit.sim as sim_utils
         
-        from omni_drones.robots.assets import HUMMINGBIRD_CFG
+        from omni_drones.robots.assets import HUMMINGBIRD_CFG, FIREFLY_CFG
         
         class SceneCfg(InteractiveSceneCfg):
 
@@ -163,142 +157,129 @@ class Track(IsaacEnv):
         return SceneCfg(num_envs=self.cfg.num_envs, env_spacing=2.5)
 
     def _reset_idx(self, env_ids: torch.Tensor):
-        self.drone._reset_idx(env_ids)
-        self.traj_c[env_ids] = self.traj_c_dist.sample(env_ids.shape)
-        self.traj_rot[env_ids] = euler_to_quaternion(self.traj_rpy_dist.sample(env_ids.shape))
-        self.traj_scale[env_ids] = self.traj_scale_dist.sample(env_ids.shape)
+        self.traj_manager.c[env_ids] = self.traj_c_dist.sample(env_ids.shape)
+        self.traj_manager.rot[env_ids] = euler_to_quaternion(self.traj_rpy_dist.sample(env_ids.shape))
+        self.traj_manager.scale[env_ids] = self.traj_scale_dist.sample(env_ids.shape)
         traj_w = self.traj_w_dist.sample(env_ids.shape)
-        self.traj_w[env_ids] = torch.randn_like(traj_w).sign() * traj_w
+        self.traj_manager.w[env_ids] = torch.randn_like(traj_w).sign() * traj_w
 
-        t0 = torch.zeros(len(env_ids), device=self.device)
-        pos = lemniscate(t0 + self.traj_t0, self.traj_c[env_ids]) + self.origin
-        rot = euler_to_quaternion(self.init_rpy_dist.sample(env_ids.shape))
-        vel = torch.zeros(len(env_ids), 1, 6, device=self.device)
-        self.drone.set_world_poses(
-            pos + self.envs_positions[env_ids], rot, env_ids
-        )
-        self.drone.set_velocities(vel, env_ids)
+        pos_t0 = self.traj_manager.compute(
+            torch.zeros(env_ids.shape, device=self.device), 
+            dt=0,
+            ids=env_ids
+        ).reshape(-1, 3)
 
-        self.stats[env_ids] = 0.
-
-        # self.info[env_ids] = self.drone.info[env_ids]
-
-        if self._should_render(0) and (env_ids == self.central_env_idx).any() :
-            # visualize the trajectory
-            self.draw.clear_lines()
-
-            traj_vis = self._compute_traj(self.max_episode_length, self.central_env_idx.unsqueeze(0))[0]
-            traj_vis = traj_vis + self.envs_positions[self.central_env_idx]
-            point_list_0 = traj_vis[:-1].tolist()
-            point_list_1 = traj_vis[1:].tolist()
-            colors = [(1.0, 1.0, 1.0, 1.0) for _ in range(len(point_list_0))]
-            sizes = [1 for _ in range(len(point_list_0))]
-            self.draw.draw_lines(point_list_0, point_list_1, colors, sizes)
-            
-        if self.wind:
-            self.wind_i[env_ids] = torch.rand(*env_ids.shape, 1, device=self.device) * (self.wind_intensity_high-self.wind_intensity_low) + self.wind_intensity_low
-            self.wind_w[env_ids] = torch.randn(*env_ids.shape, 3, 8, device=self.device)
-
-    def _pre_sim_step(self, tensordict: TensorDictBase):
-        actions = tensordict[("agents", "action")]
-        self.effort = self.drone.apply_action(actions)
-
-        if self.wind:
-            t = (self.progress_buf * self.dt).reshape(-1, 1, 1)
-            self.wind_force = self.wind_i * torch.sin(t * self.wind_w).sum(-1)
-            wind_forces = self.drone.MASS_0 * self.wind_force
-            wind_forces = wind_forces.unsqueeze(1).expand(*self.drone.shape, 3)
-            self.drone.base_link.apply_forces(wind_forces, is_global=True)
-
-    def _compute_state_and_obs(self):
-        self.root_state = self.drone.get_state()
-        self.info["drone_state"][:] = self.root_state[..., :13]
-        
-        self.target_pos[:] = self._compute_traj(self.future_traj_steps, step_size=5)
-        
-        self.rpos = self.target_pos - self.root_state[..., :3]
-        obs = [
-            self.rpos.flatten(1).unsqueeze(1),
-            self.root_state[..., 3:],
-        ]
-        if self.time_encoding:
-            t = (self.progress_buf / self.max_episode_length).unsqueeze(-1)
-            obs.append(t.expand(-1, self.time_encoding_dim).unsqueeze(1))
-        if self.intrinsics:
-            obs.append(self.drone.get_info())
-
-        obs = torch.cat(obs, dim=-1)
-
-        self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
-
-        return TensorDict({
-            "agents": {
-                "observation": obs,
-            },
-            "stats": self.stats.clone(),  
-            "info": self.info.clone()
-        }, self.batch_size)
-
-    def _compute_reward_and_done(self):
-        # pos reward
-        distance = torch.norm(self.rpos[:, [0]], dim=-1)
-        self.stats["tracking_error"].add_(-distance)
-        self.stats["tracking_error_ema"].lerp_(distance, (1-self.alpha))
-        
-        reward_pose = torch.exp(-self.reward_distance_scale * distance)
-        
-        # uprightness
-        tiltage = torch.abs(1 - self.drone.up[..., 2])
-        reward_up = 0.5 / (1.0 + torch.square(tiltage))
-
-        # effort
-        reward_effort = self.reward_effort_weight * torch.exp(-self.effort)
-        reward_action_smoothness = self.reward_action_smoothness_weight * torch.exp(-self.drone.throttle_difference)
-
-        # spin reward
-        spin = torch.square(self.drone.vel[..., -1])
-        reward_spin = 0.5 / (1.0 + torch.square(spin))
-
-        reward = (
-            reward_pose 
-            + reward_pose * (reward_up + reward_spin) 
-            + reward_effort
-            + reward_action_smoothness
+        init_root_state = self.init_root_state[env_ids]
+        init_root_state[..., :3] = (
+            pos_t0 
+            + self.scene.env_origins[env_ids] 
         )
 
-        done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-            | (self.drone.pos[..., 2] < 0.1)
-            | (distance > self.reset_thres)
-        ) 
-
-        ep_len = self.progress_buf.unsqueeze(-1)
-        self.stats["tracking_error"].div_(
-            torch.where(done, ep_len, torch.ones_like(ep_len))
+        self.drone.write_root_state_to_sim(init_root_state, env_ids)
+        self.drone.write_joint_state_to_sim(
+            self.init_joint_pos[env_ids], 
+            self.init_joint_vel[env_ids], 
+            env_ids=env_ids
         )
-        self.stats["return"] += reward
-        self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
 
-        return TensorDict(
-            {
-                "agents": {
-                    "reward": reward.unsqueeze(-1)
-                },
-                "done": done,
-            },
-            self.batch_size,
+        if self.sim.has_gui():
+            self.traj_vis[env_ids] = (
+                self.traj_manager.compute(
+                    torch.zeros(env_ids.shape, device=self.device),
+                    dt=self.step_dt,
+                    steps=self.max_episode_length,
+                    ids=env_ids
+                )
+                + self.scene.env_origins[env_ids].unsqueeze(1)
+            )
+
+    def update(self):
+        self.waypoints[:] = self.traj_manager.compute(
+            self.progress_buf * self.step_dt, 
+            dt=self.step_dt * 5,
+            steps=self.future_traj_steps,
+        )
+        self.target_heading_vec[:] = normalize(self.waypoints[:, 1] - self.waypoints[:, 0])
+    
+    def debug_vis(self):
+        for i in range(self.num_envs):
+            self.debug_draw.plot(self.traj_vis[i])
+            self.debug_draw.plot(
+                self.waypoints[i] + self.scene.env_origins[i].unsqueeze(0),
+                size=4, 
+                color=(0, 1, 0, 1)
+            )
+        self.debug_draw.vector(
+            self.drone.data.root_pos_w,
+            self.drone.data.heading_w_vec * 0.5,
+            color=(1, 0, 0, 1)
         )
     
-    def _compute_traj(self, steps: int, env_ids=None, step_size: float=1.):
-        if env_ids is None:
-            env_ids = ...
-        t = self.progress_buf[env_ids].unsqueeze(1) + step_size * torch.arange(steps, device=self.device)
-        t = self.traj_t0 + scale_time(self.traj_w[env_ids].unsqueeze(1) * t * self.dt)
-        traj_rot = self.traj_rot[env_ids].unsqueeze(1).expand(-1, t.shape[1], 4)
+    class Waypoints(mdp.ObservationFunc):
         
-        target_pos = vmap(lemniscate)(t, self.traj_c[env_ids])
-        target_pos = vmap(torch_utils.quat_rotate)(traj_rot, target_pos) * self.traj_scale[env_ids].unsqueeze(1)
+        def __init__(self, env: "Track"):
+            super().__init__(env)
+            self.drone: Multirotor = self.env.scene["drone"]
 
-        return self.origin + target_pos
+        def compute(self) -> torch.Tensor:
+            if not hasattr(self.env, "waypoints"):
+                return torch.zeros(self.num_envs, 3 * self.env.future_traj_steps, device=self.device)
+            pos = (
+                self.drone.data.root_pos_w.unsqueeze(1)
+                - self.env.scene.env_origins.unsqueeze(1)
+                - self.env.waypoints
+            )
+            pos = quat_rotate_inverse(
+                self.drone.data.root_quat_w.unsqueeze(1),
+                pos
+            )
+            return pos.reshape(self.num_envs, -1)
+    
+    class PosTrackingErrorExp(mdp.RewardFunc):
+        def __init__(self, env, scale: float, weight: float = 1.):
+            super().__init__(env, weight)
+            self.scale = scale
+            self.drone: Multirotor = self.env.scene["drone"]
+
+        def compute(self) -> torch.Tensor:
+            error = (
+                self.drone.data.root_pos_w
+                - self.env.scene.env_origins
+                - self.env.target_pos
+            )
+            error = torch.norm(error, dim=-1, keepdim=True)
+            return torch.exp(- self.scale * error)
+    
+    class YawTrackingDot(mdp.RewardFunc):
+        def __init__(self, env: IsaacEnv, weight: float = 1):
+            super().__init__(env, weight)
+            self.drone: Multirotor = self.env.scene["drone"]
+        
+        def compute(self) -> torch.Tensor:
+            dot = (
+                self.drone.data.heading_w_vec[:, :2]
+                * normalize(self.drone.data.root_lin_vel_w[:, :2])
+            ).sum(-1, True)
+            return dot
+    
+    class TrackingErrorExceeds(mdp.TerminationFunc):
+        def __init__(
+            self,
+            env: IsaacEnv,
+            thres: float
+        ):
+            super().__init__(env)
+            self.robot: Multirotor = self.env.scene["drone"]
+            self.thres = thres
+
+        def compute(self) -> torch.Tensor:
+            pos_diff = (
+                self.robot.data.root_pos_w
+                - self.env.scene.env_origins 
+                - self.env.target_pos
+            )
+            pos_error = pos_diff.norm(dim=-1, keepdim=True)
+            terminated = (pos_error > self.thres)
+            return terminated
 
 

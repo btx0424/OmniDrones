@@ -10,37 +10,21 @@ hydra:
 # memory. The difference is, "headless=false" will opens up a GUI and is suited
 # for local debugging, and "offscreen_render=true" is suited for recording
 # videos during training.
-headless: true
-offscreen_render: ${eval_render}
+headless: false
+offscreen_render: false
 
 sim: ${task.sim}
-num_envs: ${task.num_envs}
+num_envs: 4
 
 # Instructions:
 # Training terminates when either `total_frames` or `max_iters` is reached when
 # the value is positive.
-total_frames: 150_000_000
-max_iters: -1
-eval_interval: -1
-eval_render: false
-save_interval: 300
 seed: 0
 
 viewer:
   resolution: [960, 720]
   eye: [8, 0., 6.]
   lookat: [0., 0., 1.]
-
-wandb:
-  group: ${oc.select:..task.name}
-  run_name: ${oc.select:..task.name,test}-${oc.select:..algo.name,none}
-  job_type: train
-  entity: marl-drones
-  project: omnidrones
-  mode: online # set to 'disabled' when debugging locally
-  run_id: 
-  monitor_gym: True
-  tags: 
 
 defaults:
   - task: Hover

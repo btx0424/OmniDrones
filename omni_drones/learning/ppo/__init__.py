@@ -22,6 +22,7 @@
 
 
 from .ppo import PPOPolicy
+from .ppo_test import PPOPolicy as PPOPolicyTest
 from .ppo_rnn import PPORNNPolicy
 from .ppo_adapt import PPOAdaptivePolicy
 # from .mappo import MAPPOPolicy

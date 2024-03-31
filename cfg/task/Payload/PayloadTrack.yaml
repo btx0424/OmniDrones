@@ -10,21 +10,21 @@ max_episode_length: 600
 env_spacing: 2.5
 
 observations: # computed in this order
-  - key: [agents, observation]
+  - key: [agents, policy]
     items:
       DynamicState: {asset_name: drone}
       BodyDynamicState: {asset_name: drone, body_name: payload, lin_vel: false}
       Waypoints: {}
-      # RotorParam: {asset_name: drone, actuator_name: rotor}
-      # BodyMass: {asset_name: drone, body_name: ["base_link", "payload"]}
-      # DragCoef: {asset_name: drone, body_name: ["base_link", "payload"]}
-      # BodyDynamicState: {asset_name: drone, body_name: payload, lin_vel: true}
+      RotorParam: {asset_name: drone, actuator_name: rotor}
+      BodyMass: {asset_name: drone, body_name: ["base_link", "payload"]}
+      DragCoef: {asset_name: drone, body_name: ["base_link", "payload"]}
       AppliedActuation: {asset_name: drone, actuator_name: rotor}
       # AppliedDrag: {asset_name: drone, body_name: ["base_link", "payload"]}
-  # - key: [agents, priv]
-  #   items:
-  #     AppliedActuation: {asset_name: drone, actuator_name: rotor}
-  #     AppliedDrag: {asset_name: drone, body_name: ["base_link", "payload"]}
+  - key: [agents, critic]
+    items:
+     DynamicState: {asset_name: drone}
+      BodyDynamicState: {asset_name: drone, body_name: payload, lin_vel: false}
+      Waypoints: {}
   # - key: [agents, param]
   #   items:
   #     RotorParam: {asset_name: drone, actuator_name: rotor}

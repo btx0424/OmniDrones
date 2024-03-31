@@ -38,6 +38,7 @@ ALGOS = {
     "mappo": MAPPO,
     "happo": HAPPOPolicy,
     "ppo": PPOPolicy,
+    "ppo_test": PPOPolicyTest,
     "ppo_rnn": PPORNNPolicy,
     "ppo_adapt": PPOAdaptivePolicy,
     "sac": SACPolicy,

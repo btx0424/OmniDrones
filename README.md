@@ -13,7 +13,7 @@
 
 *OmniDrones* is an open-source platform designed for reinforcement learning research on multi-rotor drone systems. Built on [Nvidia Isaac Sim](https://docs.omniverse.nvidia.com/app_isaacsim/app_isaacsim/overview.html), *OmniDrones* features highly efficient and flxeible simulation that can be adopted for various research purposes. We also provide a suite of benchmark tasks and algorithm baselines to provide preliminary results for subsequent works.
 
-For usage and more details, please refer to the [documentation](https://omnidrones.readthedocs.io/en/latest/).
+For usage and more details, please refer to the [documentation](https://omnidrones.readthedocs.io/en/latest/). Unfortunately, it does not support Windows.
 
 Welcome to join our [Discord](https://discord.gg/J4QvXR6tQj) for discussions and questions!
 

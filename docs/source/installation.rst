@@ -2,6 +2,7 @@ Workstation Installation
 ========================
 
 Follow the `Omniverse Isaac Sim documentation <https://docs.omniverse.nvidia.com/app_isaacsim/app_isaacsim/install_workstation.html>`_ to install the desired Isaac Sim release.
+Unfortunately, Windows is not supported.
 
 Set the following environment variables to your ``~/.bashrc`` or ``~/.zshrc`` files:
 
@@ -9,6 +10,9 @@ Set the following environment variables to your ``~/.bashrc`` or ``~/.zshrc`` fi
 
     # Isaac Sim root directory
     export ISAACSIM_PATH="${HOME}/.local/share/ov/pkg/isaac_sim-*"
+    # for example
+    # export ISAACSIM_PATH="${HOME}/.local/share/ov/pkg/isaac_sim-2023.1.0-hotfix"
+    # export ISAACSIM_PATH="${HOME}/.local/share/ov/pkg/isaac_sim-2023.1.1"
 
 where ``*`` corresponds to the Isaac Sim version. Remember to run `source ~/.bashrc` before you proceed.
 
@@ -20,10 +24,11 @@ Although Isaac Sim comes with a built-in Python environment, we recommend using 
 
 .. code-block:: bash
 
-    conda create -n sim python=3.7
+    conda create -n sim python=3.10 # for isaac_sim-2022.*, use python=3.7
     conda activate sim
 
-    # at OmniDrones/
+    # make sure the conda environment is activated by checking $CONDA_PREFIX
+    # then, at OmniDrones/
     cp -r conda_setup/etc $CONDA_PREFIX
     # re-activate the environment
     conda activate sim
@@ -34,13 +39,14 @@ Although Isaac Sim comes with a built-in Python environment, we recommend using 
     python -c "import torch; print(torch.__path__)"
 
 
-The next step is to install `TensorDict <https://github.com/btx0424/tensordict/tree/main>`__ and `TorchRL <https://github.com/pytorch/rl>`__.
+The next step is to install `TensorDict <https://github.com/pytorch/tensordict>`__ and `TorchRL <https://github.com/pytorch/rl>`__.
 
 .. note::
 
     Since TensorDict and TorchRL are still under active development are subject to
     changes frequently, we recommend installing them by cloning the repositories
-    and installing them in editable mode (via ``python setup.py develop``).
+    and installing them in editable mode (via ``python setup.py develop``). Installing
+    via `pip` would likely cause compatibility issues.
 
 
 Finally, install **OmniDrones** in editable mode (which automatically installs other

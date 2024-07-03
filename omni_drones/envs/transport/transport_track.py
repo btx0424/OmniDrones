@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -45,21 +45,21 @@ from ..utils import lemniscate, scale_time
 class TransportTrack(IsaacEnv):
     r"""
     A cooperative control task where a group of UAVs carry a box-shaped payload connected via
-    rigid links. The goal for the agents is to collectively transport the payload to track a 
+    rigid links. The goal for the agents is to collectively transport the payload to track a
     reference trajectory.
 
     ## Observation
     The observation space is specified by a :py:class:`CompositeSpec` containing the following items:
 
     - `obs_self` (1, \*): The state of each UAV observed by itself, containing its kinematic
-      information with the position being relative to the payload. It also includes a one-hot 
+      information with the position being relative to the payload. It also includes a one-hot
       vector indicating each drone's identity.
     - `obs_others` (k-1, \*): The observed states of other agents.
     - `obs_payload` (1, \*): The state of the frame, cotaining its position (relative to the
       reference), rotation (in quaternions and direction vectors), and velocities.
-    
+
     ## Reward
-    
+
     - `pos`: Reward for tracking the trajectory, computed as :math:`\exp(-a * \text{pos_error})`.
     - `seperation`: A factor that penalizes all agents when the minimum seperation is too small.
     - `up`: Reward for keeping the payload upright.
@@ -100,7 +100,7 @@ class TransportTrack(IsaacEnv):
 
         self.group.initialize()
         self.payload = self.group.payload_view
-        
+
         self.init_velocities = torch.zeros_like(self.group.get_velocities())
         self.init_joint_pos = self.group.get_joint_positions(clone=True)
         self.init_joint_vel = torch.zeros_like(self.group.get_joint_velocities())
@@ -164,7 +164,7 @@ class TransportTrack(IsaacEnv):
         if self.time_encoding:
             self.time_encoding_dim = 4
             payload_state_dim += self.time_encoding_dim
-        
+
         observation_spec = CompositeSpec({
             "obs_self": UnboundedContinuousTensorSpec((1, drone_state_dim)),
             "obs_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13+1)),
@@ -201,7 +201,7 @@ class TransportTrack(IsaacEnv):
             action_key=("agents", "action"),
             reward_key=("agents", "reward"),
         )
-        
+
         info_spec = CompositeSpec({
             "payload_mass": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
@@ -266,7 +266,7 @@ class TransportTrack(IsaacEnv):
         payload_vels = self.payload.get_velocities()
         self.payload_heading: torch.Tensor = quat_axis(self.payload_rot, axis=0)
         self.payload_up: torch.Tensor = quat_axis(self.payload_rot, axis=2)
-        
+
         self.drone_rpos = torch.vmap(cpos)(self.drone.pos, self.drone.pos)
         self.drone_rpos = torch.vmap(off_diag)(self.drone_rpos)
         self.drone_pdist = torch.norm(self.drone_rpos, dim=-1, keepdim=True)
@@ -275,7 +275,7 @@ class TransportTrack(IsaacEnv):
         target_pos = self._compute_traj(self.future_traj_steps, step_size=5)
         target_payload_rpos = target_pos - self.payload_pos.unsqueeze(1)
         self.target_distance = torch.norm(target_payload_rpos[..., 0, :], dim=-1, keepdim=True)
-        
+
         self.group.get_state()
         payload_state = [
             target_payload_rpos.flatten(-2),
@@ -307,10 +307,10 @@ class TransportTrack(IsaacEnv):
         # self.stats["heading_alignment"].lerp_(heading_alignment, (1-self.alpha))
         self.stats["uprightness"].lerp_(self.payload_up[:, 2].unsqueeze(-1), (1-self.alpha))
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
-        
+
         return TensorDict({
             "agents": {
-                "observation": obs, 
+                "observation": obs,
                 "state": state,
             },
             "info": self.info,
@@ -323,7 +323,7 @@ class TransportTrack(IsaacEnv):
             self.group.get_joint_positions()[..., :16]
             / self.group.joint_limits[..., :16, 0].abs()
         )
-        
+
         separation = self.drone_pdist.min(dim=-2).values.min(dim=-2).values
 
         reward = torch.zeros(self.num_envs, self.drone.n, 1, device=self.device)
@@ -344,11 +344,11 @@ class TransportTrack(IsaacEnv):
         reward_joint_limit = 0.5 * torch.mean(1 - torch.square(joint_positions), dim=-1)
 
         reward_action_smoothness = self.reward_action_smoothness_weight * -self.drone.throttle_difference
-        
+
         reward[:] = (
             reward_separation * (
-                reward_pos 
-                + reward_pos * (reward_up + reward_spin + reward_swing) 
+                reward_pos
+                + reward_pos * (reward_up + reward_spin + reward_swing)
                 + reward_joint_limit
                 + reward_action_smoothness.mean(1, True)
                 + reward_effort
@@ -359,7 +359,7 @@ class TransportTrack(IsaacEnv):
         done_fall = self.drone_states[..., 2] < 0.2
 
         done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1) 
+            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
             | done_fall.any(-1, keepdim=True)
             | done_hasnan.any(-1, keepdim=True)
             | (self.target_distance > self.reset_thres)
@@ -384,7 +384,7 @@ class TransportTrack(IsaacEnv):
         t = self.progress_buf[env_ids].unsqueeze(1) + step_size * torch.arange(steps, device=self.device)
         t = scale_time(self.traj_w[env_ids].unsqueeze(1) * t * self.dt)
         traj_rot = self.traj_rot[env_ids].unsqueeze(1).expand(-1, t.shape[1], 4)
-        
+
         target_pos = torch.vmap(lemniscate)(self.traj_t0 + t, self.traj_c[env_ids])
         target_pos = torch.vmap(quat_rotate)(traj_rot, target_pos) * self.traj_scale[env_ids].unsqueeze(1)
 

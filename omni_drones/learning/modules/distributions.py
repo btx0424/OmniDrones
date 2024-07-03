@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -371,10 +371,10 @@ class MultiOneHotCategorical(D.Independent):
             raise ValueError(
                 "Either `probs` or `logits` must be specified, but not both."
             )
-        
+
         if logits is not None:
             probs = F.softmax(logits, dim=-1)
-        
+
         probs = probs * (1. - unimix) + unimix / probs.shape[-1]
         super().__init__(
             D.OneHotCategoricalStraightThrough(probs=probs),
@@ -383,10 +383,10 @@ class MultiOneHotCategorical(D.Independent):
 
 class TwoHot(D.Distribution):
     def __init__(
-        self, 
-        logits: torch.Tensor, 
-        low=-20.0, 
-        high=20.0, 
+        self,
+        logits: torch.Tensor,
+        low=-20.0,
+        high=20.0,
     ):
         super().__init__(batch_shape=logits.shape[:-1])
         self.logits = logits

@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -48,7 +48,7 @@ class PlatformHover(IsaacEnv):
     A cooperative control task where a group of `k` UAVs are connected together by a
     rigid frame to form an overactuated platform. Each individual UAV, attached
     by a 2-DoF passive gimbal joint, acts as a thrust generator.
-    The goal for the agents is to make the platform hover at a reference pose 
+    The goal for the agents is to make the platform hover at a reference pose
     (position and attitude).
 
     ## Observation
@@ -66,14 +66,14 @@ class PlatformHover(IsaacEnv):
 
     ## Reward
 
-    - `reward_pose`: The reward for the pose error between the platform and 
+    - `reward_pose`: The reward for the pose error between the platform and
       the reference (position and orientation).
     - `reward_up`: The reward for the alignment of the platform's up vector and
       the reference up vector.
     - `reward_spin`: Reward computed from the spin of the drone to discourage spinning.
     - `reward_effort`: Reward computed from the effort of the drone to optimize the
       energy consumption.
-    
+
     The total reward is computed as follows:
 
     ```{math}
@@ -96,7 +96,7 @@ class PlatformHover(IsaacEnv):
         self.reward_action_smoothness_weight = cfg.task.reward_action_smoothness_weight
         self.reward_distance_scale = cfg.task.reward_distance_scale
         self.time_encoding = cfg.task.time_encoding
-        
+
         self.num_drones = cfg.task.num_drones
         self.arm_length = cfg.task.arm_length
         self.joint_damping  = cfg.task.joint_damping
@@ -108,7 +108,7 @@ class PlatformHover(IsaacEnv):
             "/World/envs/env_*/target",
             reset_xform_properties=False
         ).initialize()
-        
+
         self.init_vels = torch.zeros_like(self.platform.get_velocities())
         self.init_joint_pos = self.platform.get_joint_positions(clone=True)
         self.init_joint_vel = torch.zeros_like(self.platform.get_joint_velocities())
@@ -167,7 +167,7 @@ class PlatformHover(IsaacEnv):
         if self.time_encoding:
             self.time_encoding_dim = 4
             frame_state_dim += self.time_encoding_dim
-            
+
         observation_spec = CompositeSpec({
             "obs_self": UnboundedContinuousTensorSpec((1, drone_state_dim + self.drone.n)),
             "obs_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13)),
@@ -218,13 +218,13 @@ class PlatformHover(IsaacEnv):
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
 
-        platform_pos = self.init_pos_dist.sample(env_ids.shape) 
+        platform_pos = self.init_pos_dist.sample(env_ids.shape)
         platform_rpy = self.init_rpy_dist.sample(env_ids.shape)
         platform_rot = euler_to_quaternion(platform_rpy)
         platform_heading = torch_utils.quat_axis(platform_rot, 0)
         platform_up = torch_utils.quat_axis(platform_rot,  2)
         self.platform.set_world_poses(
-            platform_pos + self.envs_positions[env_ids], 
+            platform_pos + self.envs_positions[env_ids],
             platform_rot, env_indices=env_ids
         )
         self.platform.set_velocities(self.init_vels[env_ids], env_ids)
@@ -238,7 +238,7 @@ class PlatformHover(IsaacEnv):
         target_up = torch_utils.quat_axis(target_rot, 2)
         self.target_heading[env_ids] = target_heading
         self.target_up[env_ids] = target_up
-        
+
         self.target_vis.set_world_poses(
             self.target_pos + self.envs_positions[env_ids],
             orientations=target_rot,
@@ -302,10 +302,10 @@ class PlatformHover(IsaacEnv):
         state = TensorDict({}, [self.num_envs])
         state["state_drones"] = obs["obs_self"].squeeze(2)    # [num_envs, drone.n, drone_state_dim]
         state["state_frame"] = platform_state                # [num_envs, 1, platform_state_dim]
-        
+
         self.pos_error = torch.norm(self.target_platform_rpos, dim=-1)
         self.heading_alignment = torch.sum(self.platform.heading * self.target_heading.unsqueeze(1), dim=-1)
-        
+
         return TensorDict(
             {
                 "agents": {
@@ -321,17 +321,17 @@ class PlatformHover(IsaacEnv):
         platform_vels = self.platform.get_velocities()
 
         distance = torch.norm(self.target_platform_rpose, dim=-1)
-        
+
         reward = torch.zeros(self.num_envs, self.drone.n, device=self.device)
         # reward_pose = 1 / (1 + torch.square(distance * self.reward_distance_scale))
         reward_pose = torch.exp(- self.reward_distance_scale * distance)
-        
+
         up = torch.sum(self.platform.up * self.target_up.unsqueeze(1), dim=-1)
         reward_up = torch.square((up + 1) / 2)
 
         spinnage = platform_vels[:, -3:].abs().sum(-1)
         reward_spin = 1. / (1 + torch.square(spinnage))
-        
+
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort).mean(-1, keepdim=True)
         reward_action_smoothness = self.reward_action_smoothness_weight * torch.exp(-self.drone.throttle_difference).mean(-1, keepdim=True)
 
@@ -340,7 +340,7 @@ class PlatformHover(IsaacEnv):
 
         reward[:] = (
             reward_pose
-            + reward_pose * (reward_up + reward_spin) 
+            + reward_pose * (reward_up + reward_spin)
             + reward_effort
             + reward_action_smoothness
         )

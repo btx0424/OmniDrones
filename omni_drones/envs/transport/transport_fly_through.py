@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -25,8 +25,8 @@ import torch
 import torch.distributions as D
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import (
-    CompositeSpec, 
-    UnboundedContinuousTensorSpec, 
+    CompositeSpec,
+    UnboundedContinuousTensorSpec,
     DiscreteTensorSpec
 )
 
@@ -49,13 +49,13 @@ from ..utils import create_obstacle
 class TransportFlyThrough(IsaacEnv):
     r"""
     A challenging cooperative control task where a group of UAVs carry a box-shaped payload connected via
-    rigid links. 
+    rigid links.
 
     ## Observation
     The observation space is specified by a :py:class:`CompositeSpec` containing the following items:
 
     - `obs_self` (1, \*): The state of each UAV observed by itself, containing its kinematic
-      information with the position being relative to the payload. It also includes a one-hot 
+      information with the position being relative to the payload. It also includes a one-hot
       vector indicating each drone's identity.
     - `obs_others` (k-1, \*): The observed states of other agents.
     - `obs_payload` (1, \*): The state of the frame, cotaining its position (relative to the
@@ -71,10 +71,10 @@ class TransportFlyThrough(IsaacEnv):
     - `joint_limit`: Reward for kepping the joint states in a reasonalble range to avoid glitchy behaviors.
 
     ## Config
-    - `obstacle_spacing` (Tuple[float, float], default=[0.85, 0.85]): A range from which the vertical spacing between the 
+    - `obstacle_spacing` (Tuple[float, float], default=[0.85, 0.85]): A range from which the vertical spacing between the
       obstacles is sampled.
-    - `reset_on_collision` (bool, default=False): Whether to reset the environment when the payload collides with an 
-      obstacle. 
+    - `reset_on_collision` (bool, default=False): Whether to reset the environment when the payload collides with an
+      obstacle.
     """
     def __init__(self, cfg, headless):
         self.reward_effort_weight = cfg.task.reward_effort_weight
@@ -98,7 +98,7 @@ class TransportFlyThrough(IsaacEnv):
             track_contact_forces=True
         )
         self.obstacles.initialize()
-        
+
         self.init_poses = self.group.get_world_poses(clone=True)
         self.init_velocities = torch.zeros_like(self.group.get_velocities())
         self.init_joint_pos = self.group.get_joint_positions(clone=True)
@@ -143,13 +143,13 @@ class TransportFlyThrough(IsaacEnv):
         scene_utils.design_scene()
 
         create_obstacle(
-            "/World/envs/env_0/obstacle_0", 
+            "/World/envs/env_0/obstacle_0",
             prim_type="Capsule",
             translation=(0., 0., 1.2),
             attributes={"axis": "Y", "radius": 0.04, "height": 5}
         )
         create_obstacle(
-            "/World/envs/env_0/obstacle_1", 
+            "/World/envs/env_0/obstacle_1",
             prim_type="Capsule",
             translation=(0., 0., 2.2),
             attributes={"axis": "Y", "radius": 0.04, "height": 5}
@@ -158,7 +158,7 @@ class TransportFlyThrough(IsaacEnv):
         self.group.spawn(translations=[(0, 0, 2.0)], enable_collision=True)
 
         return ["/World/defaultGroundPlane"]
-    
+
     def _set_specs(self):
         drone_obs_dim = self.drone.state_spec.shape[0] + self.drone.n
         payload_state_dim = 19
@@ -262,7 +262,7 @@ class TransportFlyThrough(IsaacEnv):
         payload_vels = self.payload.get_velocities()
         self.payload_heading: torch.Tensor = quat_axis(self.payload_rot, axis=0)
         self.payload_up: torch.Tensor = quat_axis(self.payload_rot, axis=2)
-        
+
         self.drone_rpos = torch.vmap(cpos)(drone_pos, drone_pos)
         self.drone_rpos = torch.vmap(off_diag)(self.drone_rpos)
         self.drone_pdist = torch.norm(self.drone_rpos, dim=-1, keepdim=True)
@@ -302,13 +302,13 @@ class TransportFlyThrough(IsaacEnv):
         state["obstacles"] = obstacle_payload_rpos # [..., 2, 2]
 
         self.payload_pos_error = torch.norm(self.target_payload_rpos, dim=-1, keepdim=True)
-    
+
         self.stats["payload_pos_error"].lerp_(self.payload_pos_error, (1-self.alpha))
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
 
         return TensorDict({
             "agents": {
-                "observation": obs, 
+                "observation": obs,
                 "state": state,
             },
             "info": self.info,
@@ -320,7 +320,7 @@ class TransportFlyThrough(IsaacEnv):
             self.group.get_joint_positions()[..., :16]
             / self.group.joint_limits[..., :16, 0].abs()
         )
-        
+
         separation = self.drone_pdist.min(dim=-2).values.min(dim=-2).values
 
         reward = torch.zeros(self.num_envs, self.drone.n, 1, device=self.device)
@@ -345,8 +345,8 @@ class TransportFlyThrough(IsaacEnv):
 
         reward[:] = (
             reward_separation * (
-                reward_pose 
-                + reward_pose * reward_up 
+                reward_pose
+                + reward_pose * reward_up
                 + reward_joint_limit
                 + reward_action_smoothness.mean(1, True)
                 + reward_effort
@@ -354,12 +354,12 @@ class TransportFlyThrough(IsaacEnv):
         ).unsqueeze(1)
 
         done_misbehave = (
-            (self.drone.pos[..., 2] < 0.2) 
+            (self.drone.pos[..., 2] < 0.2)
             | (self.drone.pos[..., 2] > 3.6)
         )
-        
+
         done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1) 
+            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
             | done_misbehave.any(-1, keepdim=True)
             | (self.payload_pos[:, 2] < 0.3).unsqueeze(1)
         )

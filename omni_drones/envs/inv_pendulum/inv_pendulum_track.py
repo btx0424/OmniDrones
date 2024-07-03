@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -48,10 +48,10 @@ class InvPendulumTrack(IsaacEnv):
     need to track a reference lemniscate trajectory for the payload.
 
     ## Observation
-    
+
     - `drone_payload_rpos` (3): The position of the drone relative to the payload's position.
-    - `root_state` (16 + `num_rotors`): The basic information of the drone (except its position), 
-      containing its rotation (in quaternion), velocities (linear and angular), 
+    - `root_state` (16 + `num_rotors`): The basic information of the drone (except its position),
+      containing its rotation (in quaternion), velocities (linear and angular),
       heading and up vectors, and the current throttle.
     - `target_payload_rpos` (3 * `future_traj_steps`): The position of the reference relative to the payload's position.
     - `payload_vel` (6): The linear and angular velocities of the payload.
@@ -59,7 +59,7 @@ class InvPendulumTrack(IsaacEnv):
       vector encoding the current progress of the episode.
 
     ## Reward
-    
+
     - `pos`: Reward for tracking the trajectory based on how close the drone's payload is to the target position.
     - `effort`: Reward computed from the effort of the drone to optimize the
       energy consumption.
@@ -72,10 +72,10 @@ class InvPendulumTrack(IsaacEnv):
 
     ## Episode End
     The episode ends when the bar falls beyond a certain angle, or when the
-    drone gets too close to the ground, or when the distance between the payload 
+    drone gets too close to the ground, or when the distance between the payload
     and the target exceeds a threshold, or when the maximum episode length
     is reached.
-    
+
     ## Config
 
     | Parameter               | Type  | Default   | Description |
@@ -170,14 +170,14 @@ class InvPendulumTrack(IsaacEnv):
         create_pendulum(f"/World/envs/env_0/{self.drone.name}_0", self.cfg.task.bar_length, 0.04)
 
         return ["/World/defaultGroundPlane"]
-    
+
     def _set_specs(self):
         drone_state_dim = self.drone.state_spec.shape[-1]
         observation_dim = drone_state_dim + 3 * (self.future_traj_steps-1) + 9
         if self.time_encoding:
             self.time_encoding_dim = 4
             observation_dim += self.time_encoding_dim
-        
+
         self.observation_spec = CompositeSpec({
             "agents": CompositeSpec({
                 "observation": UnboundedContinuousTensorSpec((1, observation_dim)) ,
@@ -226,7 +226,7 @@ class InvPendulumTrack(IsaacEnv):
         self.traj_scale[env_ids] = self.traj_scale_dist.sample(env_ids.shape)
         traj_w = self.traj_w_dist.sample(env_ids.shape)
         self.traj_w[env_ids] = torch.randn_like(traj_w).sign() * traj_w
-        
+
         t0 = torch.zeros(len(env_ids), device=self.device)
         drone_pos = lemniscate(t0 + self.traj_t0, self.traj_c[env_ids]) + self.origin
         drone_pos[..., 2] -= self.bar_length
@@ -293,7 +293,7 @@ class InvPendulumTrack(IsaacEnv):
             "info": self.info,
         }, self.batch_size)
 
-    def _compute_reward_and_done(self):        
+    def _compute_reward_and_done(self):
 
         distance = torch.norm(self.target_payload_rpos[:, [0]], dim=-1)
         self.stats["tracking_error"].add_(-distance)
@@ -305,13 +305,13 @@ class InvPendulumTrack(IsaacEnv):
 
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort)
         reward_action_smoothness = self.reward_action_smoothness_weight * torch.exp(-self.drone.throttle_difference)
-        
+
         reward = (
             reward_pos
             + reward_effort
             + reward_action_smoothness
         )
-        
+
         done_misbehave = (self.drone.pos[..., 2] < 0.2) | (reward_bar_up < 0.2)
         done_hasnan = torch.isnan(self.drone_state).any(-1)
 
@@ -339,14 +339,14 @@ class InvPendulumTrack(IsaacEnv):
             },
             self.batch_size,
         )
-    
+
     def _compute_traj(self, steps: int, env_ids=None, step_size: float=1.):
         if env_ids is None:
             env_ids = ...
         t = self.progress_buf[env_ids].unsqueeze(1) + step_size * torch.arange(steps, device=self.device)
         t = self.traj_t0 + scale_time(self.traj_w[env_ids].unsqueeze(1) * t * self.dt)
         traj_rot = self.traj_rot[env_ids].unsqueeze(1).expand(-1, t.shape[1], 4)
-        
+
         target_pos = vmap(lemniscate)(t, self.traj_c[env_ids])
         target_pos = vmap(torch_utils.quat_rotate)(traj_rot, target_pos) * self.traj_scale[env_ids].unsqueeze(1)
 

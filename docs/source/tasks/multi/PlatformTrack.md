@@ -42,7 +42,7 @@ r = r_\text{pose} + r_\text{pose} * (r_\text{up} + r_\text{spin}) + r_\text{effo
 ## Config
 
 | Parameter               | Type  | Default       | Description |
-|-------------------------|-------|---------------|-------------|
+| ----------------------- | ----- | ------------- | ----------- |
 | `drone_model`           | str   | "hummingbird" |             |
 | `num_drones`            | int   | 4             |             |
 | `arm_length`            | float | 0.85          |             |

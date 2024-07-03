@@ -9,16 +9,15 @@ metric:
   goal: maximize
 
 parameters:
-
-  task: 
+  task:
     value: Platform
 
-  total_frames: 
+  total_frames:
     value: 100_000_000
 
   headless:
     value: true
-  
+
   task.drone_model:
     values: [Firefly, Hummingbird]
 
@@ -33,34 +32,34 @@ parameters:
     distribution: log_uniform_values
     min: 8
     max: 64
-  
+
   algo.train_every:
     distribution: log_uniform_values
     min: 32
     max: 512
-  
+
   algo.ppo_epochs:
     values: [2, 4, 8]
 
   algo.critic_input:
     values: [obs, state]
-  
+
   algo.share_actor:
     values: [true, false]
-  
+
   # algo.actor.lr:
   #   distribution: log_uniform_values
   #   max: 0.01
   #   min: 0.0001
-  
+
   # algo.actor.layer_norm: # true is generally better
   #   values: [true, false]
-  
+
   # algo.critic.lr:
   #   distribution: log_uniform_values
   #   max: 0.01
   #   min: 0.0001
-  
+
   # algo.critic.layer_norm: # true is generally better
   #   values: [true, false]
 

@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -68,8 +68,8 @@ class Hover(IsaacEnv):
     The observation space consists of the following part:
 
     - `rpos` (3): The position relative to the target hovering position.
-    - `root_state` (16 + `num_rotors`): The basic information of the drone (except its position), 
-      containing its rotation (in quaternion), velocities (linear and angular), 
+    - `root_state` (16 + `num_rotors`): The basic information of the drone (except its position),
+      containing its rotation (in quaternion), velocities (linear and angular),
       heading and up vectors, and the current throttle.
     - `rheading` (3): The difference between the reference heading and the current heading.
     - `time_encoding` (optional): The time encoding, which is a 4-dimensional vector encoding the current
@@ -89,14 +89,14 @@ class Hover(IsaacEnv):
     ```{math}
         r = r_\text{pos} + r_\text{pos} * (r_\text{up} + r_\text{spin}) + r_\text{effort} + r_\text{action_smoothness}
     ```
-        
+
     ## Episode End
     The episode ends when the drone mishebaves, i.e., it crashes into the ground or flies too far away:
 
     ```{math}
         d_\text{pos} > 4 \text{ or } x^w_z < 0.2
     ```
-    
+
     or when the episode reaches the maximum length.
 
 
@@ -140,7 +140,7 @@ class Hover(IsaacEnv):
                 shape=(-1, self.drone.n)
             )
             self.payload.initialize()
-        
+
         self.target_vis = ArticulationView(
             "/World/envs/env_*/target",
             reset_xform_properties=False
@@ -181,7 +181,7 @@ class Hover(IsaacEnv):
         )
 
         kit_utils.set_nested_collision_properties(
-            target_vis_prim.GetPath(), 
+            target_vis_prim.GetPath(),
             collision_enabled=False
         )
         kit_utils.set_nested_rigid_body_properties(
@@ -229,7 +229,7 @@ class Hover(IsaacEnv):
             "terminated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
             "truncated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
         }).expand(self.num_envs).to(self.device)
-        
+
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,
             observation_key=("agents", "observation"),
@@ -258,7 +258,7 @@ class Hover(IsaacEnv):
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids, self.training)
-        
+
         pos = self.init_pos_dist.sample((*env_ids.shape, 1))
         rpy = self.init_rpy_dist.sample((*env_ids.shape, 1))
         rot = euler_to_quaternion(rpy)
@@ -268,7 +268,7 @@ class Hover(IsaacEnv):
         self.drone.set_velocities(self.init_vels[env_ids], env_ids)
 
         if self.has_payload:
-            # TODO@btx0424: workout a better way 
+            # TODO@btx0424: workout a better way
             payload_z = self.payload_z_dist.sample(env_ids.shape)
             joint_indices = torch.tensor([self.drone._view._dof_indices["PrismaticJoint"]], device=self.device)
             self.drone._view.set_joint_positions(
@@ -276,9 +276,9 @@ class Hover(IsaacEnv):
             self.drone._view.set_joint_position_targets(
                 payload_z, env_indices=env_ids, joint_indices=joint_indices)
             self.drone._view.set_joint_velocities(
-                torch.zeros(len(env_ids), 1, device=self.device), 
+                torch.zeros(len(env_ids), 1, device=self.device),
                 env_indices=env_ids, joint_indices=joint_indices)
-            
+
             payload_mass = self.payload_mass_dist.sample(env_ids.shape+(1,)) * self.drone.masses[env_ids]
             self.payload.set_masses(payload_mass, env_indices=env_ids)
 
@@ -300,7 +300,7 @@ class Hover(IsaacEnv):
         # relative position and heading
         self.rpos = self.target_pos - self.root_state[..., :3]
         self.rheading = self.target_heading - self.root_state[..., 13:16]
-        
+
         obs = [self.rpos, self.root_state[..., 3:], self.rheading,]
         if self.time_encoding:
             t = (self.progress_buf / self.max_episode_length).unsqueeze(-1)
@@ -320,7 +320,7 @@ class Hover(IsaacEnv):
         # pose reward
         pos_error = torch.norm(self.rpos, dim=-1)
         heading_alignment = torch.sum(self.drone.heading * self.target_heading, dim=-1)
-        
+
         distance = torch.norm(torch.cat([self.rpos, self.rheading], dim=-1), dim=-1)
 
         reward_pose = 1.0 / (1.0 + torch.square(self.reward_distance_scale * distance))
@@ -338,12 +338,12 @@ class Hover(IsaacEnv):
 
         assert reward_pose.shape == reward_up.shape == reward_spin.shape
         reward = (
-            reward_pose 
-            + reward_pose * (reward_up + reward_spin) 
-            + reward_effort 
+            reward_pose
+            + reward_pose * (reward_up + reward_spin)
+            + reward_effort
             + reward_action_smoothness
         )
-        
+
         terminated = (self.drone.pos[..., 2] < 0.2) | (distance > 4)
         truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 

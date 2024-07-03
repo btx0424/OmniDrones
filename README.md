@@ -19,7 +19,7 @@ Welcome to join our [Discord](https://discord.gg/J4QvXR6tQj) for discussions and
 
 ## Notice
 
-The initial release of **OmniDrones** is developed based on Isaac Sim 2022.2.0. It can be found at the [release](https://github.com/btx0424/OmniDrones/tree/release) branch. The current version is developed based on Isaac Sim 2023.1.0. 
+The initial release of **OmniDrones** is developed based on Isaac Sim 2022.2.0. It can be found at the [release](https://github.com/btx0424/OmniDrones/tree/release) branch. The current version is developed based on Isaac Sim 2023.1.0.
 
 
 ## Citation
@@ -28,7 +28,7 @@ Please cite [this paper](https://arxiv.org/abs/2309.12825) if you use *OmniDrone
 
 ```
 @misc{xu2023omnidrones,
-    title={OmniDrones: An Efficient and Flexible Platform for Reinforcement Learning in Drone Control}, 
+    title={OmniDrones: An Efficient and Flexible Platform for Reinforcement Learning in Drone Control},
     author={Botian Xu and Feng Gao and Chao Yu and Ruize Zhang and Yi Wu and Yu Wang},
     year={2023},
     eprint={2309.12825},

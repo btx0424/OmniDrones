@@ -6,7 +6,7 @@
 
 ### Q: Can I use Python versions other than what is shipped with Omniverse?
 
-A: Unfortunately, no. Some parts of Isaac Sim are compiled with a specific 
+A: Unfortunately, no. Some parts of Isaac Sim are compiled with a specific
 Pthon version. Currently, Isaac Sim 2022.* supports Python 3.7 and
 Isaac Sim 2023.* supports Python 3.10.
 
@@ -38,7 +38,7 @@ If you see messages like this in the log file:
 ...
 ```
 then the startup is waiting for shaders to compile. Is is supposed to be a
-one-time operation. If you are experiencing repeated shader compilation, see 
+one-time operation. If you are experiencing repeated shader compilation, see
 [this post](https://forums.developer.nvidia.com/t/isaac-sim-recompiling-ray-tracing-shaders-every-time-it-is-opened/244296/3) for help.
 
 **Asset loading**

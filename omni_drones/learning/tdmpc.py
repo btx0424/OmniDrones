@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -53,13 +53,13 @@ class LinearSchedule:
         self.start = start
         self.finish = finish
         self.delta = (finish - start) / steps
-    
+
     def __call__(self, step):
         if self.start > self.finish:
             return max(self.start + step * self.delta, self.finish)
         else:
             return min(self.start + step * self.delta, self.finish)
-    
+
     @classmethod
     def make(cls, schedule: str):
         import re
@@ -67,11 +67,11 @@ class LinearSchedule:
         start, finish, steps = [float(g) for g in match.groups()]
         return cls(start, finish, steps)
 
-        
+
 
 class TOLD(nn.Module):
     def __init__(
-        self, 
+        self,
         cfg,
         observation_spec,
         action_spec,
@@ -100,15 +100,15 @@ class TOLD(nn.Module):
         self.q1 = nn.Sequential(MLP(q_units, nn.LayerNorm), nn.Linear(q_units[-1], 1))
         self.q2 = nn.Sequential(MLP(q_units, nn.LayerNorm), nn.Linear(q_units[-1], 1))
         self.apply(orthogonal_init)
-    
+
     def h(self, obs):
         return self.encoder(obs)
-    
+
     def next(self, z, a):
         a = self.action_proj(a)
         x = torch.cat([z, a], dim=-1)
         return self.dynamics(x), self.reward(x), self.cont(x)
-    
+
     def q(self, z, a):
         a = self.action_proj(a)
         x = torch.cat([z, a], dim=-1)
@@ -140,13 +140,13 @@ class TDMPCPolicy:
         self.reward_name = ("next", "reward", f"{self.agent_spec.name}.reward")
 
         self.model = TOLD(
-            cfg.model, 
-            self.agent_spec.observation_spec, 
+            cfg.model,
+            self.agent_spec.observation_spec,
             self.agent_spec.action_spec
         ).to(self.device)
         self.model_target = copy.deepcopy(self.model)
         self.model_opt = torch.optim.Adam(self.model.parameters(), lr=self.cfg.model.lr)
-        
+
         self.action_dim = self.agent_spec.action_spec.shape[-1]
         self.actor = nn.Sequential(
             MLP([self.cfg.model.hidden_dim, *self.cfg.actor.hidden_units], nn.LayerNorm),
@@ -188,7 +188,7 @@ class TDMPCPolicy:
         self._pi_value = pi_value
         tensordict.set(self.action_name, action)
         return tensordict
-    
+
     def pi(self, z, std):
         action = torch.tanh(self.actor(z))
         action_noise = (
@@ -210,7 +210,7 @@ class TDMPCPolicy:
         qs = self.model.q(z, self.pi(z, self.cfg.min_std))
         G += discount * qs.min(-1, keepdims=True).values
         return G
-        
+
     @torch.no_grad()
     def plan(self, obs, prev_mean, step, eval_mode=False):
 
@@ -230,7 +230,7 @@ class TDMPCPolicy:
         ])
         std = 2 * torch.ones_like(mean)
         std_lb = self.std_schedule(step)
-        
+
         z = z0.repeat(self.num_samples+self.num_pi_trajs, 1)
         for i in range(self.cem_iterations):
             actions = torch.clamp(
@@ -238,7 +238,7 @@ class TDMPCPolicy:
                 -1, 1
             )
             actions = torch.cat([actions, pi_actions], dim=1)
-        
+
             value = self.estimate_value(z, actions)
             elite_idxs = torch.topk(value.squeeze(1), self.cem_num_elites, dim=0).indices
             elite_value, elite_actions = value[elite_idxs], actions[:, elite_idxs]
@@ -265,7 +265,7 @@ class TDMPCPolicy:
         if len(self.buffer) < self.cfg.buffer_size:
             print(f"filling buffer: {len(self.buffer)}/{self.cfg.buffer_size}")
             return {}
-        
+
         self._step += data[("next", "done")].sum().item()
         metrics = defaultdict(list)
 
@@ -299,7 +299,7 @@ class TDMPCPolicy:
                 cont_loss += rho * mse(c, not_done[:, t])
                 value_loss += rho * (mse(qs[..., 0:1], td_target) + mse(qs[..., 1:2], td_target))
                 rho = rho * self.cfg.rho * not_done[:, t]
-            
+
             total_loss = (
                 self.cfg.consistency_coef * consistency_loss
                 + self.cfg.reward_coef * reward_loss
@@ -311,7 +311,7 @@ class TDMPCPolicy:
             total_loss.backward()
             model_grad_norm = nn.utils.clip_grad.clip_grad_norm_(self.model.parameters(), self.cfg.max_grad_norm)
             self.model_opt.step()
-            
+
             if step % self.cfg.actor_delay == 0:
                 actor_loss = 0
                 with hold_out_net(self.model):

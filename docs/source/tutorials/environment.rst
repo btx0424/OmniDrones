@@ -1,10 +1,10 @@
 Environment
 ===========
 
-Challenging environments may have input and output with complex structures, 
-such as multi-modal observations, where the commonly used OpenAI Gym interface becomes limited. 
-To better work with the vectorized environments in Isaac Sim, which directly take in and output 
-PyTorch Tensors in batches, we use `TorchRL <https://pytorch.org/rl/index.html>`_ 
+Challenging environments may have input and output with complex structures,
+such as multi-modal observations, where the commonly used OpenAI Gym interface becomes limited.
+To better work with the vectorized environments in Isaac Sim, which directly take in and output
+PyTorch Tensors in batches, we use `TorchRL <https://pytorch.org/rl/index.html>`_
 and `TensorDict <https://pytorch.org/rl/tensordict/>`_ to build an efficient and flexible interface for OmniDrones.
 
 .. seealso::
@@ -13,17 +13,17 @@ and `TensorDict <https://pytorch.org/rl/tensordict/>`_ to build an efficient and
 
 Specification
 -------------
-An environment's input/output specification is given by its ``observation_spec``, 
+An environment's input/output specification is given by its ``observation_spec``,
 ``action_spec``, ``reward_spec`` and optionally ``done_spec``.
 
 .. code:: python
 
     from tensordict import TensorDictBase
     from omni_drones.envs.isaac_env import IsaacEnv
-    
+
     env_class = IsaacEnv.REGISTRY["Hover"]
     env = env_class(cfg, headless=true)
-    
+
     print(env.input_spec)
     print(env.output_spec)
 
@@ -37,7 +37,7 @@ An environment's input/output specification is given by its ``observation_spec``
                 action: BoundedTensorSpec(
                     shape=torch.Size([4096, 1, 6]),
                     space=ContinuousBox(
-                        minimum=Tensor(shape=torch.Size([4096, 1, 6]), device=cuda:0, dtype=torch.float32, contiguous=True), 
+                        minimum=Tensor(shape=torch.Size([4096, 1, 6]), device=cuda:0, dtype=torch.float32, contiguous=True),
                         maximum=Tensor(shape=torch.Size([4096, 1, 6]), device=cuda:0, dtype=torch.float32, contiguous=True)),
                     device=cuda,
                     dtype=torch.float32,
@@ -94,7 +94,7 @@ An environment's input/output specification is given by its ``observation_spec``
                 device=cuda,
                 dtype=torch.bool,
                 domain=discrete), device=cuda, shape=torch.Size([4096])), device=cuda, shape=torch.Size([4096]))
-        
+
 .. code:: python
 
     print(env.reset())
@@ -138,8 +138,8 @@ output:
 Interaction and Stepping Logic
 ------------------------------
 
-``IsaacEnv.step`` accepts a ``tensordict`` at each time step which contains 
-the input the environment (actions, typically). 
+``IsaacEnv.step`` accepts a ``tensordict`` at each time step which contains
+the input the environment (actions, typically).
 
 .. code:: python
 
@@ -147,11 +147,11 @@ the input the environment (actions, typically).
         # a dummy policy
         tensordict.update(env.action_spec.zero())
         return tensordict
-    
+
     tensordict = env.reset()
     tensordict = policy(tensordict)
     tensordict = env.step(tensordict)
-    
+
     print(tensordict) # the first transition
 
 where ``env.step`` executes roughly the following logic:
@@ -189,7 +189,7 @@ TorchRL provides a series of :py:class:`Collector` s, which make data collection
     from omni_drones.utils.torchrl import SyncDataCollector
 
     frames_per_batch = env.num_envs * 128
-    
+
     collector = SyncDataCollector(
         env,
         policy=policy,
@@ -202,9 +202,9 @@ TorchRL provides a series of :py:class:`Collector` s, which make data collection
     for i, data in enumerate(collector):
         # training and logging logic here
         break
-    
+
     print(data)
-    
+
 
 Creating New Tasks
 ------------------
@@ -221,14 +221,14 @@ Creating a new environment effectively amounts to implementing or overriding the
 Environment Transforms
 ----------------------
 
-TorchRL's interface allows us to modularly transform an environment's input and output spaces using :py:class:`Transform` s. 
+TorchRL's interface allows us to modularly transform an environment's input and output spaces using :py:class:`Transform` s.
 OmniDrones provides a set of :py:class:`Transform` s for various purpose.
 
-.. seealso:: 
+.. seealso::
 
     https://pytorch.org/rl/tutorials/torchrl_envs.html#transforming-envs
 
-For example, although most of the environments in OmniDrones feature continuous control tasks, discrete/multidiscrete 
+For example, although most of the environments in OmniDrones feature continuous control tasks, discrete/multidiscrete
 action spaces are sometimes more desirable:
 
 .. code:: python
@@ -238,10 +238,10 @@ action spaces are sometimes more desirable:
 
     from omni_drones.envs.isaac_env import IsaacEnv
     from omni_drones.utils.torchrl.transforms import (
-        FromMultiDiscreteAction, 
+        FromMultiDiscreteAction,
         FromDiscreteAction,
     )
-    
+
     env_class = IsaacEnv.REGISTRY["Hover"]
     base_env = env_class(cfg, headless=true)
 
@@ -255,7 +255,7 @@ action spaces are sometimes more desirable:
     print(env_discrete.action_spec)
     print(env_multidiscrete.action_spec)
 
-output: 
+output:
 
 .. code:: console
 

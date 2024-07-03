@@ -66,10 +66,10 @@ def main(cfg):
         drone._reset_idx(torch.tensor([0]))
         drone.set_world_poses(init_pos, init_rot)
         drone.set_velocities(init_vels)
-        # flush the buffer so that the next getter invocation 
+        # flush the buffer so that the next getter invocation
         # returns up-to-date values
-        sim._physics_sim_view.flush() 
-    
+        sim._physics_sim_view.flush()
+
     pos_gain = 4.
     vel_gain = 2.
 
@@ -82,22 +82,22 @@ def main(cfg):
         velocity_z = drone.vel[..., 2]
         pos_error = target_height - height
         target_acc = (
-            pos_gain * pos_error 
-            + vel_gain * -velocity_z 
+            pos_gain * pos_error
+            + vel_gain * -velocity_z
             + 9.81
         )
         target_thrust = (target_acc.unsqueeze(-1) * drone.MASS_0)
         cmd = controller(
-            drone_state.squeeze(0), 
+            drone_state.squeeze(0),
             target_rate=target_rate,
             target_thrust=target_thrust
         )
-        return cmd 
+        return cmd
 
     reset()
 
     frames_vis = []
-    
+
     from tqdm import tqdm
     for i in tqdm(range(2000)):
         if sim.is_stopped():

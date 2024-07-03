@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -54,13 +54,13 @@ class QMIXPolicy:
         n_agents = agent_spec.n
         if not isinstance(agent_spec.action_spec, DiscreteTensorSpec):
             raise ValueError("Only discrete action spaces are supported for QMIX.")
-        
+
         num_actions = agent_spec.action_spec.space.n
         obs_name = f"{self.agent_name}.obs"
         self.action_name = ("action", f"{self.agent_name}.action")
         self.state_name = (
-            f"{self.agent_name}.state" 
-            if self.agent_spec.state_spec is not None 
+            f"{self.agent_name}.state"
+            if self.agent_spec.state_spec is not None
             else f"{self.agent_name}.obs"
         )
 
@@ -80,8 +80,8 @@ class QMIXPolicy:
         self.target_agent_q = copy.deepcopy(self.agent_q)
 
         self.action_selector = TensorDictModule(
-            EpsilonGreedyActionSelector(anneal_time=self.cfg.anneal_time), 
-            [f"{self.agent_name}.q", "epsilon_t"], 
+            EpsilonGreedyActionSelector(anneal_time=self.cfg.anneal_time),
+            [f"{self.agent_name}.q", "epsilon_t"],
             [self.action_name, "epsilon"]
         )
 
@@ -101,12 +101,12 @@ class QMIXPolicy:
         self.opt = torch.optim.Adam(params, lr=cfg.lr)
 
         self.rb = MyBuffer(cfg.buffer_size, device="cpu") # device=self.device)
-        
+
         self.t = 0 # for epsilon annealing
 
     def __call__(self, tensordict: TensorDict):
         tensordict.set(
-            "epsilon_t", 
+            "epsilon_t",
             torch.full([*tensordict.shape, self.agent_spec.n], self.t, device=self.device)
         )
         tensordict.update(self._call(tensordict, self.agent_q, 1))
@@ -118,7 +118,7 @@ class QMIXPolicy:
         return tensordict
 
     def _call(self, tensordict: TensorDict, agent_q: TensorDictSequential, vmap_dim: int):
-        q_input = tensordict.select(*agent_q.in_keys, strict=False) 
+        q_input = tensordict.select(*agent_q.in_keys, strict=False)
         q_input["is_init"] = expand_right(
             q_input["is_init"], (*q_input.batch_size, self.agent_spec.n)
         )
@@ -233,10 +233,10 @@ class QMIXer(nn.Module):
         self.n_agents = n_agents
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
-        
+
         self.hyper_w1 = nn.Linear(self.input_dim, self.hidden_dim * self.n_agents)
         self.hyper_b1 = nn.Linear(self.input_dim, self.hidden_dim)
-        
+
         self.hyper_w2 = nn.Linear(self.input_dim, self.hidden_dim)
         self.hyper_b2 = nn.Sequential(
             nn.Linear(self.input_dim, self.hidden_dim),
@@ -246,14 +246,14 @@ class QMIXer(nn.Module):
 
     def forward(self, agent_qs: torch.Tensor, state: torch.Tensor):
         """
-        
+
         agent_qs: [N, L, M, |A|]
         state: [N, L, state_dim]
 
         """
         assert agent_qs.shape[-2] == self.n_agents
         batch_shape = agent_qs.shape[:-2]
-        
+
         agent_qs = agent_qs.reshape(batch_shape.numel(), 1, -1)
         state = state.reshape(batch_shape.numel(), -1)
 

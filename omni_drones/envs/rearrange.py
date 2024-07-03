@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -104,7 +104,7 @@ class Rearrange(IsaacEnv):
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
-        
+
         pos_idx = torch.argsort(torch.rand(len(env_ids), self.drone.n), dim=-1)
         pos = self.target_pos[pos_idx]
         rpy = self.init_rpy_dist.sample((*env_ids.shape, self.drone.n))
@@ -158,7 +158,7 @@ class Rearrange(IsaacEnv):
         self.stats["pos_error"].lerp_(self.target_drone_rpos.norm(dim=-1), 1-self.alpha)
         # self.stats
         return TensorDict({
-            "drone.obs": obs, 
+            "drone.obs": obs,
             "drone.state": state,
             "stats": self.stats
         }, self.batch_size)
@@ -169,7 +169,7 @@ class Rearrange(IsaacEnv):
         distance = torch.norm(self.target_drone_rpos, dim=-1, keepdim=True)
         separation = self.drone_pdist.min(dim=-2).values
         spinnage = self.drone_state[..., 10:13].abs().sum(-1, keepdim=True)
-        
+
         pos_reward = torch.exp(-distance)
         up_reward = torch.square((self.drone_up[..., 2].unsqueeze(-1) + 1) / 2)
         reward_spin = 1.0 / (1.0 + torch.square(spinnage))

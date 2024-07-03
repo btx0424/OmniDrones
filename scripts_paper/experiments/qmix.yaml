@@ -9,28 +9,27 @@ metric:
   goal: maximize
 
 parameters:
-
   algo:
     values:
-    - qmix
+      - qmix
 
-  task: 
-    values: 
-    - TransportHover # easy
-    - TransportTrack
-    - PlatformHover # easy
-    - PlatformTrack
-    - TransportFlyThrough
-    
+  task:
+    values:
+      - TransportHover # easy
+      - TransportTrack
+      - PlatformHover # easy
+      - PlatformTrack
+      - TransportFlyThrough
+
   task.action_transform:
     value: discrete:2
 
-  total_frames: 
+  total_frames:
     value: 155_500_000
 
   headless:
     value: true
-  
+
   seed:
     values: [0, 42]
 

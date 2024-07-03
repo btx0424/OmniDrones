@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -42,19 +42,19 @@ from .utils import create_pendulum
 class InvPendulumHover(IsaacEnv):
     r"""
     An intermidiate control task where a classic inverted pendulum is based on the UAV.
-    We refer the the ball at the end of pendulum as *payload*. The goal for the agent 
+    We refer the the ball at the end of pendulum as *payload*. The goal for the agent
     is to keep balance while maintaining its position around a target position.
 
     ## Observation
     - `drone_payload_rpos` (3): The position of the drone relative to the payload's position.
-    - `root_state` (19 + num_rotors): The basic information of the drone, 
-      containing its rotation (in quaternion), velocities (linear and angular), 
+    - `root_state` (19 + num_rotors): The basic information of the drone,
+      containing its rotation (in quaternion), velocities (linear and angular),
       heading and up vectors, and the current throttle.
     - `target_payload_rpos` (3): The position of the reference relative to the payload's position.
     - `payload_vel` (6): The linear and angular velocities of the payload.
     - `time_encoding` (optional): The time encoding, which is a 4-dimensional
       vector encoding the current progress of the episode.
- 
+
     ## Reward
 
     - `pos`: Reward for maintaining the position of the payload around the target position.
@@ -72,7 +72,7 @@ class InvPendulumHover(IsaacEnv):
 
     ## Episode End
     The episode ends when the bar falls beyond a certain angle, or when the
-    drone gets too close to the ground, or when the distance between the payload 
+    drone gets too close to the ground, or when the distance between the payload
     and the target exceeds a threshold, or when the maximum episode length
     is reached.
 
@@ -131,7 +131,7 @@ class InvPendulumHover(IsaacEnv):
         )
 
         self.payload_target_pos = torch.tensor([0., 0., 2.5], device=self.device)
-        
+
         self.alpha = 0.8
 
     def _design_scene(self):
@@ -164,7 +164,7 @@ class InvPendulumHover(IsaacEnv):
         if self.time_encoding:
             self.time_encoding_dim = 4
             observation_dim += self.time_encoding_dim
-        
+
         self.observation_spec = CompositeSpec({
             "agents": CompositeSpec({
                 "observation": UnboundedContinuousTensorSpec((1, observation_dim)) ,
@@ -205,7 +205,7 @@ class InvPendulumHover(IsaacEnv):
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
-        
+
         drone_pos = self.init_pos_dist.sample((*env_ids.shape, 1))
         drone_rpy = self.init_rpy_dist.sample((*env_ids.shape, 1))
         drone_rot = euler_to_quaternion(drone_rpy)
@@ -262,7 +262,7 @@ class InvPendulumHover(IsaacEnv):
             "info": self.info,
         }, self.batch_size)
 
-    def _compute_reward_and_done(self):        
+    def _compute_reward_and_done(self):
         # reward_pos = 1.0 / (1.0 + torch.square(self.reward_distance_scale * self.pos_error))
         reward_pos = torch.exp(-self.reward_distance_scale * self.pos_error)
 
@@ -278,10 +278,10 @@ class InvPendulumHover(IsaacEnv):
 
         reward = (
             reward_bar_up + reward_pos
-            + reward_bar_up * (reward_spin + reward_swing) 
+            + reward_bar_up * (reward_spin + reward_swing)
             + reward_effort
         )
-        
+
         done_misbehave = (self.drone.pos[..., 2] < 0.2) | (reward_bar_up < 0.2)
         done_hasnan = torch.isnan(self.drone_state).any(-1)
 

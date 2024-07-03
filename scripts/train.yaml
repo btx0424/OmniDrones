@@ -1,8 +1,8 @@
 # hydra.job.chdir: false
 hydra:
   searchpath:
-  # see https://hydra.cc/docs/advanced/search_path/
-   - file://../cfg
+    # see https://hydra.cc/docs/advanced/search_path/
+    - file://../cfg
 
 headless: true
 
@@ -27,9 +27,9 @@ wandb:
   entity: marl-drones
   project: omnidrones
   mode: online # set to 'disabled' when debugging locally
-  run_id: 
+  run_id:
   monitor_gym: True
-  tags: 
+  tags:
 
 defaults:
   - task: Hover

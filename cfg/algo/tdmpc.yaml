@@ -13,7 +13,6 @@ model:
   lr: 3e-4
 max_grad_norm: 100
 
-
 # cem planning
 num_samples: 512
 min_std: 0.05

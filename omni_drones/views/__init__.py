@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -46,7 +46,7 @@ def require_sim_initialized(func):
         if SimulationContext.instance()._physics_sim_view is None:
             raise RuntimeError("SimulationContext not initialzed.")
         return func(*args, **kwargs)
-    
+
     return _func
 
 
@@ -76,7 +76,7 @@ class ArticulationView(_ArticulationView):
             reset_xform_properties,
             enable_dof_force_sensors,
         )
-    
+
     @require_sim_initialized
     def initialize(self, physics_sim_view: omni.physics.tensors.SimulationView = None) -> None:
         """Create a physics simulation view if not passed and creates an articulation view using physX tensor api.
@@ -124,7 +124,7 @@ class ArticulationView(_ArticulationView):
                         shape=[self.count, self.num_dof], dtype="float32", device=self._device
                     )
         return
-    
+
     def get_gains(
         self,
         indices: Optional[Union[np.ndarray, List, torch.Tensor]] = None,
@@ -135,11 +135,11 @@ class ArticulationView(_ArticulationView):
         Gets stiffness and damping of articulations in the view.
 
         Args:
-            indices (Optional[Union[np.ndarray, List, torch.Tensor]], optional): indicies to specify which prims 
+            indices (Optional[Union[np.ndarray, List, torch.Tensor]], optional): indicies to specify which prims
                                                                                  to query. Shape (M,).
                                                                                  Where M <= size of the encapsulated prims in the view.
                                                                                  Defaults to None (i.e: all prims in the view).
-            joint_indices (Optional[Union[np.ndarray, List, torch.Tensor]], optional): joint indicies to specify which joints 
+            joint_indices (Optional[Union[np.ndarray, List, torch.Tensor]], optional): joint indicies to specify which joints
                                                                                  to query. Shape (K,).
                                                                                  Where K <= num of dofs.
                                                                                  Defaults to None (i.e: all dofs).
@@ -210,7 +210,7 @@ class ArticulationView(_ArticulationView):
                     dof_write_idx += 1
                 articulation_write_idx += 1
             return kps, kds
-    
+
     def get_applied_actions(self, clone: bool = True) -> ArticulationActions:
         """Gets current applied actions in an ArticulationActions object.
 
@@ -303,21 +303,21 @@ class ArticulationView(_ArticulationView):
     ) -> None:
         indices = self._resolve_env_indices(env_indices)
         super().set_joint_velocities(
-            velocities.flatten(end_dim=-2), 
+            velocities.flatten(end_dim=-2),
             indices,
             joint_indices
         )
 
     def set_joint_velocity_targets(
-        self, 
-        velocities: Optional[torch.Tensor], 
-        env_indices: Optional[torch.Tensor] = None, 
+        self,
+        velocities: Optional[torch.Tensor],
+        env_indices: Optional[torch.Tensor] = None,
         joint_indices: Optional[torch.Tensor] = None
     ) -> None:
         indices = self._resolve_env_indices(env_indices)
         super().set_joint_velocity_targets(
-            velocities.flatten(end_dim=-2), 
-            indices, 
+            velocities.flatten(end_dim=-2),
+            indices,
             joint_indices
         )
 
@@ -337,34 +337,34 @@ class ArticulationView(_ArticulationView):
     ) -> None:
         indices = self._resolve_env_indices(env_indices)
         super().set_joint_positions(
-            positions.flatten(end_dim=-2), 
+            positions.flatten(end_dim=-2),
             indices,
             joint_indices
         )
 
     def set_joint_position_targets(
-        self, 
-        positions: Optional[torch.Tensor], 
-        env_indices: Optional[torch.Tensor] = None, 
+        self,
+        positions: Optional[torch.Tensor],
+        env_indices: Optional[torch.Tensor] = None,
         joint_indices: Optional[torch.Tensor] = None,
     ) -> None:
         indices = self._resolve_env_indices(env_indices)
         super().set_joint_position_targets(
-            positions.flatten(end_dim=-2), 
+            positions.flatten(end_dim=-2),
             indices,
             joint_indices
         )
-    
+
     def set_joint_efforts(
-        self, 
-        efforts: Optional[torch.Tensor], 
-        env_indices: Optional[torch.Tensor] = None, 
+        self,
+        efforts: Optional[torch.Tensor],
+        env_indices: Optional[torch.Tensor] = None,
         joint_indices: Optional[torch.Tensor] = None
     ) -> None:
         indices = self._resolve_env_indices(env_indices)
         super().set_joint_efforts(
-            efforts.flatten(end_dim=-2), 
-            indices, 
+            efforts.flatten(end_dim=-2),
+            indices,
             joint_indices
         )
 
@@ -506,17 +506,17 @@ class RigidPrimView(_RigidPrimView):
         )
 
     def get_contact_force_matrix(
-        self, 
-        env_indices: Optional[torch.Tensor] = None, 
-        clone: bool = True, 
+        self,
+        env_indices: Optional[torch.Tensor] = None,
+        clone: bool = True,
         dt: float = 1
     ) -> torch.Tensor:
         indices = self._resolve_env_indices(env_indices)
         return super().get_contact_force_matrix(indices, clone, dt).unflatten(0, self.shape)
 
     def get_masses(
-        self, 
-        env_indices: Optional[torch.Tensor] = None, 
+        self,
+        env_indices: Optional[torch.Tensor] = None,
         clone: bool = True
     ) -> torch.Tensor:
         indices = self._resolve_env_indices(env_indices)
@@ -539,10 +539,10 @@ class RigidPrimView(_RigidPrimView):
                 )
                 write_idx += 1
         return masses.reshape(-1, *self.shape[1:], 1)
-    
+
     def set_masses(
-        self, 
-        masses: torch.Tensor, 
+        self,
+        masses: torch.Tensor,
         env_indices: Optional[torch.Tensor] = None
     ) -> None:
         indices = self._resolve_env_indices(env_indices).cpu()
@@ -565,35 +565,35 @@ class RigidPrimView(_RigidPrimView):
             return
 
     def get_coms(
-        self, 
-        env_indices: Optional[torch.Tensor] = None, 
+        self,
+        env_indices: Optional[torch.Tensor] = None,
         clone: bool = True
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         indices = self._resolve_env_indices(env_indices)
         positions, orientations = super().get_coms(indices, clone)
         return positions.unflatten(0, self.shape), orientations.unflatten(0, self.shape)
-    
+
     def set_coms(
-        self, 
-        positions: torch.Tensor = None, 
-        # orientations: torch.Tensor = None, 
+        self,
+        positions: torch.Tensor = None,
+        # orientations: torch.Tensor = None,
         env_indices: torch.Tensor = None
     ) -> None:
         # TODO@btx0424 fix orientations
         indices = self._resolve_env_indices(env_indices)
         return super().set_coms(positions.reshape(-1, 1, 3), None, indices)
-    
+
     def get_inertias(
-        self, 
-        env_indices: Optional[torch.Tensor]=None, 
+        self,
+        env_indices: Optional[torch.Tensor]=None,
         clone: bool=True
     ) -> torch.Tensor:
         indices = self._resolve_env_indices(env_indices)
         return super().get_inertias(indices, clone).unflatten(0, self.shape)
-    
+
     def set_inertias(
-        self, 
-        values: torch.Tensor, 
+        self,
+        values: torch.Tensor,
         env_indices: Optional[torch.Tensor]=None
     ):
         indices = self._resolve_env_indices(env_indices)

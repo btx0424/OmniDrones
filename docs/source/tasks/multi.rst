@@ -3,7 +3,7 @@ Multi-Agent Tasks
 
 .. note::
 
-  We are in the process of refactoring the tasks to make it more modular 
+  We are in the process of refactoring the tasks to make it more modular
   and easier to use while adding more tasks. The difference in visual
   appearance of the tasks is due version differences in Isaac Sim. They
   have no effect on the logic of the tasks.
@@ -15,7 +15,7 @@ Multi-Agent Tasks
 
     .. image:: ../_static/tasks/PlatformHover.gif
         :scale: 50%
-  
+
   .. grid-item-card:: :ref:`tasks/multi/PlatformTrack:PlatformTrack`
     :text-align: center
 
@@ -32,7 +32,7 @@ Multi-Agent Tasks
 
   .. grid-item-card:: :ref:`tasks/multi/TransportTrack:TransportTrack`
     :text-align: center
-      
+
     .. image:: ../_static/tasks/TransportTrack.gif
         :scale: 50%
 
@@ -40,9 +40,9 @@ Multi-Agent Tasks
 
   .. grid-item-card:: :ref:`tasks/multi/Formation:Formation`
     :text-align: center
-      
+
     .. raw:: html
-      
+
       <center>
         <video width="320" height="240" controls>
           <source src="../_static/tasks/Formation.mp4" type="video/mp4">

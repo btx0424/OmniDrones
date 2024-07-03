@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -25,7 +25,7 @@ import torch
 import torch.distributions as D
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import (
-    UnboundedContinuousTensorSpec, 
+    UnboundedContinuousTensorSpec,
     CompositeSpec,
     BinaryDiscreteTensorSpec,
     DiscreteTensorSpec
@@ -56,15 +56,15 @@ class PayloadFlyThrough(IsaacEnv):
     - `drone_payload_rpos` (3): The payload's postion relative to the drone.
     - `payload_vels` (6): The linear and angular velocities of the payload.
     - `target_payload_rpos` (3): The target payload position relative to the payload.
-    - `root_state` (16 + num_rotors): The basic information of the drone (except its position), 
-      containing its rotation (in quaternion), velocities (linear and angular), 
+    - `root_state` (16 + num_rotors): The basic information of the drone (except its position),
+      containing its rotation (in quaternion), velocities (linear and angular),
       heading and up vectors, and the current throttle.
     - `obstacle_drone_rpos` (2 * 2 = 4): The position of the two bars relative to the drone's position.
     - `time_encoding` (optional): The time encoding, which is a 4-dimensional
       vector encoding the current progress of the episode.
-    
+
     ## Reward
-    - `pos`: Reward for maintaining the final position of the payload around the target position. 
+    - `pos`: Reward for maintaining the final position of the payload around the target position.
     - `up`: Reward for maintaining an upright orientation.
     - `effort`: Reward computed from the effort of the drone to optimize the
       energy consumption.
@@ -72,16 +72,16 @@ class PayloadFlyThrough(IsaacEnv):
     - `swing`: Reward computed from the swing of the payload to discourage swinging.
     - `collision`: Reward for avoiding collisions with horizontal bars.
 
-    The total reward is computed as follows: 
+    The total reward is computed as follows:
 
-    ```{math}  
+    ```{math}
         r = [r_\text{pos} + r_\text{pos} * (r_\text{up} + r_\text{spin} + r_\text{swing}) + r_\text{effort}] * (1 - r_\text{collision})
     ```
 
     ## Episode End
 
-    The episode ends when the drone gets too close or too far to the ground, or when the payload gets too 
-    close to the ground, or when the drone goes too far away horizontally, or when the maximum episode length 
+    The episode ends when the drone gets too close or too far to the ground, or when the payload gets too
+    close to the ground, or when the drone goes too far away horizontally, or when the maximum episode length
     is reached, or (optional) when the drone collides with any obstacle.
 
     ## Config
@@ -94,7 +94,7 @@ class PayloadFlyThrough(IsaacEnv):
     | `reward_distance_scale` | float               | 1.2           | Scales the reward based on the distance between the payload and its target. |
     | `time_encoding`         | bool                | True          | Indicates whether to include time encoding in the observation space. If set to True, a 4-dimensional vector encoding the current progress of the episode is included in the observation. If set to False, this feature is not included. |
     | `obstacle_spacing`      | tuple[float, float] | [0.85, 0.85]  | Specifies the minimum and maximum distance between two horizontal bars (obstacles) in the environment. |
- 
+
     """
     def __init__(self, cfg, headless):
         self.reward_effort_weight = cfg.task.reward_effort_weight
@@ -170,15 +170,15 @@ class PayloadFlyThrough(IsaacEnv):
             dynamic_friction=1.0,
             restitution=0.0,
         )
-        
+
         create_obstacle(
-            "/World/envs/env_0/obstacle_0", 
+            "/World/envs/env_0/obstacle_0",
             prim_type="Capsule",
             translation=(0., 0., 1.2),
             attributes={"axis": "Y", "radius": 0.04, "height": 5}
         )
         create_obstacle(
-            "/World/envs/env_0/obstacle_1", 
+            "/World/envs/env_0/obstacle_1",
             prim_type="Capsule",
             translation=(0., 0., 2.2),
             attributes={"axis": "Y", "radius": 0.04, "height": 5}
@@ -236,11 +236,11 @@ class PayloadFlyThrough(IsaacEnv):
             "success": BinaryDiscreteTensorSpec(1, dtype=bool),
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
-        self.stats = stats_spec.zero()        
+        self.stats = stats_spec.zero()
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
-        
+
         drone_pos = self.init_pos_dist.sample((*env_ids.shape, 1))
         drone_rpy = self.init_rpy_dist.sample((*env_ids.shape, 1))
         drone_rot = euler_to_quaternion(drone_rpy)
@@ -254,7 +254,7 @@ class PayloadFlyThrough(IsaacEnv):
         payload_target_pos = self.payload_target_pos_dist.sample(env_ids.shape)
         self.payload_target_pos[env_ids] = payload_target_pos
         self.payload_target_vis.set_world_poses(
-            payload_target_pos + self.envs_positions[env_ids], 
+            payload_target_pos + self.envs_positions[env_ids],
             env_indices=env_ids
         )
         payload_mass = self.payload_mass_dist.sample(env_ids.shape)
@@ -291,7 +291,7 @@ class PayloadFlyThrough(IsaacEnv):
         self.drone_payload_rpos = self.drone_state[..., :3] - self.payload_target_pos.unsqueeze(1)
         self.target_payload_rpos = (self.payload_target_pos - self.payload_pos).unsqueeze(1)
         obstacle_drone_rpos = self.obstacle_pos[..., [0, 2]] - self.drone_state[..., [0, 2]]
-        
+
         obs = [
             self.drone_payload_rpos,
             self.drone_state[..., 3:],
@@ -312,17 +312,17 @@ class PayloadFlyThrough(IsaacEnv):
             central_env_pos = self.envs_positions[self.central_env_idx]
             drone_pos = (self.drone.pos[self.central_env_idx, 0]+central_env_pos).tolist()
             payload_pos = (self.payload_pos[self.central_env_idx]+central_env_pos).tolist()
-            
+
             if len(self.payload_traj_vis)>1:
                 point_list_0 = [self.payload_traj_vis[-1], self.drone_traj_vis[-1]]
                 point_list_1 = [payload_pos, drone_pos]
                 colors = [(1., .1, .1, 1.), (.1, 1., .1, 1.)]
                 sizes = [1.5, 1.5]
                 self.draw.draw_lines(point_list_0, point_list_1, colors, sizes)
-            
+
             self.drone_traj_vis.append(drone_pos)
             self.payload_traj_vis.append(payload_pos)
-            
+
         return TensorDict({
             "agents": {
                 "observation": obs
@@ -332,7 +332,7 @@ class PayloadFlyThrough(IsaacEnv):
         }, self.batch_size)
 
     def _compute_reward_and_done(self):
-        
+
         reward_pos = 1.0 / (1.0 + torch.square(self.reward_distance_scale * self.payload_pos_error))
         # pose_reward = torch.exp(-distance * self.reward_distance_scale)
 
@@ -345,7 +345,7 @@ class PayloadFlyThrough(IsaacEnv):
 
         swing = torch.norm(self.payload_vels[..., :3], dim=-1, keepdim=True)
         reward_swing = 0.5 * torch.exp(-swing)
-        
+
         collision = (
             self.obstacles
             .get_net_contact_forces()
@@ -357,13 +357,13 @@ class PayloadFlyThrough(IsaacEnv):
         self.stats["collision"].add_(collision_reward)
         assert reward_pos.shape == reward_up.shape == reward_spin.shape == reward_swing.shape
         reward = (
-            reward_pos 
-            + reward_pos * (reward_up + reward_spin + reward_swing) 
+            reward_pos
+            + reward_pos * (reward_up + reward_spin + reward_swing)
             + reward_effort
         ) * (1 - collision_reward)
-        
+
         misbehave = (
-            (self.drone.pos[..., 2] < 0.2) 
+            (self.drone.pos[..., 2] < 0.2)
             | (self.drone.pos[..., 2] > 2.5)
             | (self.drone.pos[..., 1].abs() > 2.)
             | (self.payload_pos[..., 2] < 0.15).unsqueeze(1)
@@ -372,12 +372,12 @@ class PayloadFlyThrough(IsaacEnv):
 
         terminated = misbehave | hasnan
         truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-        
+
         if self.reset_on_collision:
             terminated = terminated | collision
 
         done = terminated | truncated
-        
+
         self.stats["success"].bitwise_or_(self.payload_pos_error < 0.2)
         self.stats["return"].add_(reward)
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)

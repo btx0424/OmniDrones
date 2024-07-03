@@ -9,12 +9,11 @@ metric:
   goal: maximize
 
 parameters:
-
   algo:
     values:
-    - mappo
+      - mappo
     # - happo
-  
+
   algo.actor.hidden_units:
     value: [256, 128, 128]
 
@@ -24,26 +23,26 @@ parameters:
   algo.critic_input:
     value: state
 
-  task: 
-    values: 
-    - PlatformHover # easy
+  task:
+    values:
+      - PlatformHover # easy
     # - PlatformFlyThrough # medium
 
   task.num_drones:
     values: [2, 4, 6]
 
-  total_frames: 
+  total_frames:
     value: 155_000_000
 
   headless:
     value: true
-  
+
   seed:
     values: [0, 42, 81]
 
   task.drone_model:
     values: [Firefly, Hummingbird]
-  
+
   algo.train_every:
     value: 128
 

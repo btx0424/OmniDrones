@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -31,8 +31,8 @@ GRU and LSTM are not implemented yet (2023/03/13).
 
 class GRU(nn.Module):
     def __init__(
-        self, 
-        input_size: int, 
+        self,
+        input_size: int,
         hidden_size: int
     ) -> None:
         super().__init__()
@@ -50,7 +50,7 @@ class GRU(nn.Module):
         """
         input: [N, L, H_in] or [N, H_in]
         """
-        
+
         if input.dim() == 3:
             has_time_dim = True
             N, L = input.shape[:2]
@@ -62,8 +62,8 @@ class GRU(nn.Module):
             h = torch.zeros(N, self.cell.hidden_size, device=input.device)
         elif h.dim() > 2 and has_time_dim:
             h = h[:, 0]
-        
-        
+
+
         if has_time_dim:
             if is_initial is None:
                 is_initial = torch.zeros(N, L, 1, device=input.device)

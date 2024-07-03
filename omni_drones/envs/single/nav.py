@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -41,7 +41,7 @@ from omni.isaac.debug_draw import _debug_draw
 
 
 class SDFNav(IsaacEnv):
-    
+
     def __init__(self, cfg, headless):
         self.reward_effort_weight = cfg.task.reward_effort_weight
         self.reward_action_smoothness_weight = cfg.task.reward_action_smoothness_weight
@@ -57,7 +57,7 @@ class SDFNav(IsaacEnv):
             shape=(-1, 10)
         )
         self.capsules.initialize()
-        
+
         self.obstacle_pos = torch.zeros(self.num_envs, 10, 3, device=self.device)
         self.obstacle_pos_dist = D.Uniform(
             torch.tensor([-4, -4, 2.], device=self.device),
@@ -109,7 +109,7 @@ class SDFNav(IsaacEnv):
             UsdPhysics.CollisionAPI.Apply(tree_prim)
             # PhysxSchema.PhysxCollisionAPI.Apply(tree_prim)
             tree_prim.GetAttribute("physics:kinematicEnabled").Set(True)
-        
+
         return ["/World/defaultGroundPlane"]
 
     def _set_specs(self):
@@ -125,7 +125,7 @@ class SDFNav(IsaacEnv):
             }),
             "truncated": BinaryDiscreteTensorSpec(1, dtype=bool, device=self.device)
         }).expand(self.num_envs).to(self.device)
-        
+
         action_dim = (
             self.drone.action_spec.shape[-1]
             + (3 + 3)
@@ -167,7 +167,7 @@ class SDFNav(IsaacEnv):
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids, self.training)
-        
+
         # pos = self.init_pos_dist.sample((*env_ids.shape, 1))
         pos = torch.tensor([-5.1, -5.1, 1.5], device=self.device)
         rpy = self.init_rpy_dist.sample((*env_ids.shape, 1))
@@ -201,10 +201,10 @@ class SDFNav(IsaacEnv):
         # relative position and heading
         self.rpos = self.target_pos - self.root_state[..., :3]
         self.rheading = self.target_heading - self.root_state[..., 13:16]
-        
+
         obs = torch.cat([
-            self.rpos, 
-            self.root_state[..., 3:], 
+            self.rpos,
+            self.root_state[..., 3:],
             self.rheading,
         ], dim=-1)
         queries = self.drone.pos + self.scene_queries
@@ -215,12 +215,12 @@ class SDFNav(IsaacEnv):
 
         if self._should_render(0):
             self.draw.clear_points()
-            drone_pos = (self.drone.pos[self.central_env_idx] 
+            drone_pos = (self.drone.pos[self.central_env_idx]
                          + self.envs_positions[self.central_env_idx]
                          ).cpu().squeeze(0)
             set_camera_view(
                 eye=drone_pos.numpy() + np.asarray(self.cfg.viewer.eye),
-                target=drone_pos.numpy() + np.asarray(self.cfg.viewer.lookat)                        
+                target=drone_pos.numpy() + np.asarray(self.cfg.viewer.lookat)
             )
             points = (self.scene_queries[self.central_env_idx].cpu() + drone_pos).tolist()
             self.draw.draw_points(points, [(0, 1, 0, 1)] * 64, [5] * 64)
@@ -241,15 +241,15 @@ class SDFNav(IsaacEnv):
         pos_error = torch.norm(self.rpos, dim=-1)
         reward_progress = self.last_pos_error - pos_error
         self.last_pos_error[:] = pos_error
-        
+
         reward_up = torch.square((self.drone.up[..., 2] + 1) / 2)
 
         reward = (
-            5. * reward_progress 
+            5. * reward_progress
             # + 1 / (1 + pos_error)
             + 0.2 * reward_up
         )
-        
+
         sdf = vmap(sdf_capsule)(self.drone.pos, self.obstacle_pos, radius=0.15)
         done = (
             (sdf < 0.25).squeeze(1)

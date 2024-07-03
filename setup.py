@@ -16,7 +16,7 @@ setup(
         "av", # for moviepy
         "pandas",
         # install by cloning from github
-        # "tensordict" 
+        # "tensordict"
         # "torchrl",
     ],
 )

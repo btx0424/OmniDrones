@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -49,8 +49,8 @@ class PayloadTrack(IsaacEnv):
 
     ## Observation
     - `drone_payload_rpos` (3): The position of the drone relative to the payload's position.
-    - `root_state` (16 + `num_rotors`): The basic information of the drone (except its position), 
-      containing its rotation (in quaternion), velocities (linear and angular), 
+    - `root_state` (16 + `num_rotors`): The basic information of the drone (except its position),
+      containing its rotation (in quaternion), velocities (linear and angular),
       heading and up vectors, and the current throttle.
     - `target_payload_rpos` (3 * `future_traj_steps`): The position of the reference relative to the payload's position.
     - `payload_vel` (6): The payload's linear and angular velocities.
@@ -65,7 +65,7 @@ class PayloadTrack(IsaacEnv):
       energy consumption.
     - `spin`: Reward computed from the spin of the drone to discourage spinning.
     - `action_smoothness`: Reward that encourages smoother drone actions, computed based on the throttle difference of the drone.
-    
+
     The total reward is computed as follows:
     ```{math}
         r = r_\text{pos} + r_\text{pos} * (r_\text{up} + r_\text{spin}) + r_\text{effort} + r_\text{action_smoothness}
@@ -73,10 +73,10 @@ class PayloadTrack(IsaacEnv):
 
     ## Episode End
 
-    The episode ends when the drone gets too close to the ground, or when 
-    the distance between the payload and the target exceeds a threshold, 
+    The episode ends when the drone gets too close to the ground, or when
+    the distance between the payload and the target exceeds a threshold,
     or when the maximum episode length is reached.
-    
+
 
     ## Config
 
@@ -89,7 +89,7 @@ class PayloadTrack(IsaacEnv):
     | `reward_distance_scale` | float | 1.6           | Scales the reward based on the distance between the payload and its target. |
     | `time_encoding`         | bool  | True          | Indicates whether to include time encoding in the observation space. If set to True, a 4-dimensional vector encoding the current progress of the episode is included in the observation. If set to False, this feature is not included. |
 
-    
+
 
 
     """
@@ -119,7 +119,7 @@ class PayloadTrack(IsaacEnv):
             reset_xform_properties=False,
         )
         self.payload.initialize()
-        
+
         self.init_rpy_dist = D.Uniform(
             torch.tensor([-.1, -.1, 0.], device=self.device) * torch.pi,
             torch.tensor([0.1, 0.1, 2.], device=self.device) * torch.pi
@@ -220,8 +220,8 @@ class PayloadTrack(IsaacEnv):
         self.observation_spec["stats"] = stats_spec
         self.info = info_spec.zero()
         self.stats = stats_spec.zero()
-        
-    
+
+
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
         self.traj_c[env_ids] = self.traj_c_dist.sample(env_ids.shape)
@@ -235,7 +235,7 @@ class PayloadTrack(IsaacEnv):
         pos[..., 2] += self.bar_length
         rot = euler_to_quaternion(self.init_rpy_dist.sample(env_ids.shape))
         vel = torch.zeros(len(env_ids), 1, 6, device=self.device)
-        
+
         self.drone.set_world_poses(
             pos + self.envs_positions[env_ids], rot, env_ids
         )
@@ -273,7 +273,7 @@ class PayloadTrack(IsaacEnv):
         self.payload_vels = self.payload.get_velocities()
 
         self.target_pos[:] = self._compute_traj(self.future_traj_steps, step_size=5)
-        
+
         self.drone_payload_rpos = self.drone.pos - self.payload_pos.unsqueeze(1)
         self.target_payload_rpos = (self.target_pos - self.payload_pos.unsqueeze(1))
 
@@ -301,9 +301,9 @@ class PayloadTrack(IsaacEnv):
     def _compute_reward_and_done(self):
         # pos reward
         pos_rror = torch.norm(self.target_payload_rpos[:, [0]], dim=-1)
-        
+
         reward_pos = torch.exp(-self.reward_distance_scale * pos_rror)
-        
+
         # uprightness
         tiltage = torch.abs(1 - self.drone.up[..., 2])
         reward_up = 0.5 / (1.0 + torch.square(tiltage))
@@ -317,8 +317,8 @@ class PayloadTrack(IsaacEnv):
         reward_spin = 0.5 / (1.0 + torch.square(spin))
 
         reward = (
-            reward_pos 
-            + reward_pos * (reward_up + reward_spin) 
+            reward_pos
+            + reward_pos * (reward_up + reward_spin)
             + reward_effort
             + reward_action_smoothness
         )
@@ -332,7 +332,7 @@ class PayloadTrack(IsaacEnv):
             | (self.drone.pos[..., 2] < 0.1)
             | (pos_rror > self.reset_thres)
         )
-        
+
         return TensorDict(
             {
                 "agents": {
@@ -342,14 +342,14 @@ class PayloadTrack(IsaacEnv):
             },
             self.batch_size,
         )
-    
+
     def _compute_traj(self, steps: int, env_ids=None, step_size: float=1.):
         if env_ids is None:
             env_ids = ...
         t = self.progress_buf[env_ids].unsqueeze(1) + step_size * torch.arange(steps, device=self.device)
         t = self.traj_t0 + scale_time(self.traj_w[env_ids].unsqueeze(1) * t * self.dt)
         traj_rot = self.traj_rot[env_ids].unsqueeze(1).expand(-1, t.shape[1], 4)
-        
+
         target_pos = vmap(lemniscate)(t, self.traj_c[env_ids])
         target_pos = vmap(torch_utils.quat_rotate)(traj_rot, target_pos) * self.traj_scale[env_ids].unsqueeze(1)
 

@@ -39,11 +39,11 @@ is reached.
 
 ## Config
 
-| Parameter               | Type  | Default       | Description |
-|-------------------------|-------|---------------|-------------|
-| `drone_model`           | str   | "hummingbird" | Specifies the model of the drone being used in the environment. |
-| `bar_length`            | float | 1.0           | Length of the pendulum's bar. |
-| `reward_distance_scale` | float | 1.2           | Scales the reward based on `target_payload_rpos`. |
+| Parameter               | Type  | Default       | Description                                                                                                                                                                                                                             |
+| ----------------------- | ----- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `drone_model`           | str   | "hummingbird" | Specifies the model of the drone being used in the environment.                                                                                                                                                                         |
+| `bar_length`            | float | 1.0           | Length of the pendulum's bar.                                                                                                                                                                                                           |
+| `reward_distance_scale` | float | 1.2           | Scales the reward based on `target_payload_rpos`.                                                                                                                                                                                       |
 | `time_encoding`         | bool  | True          | Indicates whether to include time encoding in the observation space. If set to True, a 4-dimensional vector encoding the current progress of the episode is included in the observation. If set to False, this feature is not included. |
 
 

@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -72,7 +72,7 @@ class DragonCfg(RobotCfg):
 
     def __post_init__(self):
         self.rotor_cfg = RotorConfig(**{
-            k: torch.cat([v] * self.num_links) 
+            k: torch.cat([v] * self.num_links)
             for k, v in asdict(self.rotor_cfg).items()
             if k != "num_rotors"
         })
@@ -124,7 +124,7 @@ class Dragon(MultirotorBase):
         self.rot = torch.zeros(*self.shape, self.num_links, 4, device=self.device)
         self.vel = torch.zeros(*self.shape, self.num_links, 6, device=self.device)
         self.acc = torch.zeros(*self.shape, self.num_links, 6, device=self.device)
-        
+
         self.rotor_joint_indices = [i for i, name in enumerate(self._view.dof_names) if name.startswith("rotor_")]
         self.link_joint_indices = torch.tensor(
             [i for i, name in enumerate(self._view.dof_names) if name.startswith("link_joint")]
@@ -166,11 +166,11 @@ class Dragon(MultirotorBase):
         )
 
         self.rotors_view.apply_forces_and_torques_at_pos(
-            self.thrusts.reshape(-1, 3), 
+            self.thrusts.reshape(-1, 3),
             is_global=False
         )
         self.base_link.apply_forces_and_torques_at_pos(
-            torques = self.torques.reshape(-1, 3), 
+            torques = self.torques.reshape(-1, 3),
             is_global=True
         )
         gimbal_cmds = gimbal_cmds.clamp(-1, 1) * torch.pi / 2
@@ -184,8 +184,8 @@ class Dragon(MultirotorBase):
             link_cmds.reshape(-1, len(self.link_joint_indices)), joint_indices=self.link_joint_indices
         )
         return self.throttle.sum(-1)
-    
-    
+
+
     def get_state(self, check_nan: bool = False):
         self.pos[:], self.rot[:] = self.base_link.get_world_poses()
         if hasattr(self, "_envs_positions"):
@@ -197,7 +197,7 @@ class Dragon(MultirotorBase):
         self.vel[:] = vel
         self.heading = quat_axis(self.rot, axis=0)
         self.up = quat_axis(self.rot, axis=2)
-        state = [t.flatten(-2) 
+        state = [t.flatten(-2)
             for t  in [self.pos, self.rot, self.vel, self.heading, self.up]
         ]
         state.append(self.throttle * 2 - 1)
@@ -219,7 +219,7 @@ class Dragon(MultirotorBase):
                 translation=(i * 0.3, 0., 0.)
             )
             base_links.append(prim_utils.get_prim_at_path(f"{prim_path}/link_{i}/base_link"))
-        
+
         stage = prim_utils.get_current_stage()
         for i in range(self.num_links-1):
             joint = script_utils.createJoint(stage, "D6", base_links[i], base_links[i+1])

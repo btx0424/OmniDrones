@@ -44,13 +44,13 @@ is reached, or (optional) when the drone collides with any obstacle.
 
 ## Config
 
-| Parameter               | Type                | Default       | Description |
-|-------------------------|---------------------|---------------|-------------|
-| `drone_model`           | str                 | "hummingbird" | Specifies the model of the drone being used in the environment. |
-| `reset_on_collision`    | bool                | False         | Indicates if the episode should reset when the drone collides with an obstacle. |
-| `bar_length`            | float               | 0.85          | Length of the pendulum's bar. |
-| `reward_distance_scale` | float               | 1.2           | Scales the reward based on the distance between the payload and its target. |
+| Parameter               | Type                | Default       | Description                                                                                                                                                                                                                             |
+| ----------------------- | ------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `drone_model`           | str                 | "hummingbird" | Specifies the model of the drone being used in the environment.                                                                                                                                                                         |
+| `reset_on_collision`    | bool                | False         | Indicates if the episode should reset when the drone collides with an obstacle.                                                                                                                                                         |
+| `bar_length`            | float               | 0.85          | Length of the pendulum's bar.                                                                                                                                                                                                           |
+| `reward_distance_scale` | float               | 1.2           | Scales the reward based on the distance between the payload and its target.                                                                                                                                                             |
 | `time_encoding`         | bool                | True          | Indicates whether to include time encoding in the observation space. If set to True, a 4-dimensional vector encoding the current progress of the episode is included in the observation. If set to False, this feature is not included. |
-| `obstacle_spacing`      | tuple[float, float] | [0.9, 1.2]    | Specifies the minimum and maximum distance between two horizontal bars (obstacles) in the environment. |
+| `obstacle_spacing`      | tuple[float, float] | [0.9, 1.2]    | Specifies the minimum and maximum distance between two horizontal bars (obstacles) in the environment.                                                                                                                                  |
 
 

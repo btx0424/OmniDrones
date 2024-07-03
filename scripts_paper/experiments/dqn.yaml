@@ -9,31 +9,30 @@ metric:
   goal: maximize
 
 parameters:
-
   algo:
     values:
-    - dqn
+      - dqn
 
-  task: 
-    values: 
-    - Hover
-    - Track
-    - InvPendulumHover
-    - InvPendulumTrack
-    - InvPendulumFlyThrough
-    - PayloadHover
-    - PayloadTrack
-    - PayloadFlyThrough
+  task:
+    values:
+      - Hover
+      - Track
+      - InvPendulumHover
+      - InvPendulumTrack
+      - InvPendulumFlyThrough
+      - PayloadHover
+      - PayloadTrack
+      - PayloadFlyThrough
 
   task.action_transform:
     value: discrete:2
 
-  total_frames: 
+  total_frames:
     value: 125_500_000
 
   headless:
     value: true
-  
+
   seed:
     values: [0, 42]
 

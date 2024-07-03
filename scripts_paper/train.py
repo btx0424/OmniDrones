@@ -11,14 +11,14 @@ from omegaconf import OmegaConf
 from omni_drones import CONFIG_PATH, init_simulation_app
 from omni_drones.utils.torchrl import SyncDataCollector, AgentSpec
 from omni_drones.utils.torchrl.transforms import (
-    FromMultiDiscreteAction, 
+    FromMultiDiscreteAction,
     FromDiscreteAction,
     ravel_composite,
     History
 )
 from omni_drones.utils.wandb import init_wandb
 from omni_drones.learning import (
-    MAPPOPolicy, 
+    MAPPOPolicy,
     HAPPOPolicy,
     QMIXPolicy,
     DQNPolicy,
@@ -30,8 +30,8 @@ from omni_drones.learning import (
 
 from setproctitle import setproctitle
 from torchrl.envs.transforms import (
-    TransformedEnv, 
-    InitTracker, 
+    TransformedEnv,
+    InitTracker,
     Compose,
 )
 
@@ -70,7 +70,7 @@ class EpisodeStats:
             self._stats.extend(
                 tensordict.select(*self.in_keys)[done_or_truncated].clone().unbind(0)
             )
-    
+
     def pop(self):
         stats: TensorDictBase = torch.stack(self._stats).to_tensordict()
         self._stats.clear()
@@ -92,7 +92,7 @@ def main(cfg):
 
     from omni_drones.envs.isaac_env import IsaacEnv
     algos = {
-        "mappo": MAPPOPolicy, 
+        "mappo": MAPPOPolicy,
         "happo": HAPPOPolicy,
         "qmix": QMIXPolicy,
         "dqn": DQNPolicy,
@@ -106,7 +106,7 @@ def main(cfg):
     base_env = env_class(cfg, headless=cfg.headless)
 
     stats_keys = [
-        k for k in base_env.observation_spec.keys(True, True) 
+        k for k in base_env.observation_spec.keys(True, True)
         if isinstance(k, tuple) and k[0]=="stats"
     ]
     transforms = [InitTracker()]
@@ -119,7 +119,7 @@ def main(cfg):
     if cfg.task.get("ravel_central_obs", False):
         transform = ravel_composite(base_env.observation_spec, ("agents", "observation_central"))
         transforms.append(transform)
-    
+
     # optionally discretize the action space or use a controller
     action_transform: str = cfg.task.get("action_transform", None)
     if action_transform is not None:
@@ -151,7 +151,7 @@ def main(cfg):
             transforms.append(transform)
         elif not action_transform.lower() == "none":
             raise NotImplementedError(f"Unknown action transform: {action_transform}")
-    
+
     env = TransformedEnv(base_env, Compose(*transforms)).train()
     env.set_seed(cfg.seed)
 
@@ -165,7 +165,7 @@ def main(cfg):
     save_interval = cfg.get("save_interval", -1)
 
     stats_keys = [
-        k for k in base_env.observation_spec.keys(True, True) 
+        k for k in base_env.observation_spec.keys(True, True)
         if isinstance(k, tuple) and k[0]=="stats"
     ]
     episode_stats = EpisodeStats(stats_keys)
@@ -216,15 +216,15 @@ def main(cfg):
         }
 
         info = {
-            "eval/stats." + k: torch.mean(v.float()).item() 
+            "eval/stats." + k: torch.mean(v.float()).item()
             for k, v in traj_stats.items()
         }
 
         if len(frames):
             video_array = np.stack(frames).transpose(0, 3, 1, 2)
             info["recording"] = wandb.Video(
-                video_array, 
-                fps=0.5 / cfg.sim.dt, 
+                video_array,
+                fps=0.5 / cfg.sim.dt,
                 format="mp4"
             )
 
@@ -240,11 +240,11 @@ def main(cfg):
 
         if len(episode_stats) >= base_env.num_envs:
             stats = {
-                "train/" + (".".join(k) if isinstance(k, tuple) else k): torch.mean(v.float()).item() 
+                "train/" + (".".join(k) if isinstance(k, tuple) else k): torch.mean(v.float()).item()
                 for k, v in episode_stats.pop().items(True, True)
             }
             info.update(stats)
-        
+
         info.update(policy.train_op(data.to_tensordict()))
 
         if eval_interval > 0 and i % eval_interval == 0:
@@ -268,8 +268,8 @@ def main(cfg):
         })
 
         if max_iters > 0 and i >= max_iters - 1:
-            break 
-    
+            break
+
     logging.info(f"Final Eval at {collector._frames} steps.")
     info = {"env_frames": collector._frames}
     info.update(evaluate())
@@ -284,7 +284,7 @@ def main(cfg):
 
 
     wandb.finish()
-    
+
     simulation_app.close()
 
 

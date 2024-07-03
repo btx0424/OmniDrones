@@ -28,7 +28,7 @@ if __name__ == "__main__":
             ]
             f.write(f"{task}\n" + "=" * len(task) + "\n\n")
             f.writelines(lines)
-    
+
     for task in multi_tasks:
         with open(f"source/tasks/multi/{task}.md", "w") as f:
             lines = [

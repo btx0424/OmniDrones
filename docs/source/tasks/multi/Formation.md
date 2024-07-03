@@ -22,4 +22,4 @@ The episode terminates when any of the following conditions are met:
 
 or is truncated when it reaches the maximum length.
 
-## Config 
+## Config

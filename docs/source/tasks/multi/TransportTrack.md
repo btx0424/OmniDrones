@@ -35,7 +35,7 @@ r = r_\text{seperation} * (r_\text{pos} + r_\text{pos} * (r_\text{up} + r_\text{
 ## Config
 
 | Parameter           | Type               | Default       | Description                                                                                                                       |
-|---------------------|--------------------|---------------|-----------------------------------------------------------------------------------------------------------------------------------|
+| ------------------- | ------------------ | ------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | `drone_model`       | str                | "hummingbird" |                                                                                                                                   |
 | `num_drones`        | int                | 4             |                                                                                                                                   |
 | `safe_distance`     | float              | 0.5           | A threshold value that gives penalty when the minimum seperation between the UAVs is too small.                                   |

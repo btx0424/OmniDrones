@@ -9,21 +9,20 @@ metric:
   goal: maximize
 
 parameters:
-
   # single-agent
-  task: 
-    values: 
-    - InvPendulumHover
-    - PayloadTrack
-  total_frames: 
+  task:
+    values:
+      - InvPendulumHover
+      - PayloadTrack
+  total_frames:
     value: 105_000_000
 
   # # multi-agent
-  # task: 
-  #   values: 
+  # task:
+  #   values:
   #   - PlatformHover
   #   - TransportHover
-  # total_frames: 
+  # total_frames:
   #   value: 155_000_000
 
   # algo.actor.hidden_units:
@@ -37,7 +36,7 @@ parameters:
 
   headless:
     value: true
-  
+
   seed:
     values: [0, 42, 81] #57, 127]
 
@@ -51,7 +50,6 @@ parameters:
       - multidiscrete:5
       - discrete:2
 
-  
   algo.train_every:
     value: 128
 

@@ -50,12 +50,12 @@ or when the episode reaches the maximum length.
 
 ## Config
 
-| Parameter               | Type  | Default   | Description |
-|-------------------------|-------|-----------|-------------|
-| `drone_model`           | str   | "firefly" | Specifies the model of the drone being used in the environment. |
-| `lidar_range`           | float | 4.0       | Specifies the maximum range of the lidar. |
-| `lidar_vfov`            | float | [-10, 20] | Specifies the vertical field of view of the lidar. |
-| `time_encoding`         | bool  | True      | Indicates whether to include time encoding in the observation space. If set to True, a 4-dimensional vector encoding the current progress of the episode is included in the observation. If set to False, this feature is not included. |
+| Parameter       | Type  | Default   | Description                                                                                                                                                                                                                             |
+| --------------- | ----- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `drone_model`   | str   | "firefly" | Specifies the model of the drone being used in the environment.                                                                                                                                                                         |
+| `lidar_range`   | float | 4.0       | Specifies the maximum range of the lidar.                                                                                                                                                                                               |
+| `lidar_vfov`    | float | [-10, 20] | Specifies the vertical field of view of the lidar.                                                                                                                                                                                      |
+| `time_encoding` | bool  | True      | Indicates whether to include time encoding in the observation space. If set to True, a 4-dimensional vector encoding the current progress of the episode is included in the observation. If set to False, this feature is not included. |
 
 
 

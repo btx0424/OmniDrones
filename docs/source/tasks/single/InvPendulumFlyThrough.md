@@ -1,14 +1,13 @@
-InvPendulumFlyThrough
-=====================
+# InvPendulumFlyThrough
 
-
-An intermidiate control task where a classic inverted pendulum is based on the UAV.
+An intermediate control task where a classic inverted pendulum is based on the UAV.
 We refer the the ball at the end of pendulum as *payload*. The goal for the agent
 is to pass between two horizontal bars and keep balance while maintaining its position
 around a target position. If the distance between the two horizontal bars is less than
 the length of the rod, the agent need learn to swing the inverted pendulum to pass through.
 
 ## Observation
+
 - `drone_payload_rpos` (3): The position of the drone relative to the payload's position.
 - `root_state` (19 + num_rotors): The basic information of the drone,
 containing its rotation (in quaternion), velocities (linear and angular),
@@ -20,6 +19,7 @@ heading and up vectors, and the current throttle.
 vector encoding the current progress of the episode.
 
 ## Reward
+
 - `pos`: Reward for maintaining the final position of the payload around the target position.
 - `bar_up`: Reward for keeping the bar up.
 - `effort`: Reward computed from the effort of the drone to optimize the
@@ -41,7 +41,6 @@ drone gets too close to the ground, or when the drone goes too far away horizont
 or when the payload goes too far away vertically, or when the maximum episode length
 is reached, or (optional) when the drone collides with any obstacle.
 
-
 ## Config
 
 | Parameter               | Type                | Default       | Description                                                                                                                                                                                                                             |
@@ -52,5 +51,3 @@ is reached, or (optional) when the drone collides with any obstacle.
 | `reward_distance_scale` | float               | 1.2           | Scales the reward based on the distance between the payload and its target.                                                                                                                                                             |
 | `time_encoding`         | bool                | True          | Indicates whether to include time encoding in the observation space. If set to True, a 4-dimensional vector encoding the current progress of the episode is included in the observation. If set to False, this feature is not included. |
 | `obstacle_spacing`      | tuple[float, float] | [0.9, 1.2]    | Specifies the minimum and maximum distance between two horizontal bars (obstacles) in the environment.                                                                                                                                  |
-
-

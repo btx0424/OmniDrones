@@ -1,6 +1,4 @@
-Track
-=====
-
+# Track
 
 A basic control task. The goal for the agent is to track a reference
 lemniscate trajectory in the 3D space.
@@ -27,6 +25,7 @@ energy consumption.
 - `action_smoothness`: Reward that encourages smoother drone actions, computed based on the throttle difference of the drone.
 
 The total reward is computed as follows:
+
 ```{math}
 r = r_\text{pos} + r_\text{pos} * (r_\text{up} + r_\text{heading}) + r_\text{effort} + r_\text{action_smoothness}
 ```
@@ -46,6 +45,3 @@ the maximum length.
 | `future_traj_steps`     | int   | 4             | Number of future trajectory steps the drone needs to predict.                                                                                                                                                                           |
 | `reward_distance_scale` | float | 1.2           | Scales the reward based on the distance between the drone and its target.                                                                                                                                                               |
 | `time_encoding`         | bool  | True          | Indicates whether to include time encoding in the observation space. If set to True, a 4-dimensional vector encoding the current progress of the episode is included in the observation. If set to False, this feature is not included. |
-
-
-

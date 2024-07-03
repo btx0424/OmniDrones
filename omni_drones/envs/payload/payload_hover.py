@@ -83,7 +83,7 @@ class PayloadHover(IsaacEnv):
     ## Config
 
     | Parameter               | Type  | Default       | Description |
-    |-------------------------|-------|---------------|-------------|
+    | ----------------------- | ----- | ------------- | ----------- |
     | `drone_model`           | str   | "hummingbird" | Specifies the model of the drone being used in the environment. |
     | `bar_length`            | float | 1.0           | Length of the pendulum's bar. |
     | `reward_distance_scale` | float | 1.6           | Scales the reward based on `target_payload_rpos`. |

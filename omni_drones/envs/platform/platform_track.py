@@ -58,10 +58,10 @@ class PlatformTrack(IsaacEnv):
 
     The observation is a `CompositeSpec` containing:
 
-    - `obs_self`` (1, \*): The state of each UAV observed by itself, containing its kinematic
+    - `obs_self` (1, \*): The state of each UAV observed by itself, containing its kinematic
       information with the position being relative to the frame center, and an one-hot
       identity indicating the UAV's index.
-    - `obs_others`` (k-1, \*): The observed states of other agents.
+    - `obs_others` (k-1, \*): The observed states of other agents.
     - `obs_frame`:
       - `state_frame`: (1, \*): The state of the frame.
       - `rpos` (3 * `future_traj_steps`): The relative position of the platform to the
@@ -88,7 +88,7 @@ class PlatformTrack(IsaacEnv):
     ## Config
 
     | Parameter               | Type  | Default       | Description |
-    |-------------------------|-------|---------------|-------------|
+    | ----------------------- | ----- | ------------- | ----------- |
     | `drone_model`           | str   | "hummingbird" |             |
     | `num_drones`            | int   | 4             |             |
     | `arm_length`            | float | 0.85          |             |
@@ -96,7 +96,6 @@ class PlatformTrack(IsaacEnv):
     | `future_traj_steps`     | int   | 4             |             |
     | `reward_distance_scale` | float | 1.2           |             |
     | `time_encoding`         | bool  | True          |             |
-
     """
     def __init__(self, cfg, headless):
         self.reset_thres = cfg.task.reset_thres

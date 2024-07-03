@@ -41,11 +41,12 @@ from .utils import create_pendulum
 
 class InvPendulumHover(IsaacEnv):
     r"""
-    An intermidiate control task where a classic inverted pendulum is based on the UAV.
+    An intermediate control task where a classic inverted pendulum is based on the UAV.
     We refer the the ball at the end of pendulum as *payload*. The goal for the agent
     is to keep balance while maintaining its position around a target position.
 
     ## Observation
+
     - `drone_payload_rpos` (3): The position of the drone relative to the payload's position.
     - `root_state` (19 + num_rotors): The basic information of the drone,
       containing its rotation (in quaternion), velocities (linear and angular),
@@ -71,6 +72,7 @@ class InvPendulumHover(IsaacEnv):
     ```
 
     ## Episode End
+
     The episode ends when the bar falls beyond a certain angle, or when the
     drone gets too close to the ground, or when the distance between the payload
     and the target exceeds a threshold, or when the maximum episode length
@@ -78,13 +80,12 @@ class InvPendulumHover(IsaacEnv):
 
     ## Config
 
-    | Parameter               | Type  | Default       | Description |
-    |-------------------------|-------|---------------|-------------|
-    | `drone_model`           | str   | "hummingbird" | Specifies the model of the drone being used in the environment. |
-    | `bar_length`            | float | 1.0           | Length of the pendulum's bar. |
-    | `reward_distance_scale` | float | 1.2           | Scales the reward based on `target_payload_rpos`. |
+    | Parameter               | Type  | Default       | Description                                                                                                                                                                                                                             |
+    | ----------------------- | ----- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | `drone_model`           | str   | "hummingbird" | Specifies the model of the drone being used in the environment.                                                                                                                                                                         |
+    | `bar_length`            | float | 1.0           | Length of the pendulum's bar.                                                                                                                                                                                                           |
+    | `reward_distance_scale` | float | 1.2           | Scales the reward based on `target_payload_rpos`.                                                                                                                                                                                       |
     | `time_encoding`         | bool  | True          | Indicates whether to include time encoding in the observation space. If set to True, a 4-dimensional vector encoding the current progress of the episode is included in the observation. If set to False, this feature is not included. |
-
     """
     def __init__(self, cfg, headless):
         self.reward_effort_weight = cfg.task.reward_effort_weight

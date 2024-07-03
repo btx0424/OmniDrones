@@ -65,6 +65,7 @@ class Formation(IsaacEnv):
     regular polygon formation. The reward is the negative of the formation cost.
 
     ## Observation
+
     - `obs_self`: the relative position, velocity, and orientation of the drone
     - `obs_others`: the relative position, velocity, and orientation of other drones
 
@@ -77,13 +78,13 @@ class Formation(IsaacEnv):
     ## Episode End
 
     The episode terminates when any of the following conditions are met:
+
     - The drone crashes.
     - The minimum distance between any two drones is less than a threshold.
 
     or is truncated when it reaches the maximum length.
 
     ## Config
-
     """
     def __init__(self, cfg, headless):
         self.time_encoding = cfg.task.time_encoding

@@ -52,6 +52,7 @@ class PlatformHover(IsaacEnv):
     (position and attitude).
 
     ## Observation
+
     The observation is a `CompositeSpec` containing the following items:
 
     - `obs_self` (1, \*): The state of each UAV observed by itself, containing its kinematic
@@ -83,13 +84,12 @@ class PlatformHover(IsaacEnv):
     ## Config
 
     | Parameter               | Type  | Default       | Description |
-    |-------------------------|-------|---------------|-------------|
+    | ----------------------- | ----- | ------------- | ----------- |
     | `drone_model`           | str   | "hummingbird" |             |
     | `num_drones`            | int   | 4             |             |
     | `arm_length`            | float | 0.85          |             |
     | `reward_distance_scale` | float | 1.2           |             |
     | `time_encoding`         | bool  | True          |             |
-
     """
     def __init__(self, cfg, headless):
         self.reward_effort_weight = cfg.task.reward_effort_weight

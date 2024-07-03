@@ -13,9 +13,9 @@ Using the UAV Models
 --------------------
 
 All UAV models, e.g., :py:class:`Hummingbird` and :py:class:`Firefly` are subclassed from :py:class:`MultirotorBase`.
-An instance of :py:class:`MultirotorBase` does not correspond to a specifc UAV, but acts like a `view`
+An instance of :py:class:`MultirotorBase` does not correspond to a specific UAV, but acts like a `view`
 (think of `torch.Tensor.view`) that holds the states of a group of UAVs of that type in `torch.Tensor` for reading
-and writing. It implements the multirotr dynamics and provides interfaces for common interactions such as getting the
+and writing. It implements the multirotor dynamics and provides interfaces for common interactions such as getting the
 kinematic information and applying rotor commands.
 
 The following example demonstrates:

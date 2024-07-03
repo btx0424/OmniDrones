@@ -6,7 +6,7 @@ GPU Driver-related Issues
 
 .. seealso::
 
-    It is recommanded to `manually install the latest GPU driver <https://docs.omniverse.nvidia.com/dev-guide/latest/linux-troubleshooting.html#q1-how-to-install-a-driver>`__.
+    It is recommended to `manually install the latest GPU driver <https://docs.omniverse.nvidia.com/dev-guide/latest/linux-troubleshooting.html#q1-how-to-install-a-driver>`__.
 
 
 Conventions
@@ -32,8 +32,8 @@ the inverse of the rotation:
     angvel_b = quat_rotate_inverse(rot, angvel_w)
 
 
-Debug Visulization
-------------------
+Debug Visualization
+-------------------
 
 .. seealso::
 

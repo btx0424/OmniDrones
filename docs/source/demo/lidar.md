@@ -12,7 +12,7 @@ For a more detailed understanding of the implementation, please refer to the sou
 
 ## Visualization
 
-We visualize all the parallel environments. Note that drones from different (logical) environments are physically independent and do not collide withh or observe each other. The blue lines indicates the Lidar scan. The Lidar scan is visualized as blue lines in the parallel environments.
+We visualize all the parallel environments. Note that drones from different (logical) environments are physically independent and do not collide with or observe each other. The blue lines indicates the Lidar scan. The Lidar scan is visualized as blue lines in the parallel environments.
 
 <div>
     <video width="320" height="240" controls>

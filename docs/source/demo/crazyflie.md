@@ -9,7 +9,6 @@ The policy is trained with the action space transformed by a rate controller
 `crazyswarm` by converting the messages to and from tensor-based states. We show
 results of tracking a 8-shaped lemniscate trajectory and a circle at a low speed.
 
-
 ## Results
 
 <div>
@@ -23,9 +22,9 @@ results of tracking a 8-shaped lemniscate trajectory and a circle at a low speed
 
 ### Tracking Performance
 
-![](../_static/demo/8_1_demo.png)
+![8_1_demo](../_static/demo/8_1_demo.png)
 
-![](../_static/demo/circle_demo.png)
+![circle_demo](../_static/demo/circle_demo.png)
 
 As shown in the figures and videos, the tracking performance is not optimal. This
 could be attributed to several factors, such as action noise, sensor errors, and

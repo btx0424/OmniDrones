@@ -32,7 +32,7 @@ from omni.kit.commands import execute
 import torch
 
 from pxr import Gf, Usd, UsdGeom, UsdPhysics, PhysxSchema
-from scipy.spatial.transform.rotation import Rotation
+from scipy.spatial.transform import Rotation
 
 from omni_drones.robots import RobotBase, RobotCfg
 from omni_drones.robots.drone import MultirotorBase

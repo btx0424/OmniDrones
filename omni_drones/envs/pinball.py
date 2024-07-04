@@ -40,7 +40,7 @@ from torchrl.data import (
 )
 from pxr import UsdShade, PhysxSchema
 
-from omni.isaac.orbit.sensors import ContactSensorCfg, ContactSensor
+from omni.isaac.lab.sensors import ContactSensorCfg, ContactSensor
 
 class Pinball(IsaacEnv):
     """

@@ -37,6 +37,6 @@ try:
 except ModuleNotFoundError:
     print(
         "To run the environments which use `ContactSensor` and `RayCaster`,"
-        "please install Isaac Orbit (https://github.com/NVIDIA-Omniverse/orbit)."
+        "please install Isaac Lab (https://github.com/isaac-sim/IsaacLab)."
     )
 

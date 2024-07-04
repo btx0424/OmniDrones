@@ -61,7 +61,6 @@ class ArticulationView(_ArticulationView):
         scales: Optional[torch.Tensor] = None,
         visibilities: Optional[torch.Tensor] = None,
         reset_xform_properties: bool = True,
-        enable_dof_force_sensors: bool = False,
         shape: Tuple[int, ...] = (-1,),
     ) -> None:
         self.shape = shape
@@ -74,7 +73,6 @@ class ArticulationView(_ArticulationView):
             scales,
             visibilities,
             reset_xform_properties,
-            enable_dof_force_sensors,
         )
 
     @require_sim_initialized
@@ -90,7 +88,7 @@ class ArticulationView(_ArticulationView):
         carb.log_info("initializing view for {}".format(self._name))
         # TODO: add a callback to set physics view to None once stop is called
         self._physics_view = physics_sim_view.create_articulation_view(
-            self._regex_prim_paths.replace(".*", "*"), self._enable_dof_force_sensors
+            self._regex_prim_paths.replace(".*", "*")
         )
         assert self._physics_view.is_homogeneous
         self._physics_sim_view = physics_sim_view

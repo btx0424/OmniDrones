@@ -21,8 +21,8 @@ ar the log file. Usually, you will see messages like this upon startup:
 
 ```console
 ...
-Loading user config located at: '/home/USERNAME/.local/share/ov/pkg/isaac_sim-2023.1.0-hotfix.1/kit/data/Kit/Isaac-Sim/2023.1/user.config.json'
-[Info] [carb] Logging to file: /home/USERNAME/.local/share/ov/pkg/isaac_sim-2023.1.0-hotfix.1/kit/logs/Kit/Isaac-Sim/2023.1/kit_20231225_163028.log
+Loading user config located at: '/home/USERNAME/.local/share/ov/pkg/isaac-sim-2023.1.0-hotfix.1/kit/data/Kit/Isaac-Sim/2023.1/user.config.json'
+[Info] [carb] Logging to file: /home/USERNAME/.local/share/ov/pkg/isaac-sim-2023.1.0-hotfix.1/kit/logs/Kit/Isaac-Sim/2023.1/kit_20231225_163028.log
 ...
 
 ```console

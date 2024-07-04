@@ -9,14 +9,12 @@ setup(
         "hydra-core",
         "omegaconf",
         "wandb",
-        "moviepy",
         "imageio",
         "plotly",
         "einops",
-        "av", # for moviepy
         "pandas",
-        # install by cloning from github
-        # "tensordict"
-        # "torchrl",
+        "moviepy",
+        "av",
+        "torchrl==0.3.1", # for torch==2.2.2
     ],
 )

@@ -25,6 +25,7 @@ import omni.isaac.core.utils.prims as prim_utils
 
 import torch
 import torch.distributions as D
+from torch.func import vmap
 from omni.isaac.debug_draw import _debug_draw
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import (
@@ -452,7 +453,7 @@ class TrackV1(IsaacEnv):
         t = self.traj_t0 + scale_time(self.traj_w[env_ids].unsqueeze(1) * t * self.dt)
         traj_rot = self.traj_rot[env_ids].unsqueeze(1).expand(-1, t.shape[1], 4)
 
-        ref_pos = torch.vmap(lemniscate)(t, self.traj_c[env_ids])
+        ref_pos = vmap(lemniscate)(t, self.traj_c[env_ids])
         ref_pos = quat_rotate(traj_rot, ref_pos) * self.traj_scale[
             env_ids
         ].unsqueeze(1)

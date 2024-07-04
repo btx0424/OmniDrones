@@ -22,7 +22,6 @@
 
 
 import torch
-from functorch import vmap
 from torchrl.data import BoundedTensorSpec, UnboundedContinuousTensorSpec
 
 from omni_drones.robots.drone import MultirotorBase

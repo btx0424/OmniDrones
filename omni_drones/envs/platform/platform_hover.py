@@ -21,9 +21,9 @@
 # SOFTWARE.
 
 
-from functorch import vmap
 import torch
 import torch.distributions as D
+from torch.func import vmap
 
 import omni.isaac.core.utils.torch as torch_utils
 import omni.isaac.core.utils.prims as prim_utils

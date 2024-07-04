@@ -21,10 +21,9 @@
 # SOFTWARE.
 
 
-from functorch import vmap
-
 import torch
 import torch.distributions as D
+from torch.func import vmap
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec, DiscreteTensorSpec
 

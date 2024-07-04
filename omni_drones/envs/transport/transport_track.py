@@ -23,6 +23,7 @@
 
 import torch
 import torch.distributions as D
+from torch.func import vmap
 
 import omni_drones.utils.kit as kit_utils
 import omni_drones.utils.scene as scene_utils
@@ -267,8 +268,8 @@ class TransportTrack(IsaacEnv):
         self.payload_heading: torch.Tensor = quat_axis(self.payload_rot, axis=0)
         self.payload_up: torch.Tensor = quat_axis(self.payload_rot, axis=2)
 
-        self.drone_rpos = torch.vmap(cpos)(self.drone.pos, self.drone.pos)
-        self.drone_rpos = torch.vmap(off_diag)(self.drone_rpos)
+        self.drone_rpos = vmap(cpos)(self.drone.pos, self.drone.pos)
+        self.drone_rpos = vmap(off_diag)(self.drone_rpos)
         self.drone_pdist = torch.norm(self.drone_rpos, dim=-1, keepdim=True)
         payload_drone_rpos = self.payload_pos.unsqueeze(1) - self.drone.pos
 
@@ -295,7 +296,7 @@ class TransportTrack(IsaacEnv):
             [-payload_drone_rpos, self.drone_states[..., 3:], identity], dim=-1
         ).unsqueeze(2) # [..., 1, state_dim]
         obs["obs_others"] = torch.cat(
-            [self.drone_rpos, self.drone_pdist, torch.vmap(others)(self.drone_states[..., 3:13])], dim=-1
+            [self.drone_rpos, self.drone_pdist, vmap(others)(self.drone_states[..., 3:13])], dim=-1
         ) # [..., n-1, state_dim + 1]
         obs["obs_payload"] = payload_state.expand(-1, self.drone.n, -1).unsqueeze(2) # [..., 1, 22]
 
@@ -385,7 +386,7 @@ class TransportTrack(IsaacEnv):
         t = scale_time(self.traj_w[env_ids].unsqueeze(1) * t * self.dt)
         traj_rot = self.traj_rot[env_ids].unsqueeze(1).expand(-1, t.shape[1], 4)
 
-        target_pos = torch.vmap(lemniscate)(self.traj_t0 + t, self.traj_c[env_ids])
-        target_pos = torch.vmap(quat_rotate)(traj_rot, target_pos) * self.traj_scale[env_ids].unsqueeze(1)
+        target_pos = vmap(lemniscate)(self.traj_t0 + t, self.traj_c[env_ids])
+        target_pos = vmap(quat_rotate)(traj_rot, target_pos) * self.traj_scale[env_ids].unsqueeze(1)
 
         return self.origin + target_pos

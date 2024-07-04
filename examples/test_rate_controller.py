@@ -2,7 +2,6 @@ import os
 
 from typing import Dict, Optional
 import torch
-from functorch import vmap
 
 import hydra
 from omegaconf import OmegaConf

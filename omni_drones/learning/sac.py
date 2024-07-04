@@ -25,7 +25,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from tensordict.nn import TensorDictModule
-import functorch
 import numpy as np
 
 from torchrl.data import (

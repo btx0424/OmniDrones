@@ -25,8 +25,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.distributions as D
-from functorch import vmap
 
+from torch.func import vmap
 from tensordict import TensorDict
 from torchrl.objectives.utils import hold_out_net
 

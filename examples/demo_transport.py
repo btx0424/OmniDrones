@@ -1,8 +1,8 @@
 import os
 
-import functorch
 import hydra
 import torch
+from torch.func import vmap
 from omegaconf import OmegaConf
 from omni_drones import CONFIG_PATH, init_simulation_app
 
@@ -68,7 +68,7 @@ def main(cfg):
             sim.step()
             continue
         root_state = drone.get_state(False)[..., :13].squeeze(0)
-        action, controller_state = functorch.vmap(controller)(
+        action, controller_state = vmap(controller)(
             root_state, control_target, controller_state
         )
         # action = drone.action_spec.rand((4,))

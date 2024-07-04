@@ -24,9 +24,9 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.func import vmap
 from tensordict.nn import TensorDictModule, make_functional
 from tensordict import TensorDict
-from functorch import vmap
 
 from torchrl.data import (
     TensorSpec,

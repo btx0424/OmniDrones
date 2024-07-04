@@ -246,7 +246,6 @@ class IsaacEnv(EnvBase):
         env_ids = env_mask.nonzero().squeeze(-1)
         self._reset_idx(env_ids)
         # self.sim.step(render=False)
-        self.sim._physics_sim_view.flush()
         self.progress_buf[env_ids] = 0.
         tensordict = TensorDict({}, self.batch_size, device=self.device)
         tensordict.update(self._compute_state_and_obs())

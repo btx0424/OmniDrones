@@ -34,9 +34,7 @@ from setproctitle import setproctitle
 from torchrl.envs.transforms import TransformedEnv, InitTracker, Compose
 
 
-FILE_PATH = os.path.dirname(__file__)
-
-@hydra.main(config_path=FILE_PATH, config_name="train")
+@hydra.main(version_base=None, config_path=".", config_name="train")
 def main(cfg):
     OmegaConf.register_new_resolver("eval", eval)
     OmegaConf.resolve(cfg)

@@ -79,6 +79,14 @@ To verify the installation, run
 In general, YOUR_WANDB_ENTITY is your wandb ID.
 If you don't want to add arguments every time, edit ``scripts/train.yaml``
 
+If you encounter the following error,
+try `TypeError: ArticulationView.get_world_poses() got an unexpected keyword argument 'usd' <troubleshooting.html#typeerror-articulationview-get-world-poses-got-an-unexpected-keyword-argument-usd>`_ .
+
+.. code-block:: bash
+
+    File "/${HOME}/.local/share/ov/pkg/isaac-sim-4.0.0/exts/omni.isaac.core/omni/isaac/core/prims/xform_prim_view.py", line 192, in __init__
+        default_positions, default_orientations = self.get_world_poses(usd=usd)
+    TypeError: ArticulationView.get_world_poses() got an unexpected keyword argument 'usd'
 
 Developer Guide: Working with VSCode
 ------------------------------------

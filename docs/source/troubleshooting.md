@@ -8,7 +8,7 @@
 
 A: Unfortunately, no. Some parts of Isaac Sim are compiled with a specific
 Python version. Currently, Isaac Sim 2022.\* supports Python 3.7 and
-Isaac Sim 2023.\* supports Python 3.10.
+Isaac Sim 2023.\*, 4.* supports Python 3.10.
 
 ## GPU Driver-related Issues
 
@@ -58,3 +58,20 @@ If you see messages like this in the log file:
 then it is slow due to having trouble connecting to the asset server. Try to
 ensure Cache/Nucleus is running properly or circumvent it with the modification
 mentioned in [this post](https://forums.developer.nvidia.com/t/extremely-slow-loading-times-isaac-sim-2023-1-0/272375).
+
+## Isaac Sim-related Issues
+
+### TypeError: ArticulationView.get_world_poses() got an unexpected keyword argument 'usd'
+
+If you encounter the unexpected keyword error in Isaac Sim 4.*, remove **usd=usd** from **xform_prim_view.py**.
+
+```console
+# open /${HOME}/.local/share/ov/pkg/isaac-sim-4.0.0/exts/omni.isaac.core/omni/isaac/core/prims/xform_prim_view.py
+# go to line 184
+
+# L184
+# default_positions, default_orientations = self.get_world_poses(usd=usd)
+
+# remove usd=usd as shown below
+# default_positions, default_orientations = self.get_world_poses()
+```

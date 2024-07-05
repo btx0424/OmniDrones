@@ -194,7 +194,7 @@ class LeePositionController(nn.Module):
         ang_acc = (
             - ang_error * self.attitute_gain
             - ang_rate_err * self.ang_rate_gain
-            + torch.cross(ang_vel, ang_vel)
+            + torch.linalg.cross(ang_vel, ang_vel)
         )
         thrust = (-self.mass * (acc * R[:, :, 2]).sum(-1, True))
         ang_acc_thrust = torch.cat([ang_acc, thrust], dim=-1)
@@ -292,7 +292,7 @@ class AttitudeController(nn.Module):
         angular_acc = (
             - angle_error * self.gain_attitude
             - angular_rate_error * self.gain_angular_rate
-            + torch.cross(ang_vel, ang_vel)
+            + torch.linalg.cross(ang_vel, ang_vel)
         )
         angular_acc_thrust = torch.cat([angular_acc, target_thrust], dim=1)
         cmd = (self.mixer @ angular_acc_thrust.T).T

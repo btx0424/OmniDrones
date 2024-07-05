@@ -9,7 +9,7 @@ from omni_drones import CONFIG_PATH, init_simulation_app
 from tensordict import TensorDict
 
 
-@hydra.main(version_base=None, config_path=CONFIG_PATH, config_name="config")
+@hydra.main(version_base=None, config_path=".", config_name="demo")
 def main(cfg):
     OmegaConf.resolve(cfg)
     simulation_app = init_simulation_app(cfg)
@@ -19,7 +19,7 @@ def main(cfg):
     import omni.isaac.core.utils.prims as prim_utils
     import omni_drones.utils.scene as scene_utils
     from omni.isaac.core.simulation_context import SimulationContext
-    from omni_drones.robots.assembly.transportation_group import TransportationGroup
+    from omni_drones.envs.transport.utils import TransportationGroup, TransportationCfg
     from omni_drones.robots.drone import MultirotorBase
 
     sim = SimulationContext(
@@ -30,14 +30,14 @@ def main(cfg):
         backend="torch",
         device=cfg.sim.device,
     )
-    drone_model = "Firefly"
-    drone: MultirotorBase = MultirotorBase.REGISTRY[drone_model]()
-    controller = drone.DEFAULT_CONTROLLER(
-        dt=sim.get_physics_dt(), g=9.81, uav_params=drone.params
-    ).to(sim.device)
-    controller_state = TensorDict({}, 4, device=sim.device)
 
-    group = TransportationGroup(drone=drone)
+    drone: MultirotorBase = MultirotorBase.REGISTRY[cfg.drone_model]()
+    controller = drone.DEFAULT_CONTROLLER(
+        g=9.81, uav_params=drone.params
+    ).to(sim.device)
+
+    group_cfg = TransportationCfg(num_drones=4)
+    group = TransportationGroup(drone=drone, cfg=group_cfg)
     group.spawn(translations=[(0, 0, 1.5)])
 
     scene_utils.design_scene()
@@ -49,17 +49,17 @@ def main(cfg):
 
     print(init_drone_poses[0])
 
-    control_target = torch.zeros(4, 7, device=sim.device)
-    control_target[:, 0:3] = (
+    ref_pos = torch.zeros(4, 3, device=sim.device)
+    ref_pos[:, 0:3] = (
         torch.tensor(
             [
-                [0.5, 0.5, 1.5],
-                [0.5, -0.5, 1.5],
-                [-0.5, -0.5, 1.5],
-                [-0.5, 0.5, 1.5],
+                [0.75, 0.5, 1.5],
+                [0.75, -0.5, 1.5],
+                [-0.75, -0.5, 1.5],
+                [-0.75, 0.5, 1.5],
             ]
         )
-        + torch.tensor([3.0, 0.0, 0.7])
+        + torch.tensor([3.0, 0.0, 2.5])
     ).to(sim.device)
 
     step = 0
@@ -67,11 +67,8 @@ def main(cfg):
         if not sim.is_playing():
             sim.step()
             continue
-        root_state = drone.get_state(False)[..., :13].squeeze(0)
-        action, controller_state = vmap(controller)(
-            root_state, control_target, controller_state
-        )
-        # action = drone.action_spec.rand((4,))
+        drone_state = drone.get_state(False)[..., :13].squeeze(0)
+        action = controller(drone_state, target_pos=ref_pos)
         drone.apply_action(action)
         sim.step()
         step += 1

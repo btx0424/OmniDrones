@@ -165,7 +165,7 @@ class RobotBase(abc.ABC):
                 "Call simulation_context.reset() first."
             )
         if prim_paths_expr is None:
-            prim_paths_expr = f"/World/envs/.*/{self.name}_*"
+            prim_paths_expr = f"/World/envs/.*/{self.name}_.*"
         self.prim_paths_expr = prim_paths_expr
 
         # create handles

@@ -13,7 +13,6 @@ def main(cfg):
 
     import omni_drones.utils.scene as scene_utils
     from omni.isaac.core.simulation_context import SimulationContext
-    from omni_drones.controllers import LeePositionController
     from omni_drones.robots.drone import MultirotorBase
     from omni_drones.utils.torch import euler_to_quaternion
     from omni_drones.sensors.camera import Camera, PinholeCameraCfg
@@ -29,8 +28,7 @@ def main(cfg):
     )
     n = 4
 
-    drone_cls = MultirotorBase.REGISTRY[cfg.drone_model]
-    drone = drone_cls()
+    drone: MultirotorBase = MultirotorBase.REGISTRY[cfg.drone_model]()
 
     translations = torch.zeros(n, 3)
     translations[:, 1] = torch.arange(n)
@@ -84,7 +82,7 @@ def main(cfg):
 
     # create a position controller
     # note: the controller is state-less (but holds its parameters)
-    controller = LeePositionController(g=9.81, uav_params=drone.params).to(sim.device)
+    controller = drone.DEFAULT_CONTROLLER(g=9.81, uav_params=drone.params).to(sim.device)
 
     def reset():
         drone._reset_idx(torch.tensor([0]))

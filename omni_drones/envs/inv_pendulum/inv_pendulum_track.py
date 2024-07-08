@@ -29,10 +29,9 @@ from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec, DiscreteT
 
 import omni.isaac.core.objects as objects
 import omni_drones.utils.kit as kit_utils
-import omni.isaac.core.utils.torch as torch_utils
 from omni.isaac.debug_draw import _debug_draw
 
-from omni_drones.utils.torch import euler_to_quaternion, normalize
+from omni_drones.utils.torch import euler_to_quaternion, normalize, quat_rotate
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.robots.drone import MultirotorBase
 from omni_drones.views import RigidPrimView
@@ -348,7 +347,7 @@ class InvPendulumTrack(IsaacEnv):
         traj_rot = self.traj_rot[env_ids].unsqueeze(1).expand(-1, t.shape[1], 4)
 
         target_pos = vmap(lemniscate)(t, self.traj_c[env_ids])
-        target_pos = vmap(torch_utils.quat_rotate)(traj_rot, target_pos) * self.traj_scale[env_ids].unsqueeze(1)
+        target_pos = vmap(quat_rotate)(traj_rot, target_pos) * self.traj_scale[env_ids].unsqueeze(1)
 
         return self.origin + target_pos
 

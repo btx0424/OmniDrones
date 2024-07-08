@@ -117,7 +117,7 @@ class Forest(IsaacEnv):
         )
         self.lidar_range = cfg.task.lidar_range
         ray_caster_cfg = RayCasterCfg(
-            prim_path="/World/envs/env_*/Hummingbird_0/base_link",
+            prim_path="/World/envs/env_.*/Hummingbird_0/base_link",
             offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.0)),
             attach_yaw_only=False,
             pattern_cfg=patterns.BpearlPatternCfg(

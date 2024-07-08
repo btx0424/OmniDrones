@@ -7,11 +7,11 @@ such that the agent have to discover a way to swing the payload through the obst
 ## Observation
 
 - `drone_payload_rpos` (3): The payload's position relative to the drone.
-- `payload_vels` (6): The linear and angular velocities of the payload.
-- `target_payload_rpos` (3): The target payload position relative to the payload.
-- `root_state` (16 + num_rotors): The basic information of the drone (except its position),
+- `drone_state` (16 + num_rotors): The basic information of the drone (except its position),
 containing its rotation (in quaternion), velocities (linear and angular),
 heading and up vectors, and the current throttle.
+- `target_payload_rpos` (3): The target payload position relative to the payload.
+- `payload_vels` (6): The linear and angular velocities of the payload.
 - `obstacle_drone_rpos` (2 * 2 = 4): The position of the two bars relative to the drone's position.
 - `time_encoding` (optional): The time encoding, which is a 4-dimensional
 vector encoding the current progress of the episode.

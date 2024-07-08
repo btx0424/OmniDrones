@@ -8,22 +8,28 @@ Single-Agent Tasks
   appearance of the tasks is due version differences in Isaac Sim. They
   have no effect on the logic of the tasks.
 
-.. grid:: 2
+.. grid:: 3
 
-    .. grid-item-card::  :ref:`tasks/single/hover:hover`
+    .. grid-item-card::  :ref:`tasks/single/Hover:Hover`
       :text-align: center
 
       .. image:: ../_static/tasks/Hover.gif
         :align: center
         :scale: 50%
 
-    .. grid-item-card::  :ref:`tasks/single/track:track`
+    .. grid-item-card::  :ref:`tasks/single/Track:Track`
       :text-align: center
 
       .. image:: ../_static/tasks/Track.gif
         :align: center
         :scale: 50%
 
+    .. grid-item-card::  :ref:`tasks/single/FlyThrough:FlyThrough`
+      :text-align: center
+
+      .. .. image:: ../_static/tasks/FlyThrough.gif
+      ..   :align: center
+      ..   :scale: 50%
 
 .. grid:: 3
 
@@ -99,6 +105,7 @@ Single-Agent Tasks
 
     single/Hover
     single/Track
+    single/FlyThrough
     single/PayloadTrack
     single/PayloadFlyThrough
     single/InvPendulumHover

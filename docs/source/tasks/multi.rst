@@ -8,7 +8,7 @@ Multi-Agent Tasks
   appearance of the tasks is due version differences in Isaac Sim. They
   have no effect on the logic of the tasks.
 
-.. grid:: 2
+.. grid:: 3
 
   .. grid-item-card:: :ref:`tasks/multi/PlatformHover:PlatformHover`
     :text-align: center
@@ -21,6 +21,12 @@ Multi-Agent Tasks
 
     .. image:: ../_static/tasks/PlatformTrack.gif
         :scale: 50%
+
+  .. grid-item-card:: :ref:`tasks/multi/PlatformFlyThrough:PlatformFlyThrough`
+    :text-align: center
+
+    .. .. image:: ../_static/tasks/PlatformFlyThrough.gif
+    ..     :scale: 50%
 
 .. grid:: 2
 
@@ -63,6 +69,7 @@ Quick Start
 
     multi/PlatformHover
     multi/PlatformTrack
+    multi/PlatformFlyThrough
     multi/TransportHover
     multi/TransportTrack
     multi/Formation

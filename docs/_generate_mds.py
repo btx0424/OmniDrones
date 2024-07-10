@@ -15,10 +15,8 @@ if __name__ == "__main__":
     ]
     multi_tasks = [
         "Formation",
-        "PlatformHover",
-        "PlatformTrack",
-        "TransportHover",
-        "TransportTrack",
+        "PlatformHover", "PlatformTrack", "PlatformFlyThrough",
+        "TransportHover", "TransportTrack",
     ]
 
     for task in single_tasks:

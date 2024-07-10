@@ -59,6 +59,14 @@ then it is slow due to having trouble connecting to the asset server. Try to
 ensure Cache/Nucleus is running properly or circumvent it with the modification
 mentioned in [this post](https://forums.developer.nvidia.com/t/extremely-slow-loading-times-isaac-sim-2023-1-0/272375).
 
+### CUDA illegal memory access encountered
+
+If the CUDA error below is occurred, check whether the CUDA version is 11.8. If not, reinstall CUDA to 11.8.
+
+```console
+[Error] [omni.physx.tensors.plugin] CUDA error: an illegal memory access was encountered: ../../../extensions/runtime/source/omni.physx.tensors/plugins/gpu/CudaKernels.cu: 999
+```
+
 ## Isaac Sim-related Issues
 
 ### TypeError: ArticulationView.get_world_poses() got an unexpected keyword argument 'usd'

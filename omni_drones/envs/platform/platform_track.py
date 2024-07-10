@@ -105,9 +105,13 @@ class PlatformTrack(IsaacEnv):
         self.time_encoding = cfg.task.time_encoding
         self.future_traj_steps = int(cfg.task.future_traj_steps)
 
+        self.num_drones = cfg.task.num_drones
+        self.arm_length = cfg.task.arm_length
+        self.joint_damping  = cfg.task.joint_damping
         super().__init__(cfg, headless)
 
         self.platform.initialize()
+
         self.target_vis = RigidPrimView(
             "/World/envs/env_*/target",
             reset_xform_properties=False
@@ -160,9 +164,9 @@ class PlatformTrack(IsaacEnv):
         self.drone: MultirotorBase = drone_model(cfg=cfg)
 
         platform_cfg = PlatformCfg(
-            num_drones=self.cfg.task.num_drones,
-            arm_length=self.cfg.task.arm_length,
-            joint_damping=self.cfg.task.joint_damping
+            num_drones=self.num_drones,
+            arm_length=self.arm_length,
+            joint_damping=self.joint_damping
         )
         self.platform = OveractuatedPlatform(
             cfg=platform_cfg,
@@ -205,11 +209,11 @@ class PlatformTrack(IsaacEnv):
             "agents": {
                 "observation": observation_spec.expand(self.drone.n),
                 "observation_central": observation_central_spec,
-            }
+            },
         }).expand(self.num_envs).to(self.device)
         self.action_spec = CompositeSpec({
             "agents": {
-                "action": self.drone.action_spec.expand(self.drone.n),
+                "action": torch.stack([self.drone.action_spec] * self.drone.n, dim=0),
             }
         }).expand(self.num_envs).to(self.device)
         self.reward_spec = CompositeSpec({
@@ -227,6 +231,7 @@ class PlatformTrack(IsaacEnv):
             reward_key=("agents", "reward"),
             state_key=("agents", "observation_central")
         )
+
         stats_spec = CompositeSpec({
             "return": UnboundedContinuousTensorSpec(self.drone.n),
             "episode_len": UnboundedContinuousTensorSpec(1),
@@ -326,18 +331,20 @@ class PlatformTrack(IsaacEnv):
         self.stats["heading_alignment"].lerp_(self.up_alignment, (1-self.alpha))
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference.mean(-1, True), (1-self.alpha))
 
-        return TensorDict({
-            "agents": {
-                "observation": obs,
-                "observation_central": state,
+        return TensorDict(
+            {
+                "agents": {
+                    "observation": obs,
+                    "observation_central": state,
+                },
+                "stats": self.stats
             },
-            "stats": self.stats
-        }, self.batch_size)
+            self.batch_size,
+        )
 
     def _compute_reward_and_done(self):
         platform_vels = self.platform.get_velocities()
 
-        reward = torch.zeros(self.num_envs, self.drone.n, device=self.device)
         # reward_pose = 1 / (1 + torch.square(distance * self.reward_distance_scale))
         reward_pose = torch.exp(- self.reward_distance_scale * self.target_distance)
 
@@ -351,6 +358,7 @@ class PlatformTrack(IsaacEnv):
 
         assert reward_pose.shape == reward_up.shape == reward_action_smoothness.shape
 
+        reward = torch.zeros(self.num_envs, self.drone.n, device=self.device)
         reward[:] = (
             reward_pose
             + reward_pose * (reward_up + reward_spin)
@@ -358,22 +366,23 @@ class PlatformTrack(IsaacEnv):
             + reward_action_smoothness
         )
 
-        done_misbehave = (self.drone_states[..., 2] < 0.2).any(-1, keepdim=True)
-        done_hasnan = done_hasnan = torch.isnan(self.drone_states).any(-1)
-
-        done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-            | done_misbehave
-            | done_hasnan.any(-1, keepdim=True)
+        misbehave = (
+            (self.drone_states[..., 2] < 0.2).any(-1, keepdim=True)
             | (self.target_distance > self.reset_thres)
         )
+        hasnan = torch.isnan(self.drone_states).any(-1).any(-1, keepdim=True)
+
+        terminated = misbehave | hasnan
+        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
+        done = terminated | truncated
 
         self.stats["return"].add_(reward)
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(-1)
-
         return TensorDict(
             {
-                "agents": {"reward": reward.unsqueeze(1)},
+                "agents": {
+                    "reward": reward.unsqueeze(1)
+                },
                 "done": done,
             },
             self.batch_size,

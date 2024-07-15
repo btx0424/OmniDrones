@@ -7,7 +7,8 @@ defaults:
   # - /base/randomization_base@_here_
 
 env:
-  num_envs: 4096
+  num_envs: 128
+  env_spacing: 6
 
 drone_model: Hummingbird
 force_sensor: false

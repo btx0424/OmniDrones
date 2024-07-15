@@ -33,6 +33,25 @@ Single-Agent Tasks
 
 .. grid:: 3
 
+    .. grid-item-card::  :ref:`tasks/single/PayloadHover:PayloadHover`
+      :text-align: center
+
+    .. grid-item-card::  :ref:`tasks/single/PayloadTrack:PayloadTrack`
+      :text-align: center
+
+      .. image:: ../_static/tasks/PayloadTrack.gif
+        :align: center
+        :scale: 50%
+
+    .. grid-item-card::  :ref:`tasks/single/PayloadFlyThrough:PayloadFlyThrough`
+      :text-align: center
+
+      .. image:: ../_static/tasks/PayloadFlyThrough.gif
+        :align: center
+        :scale: 50%
+
+.. grid:: 3
+
     .. grid-item-card::  :ref:`tasks/single/InvPendulumHover:InvPendulumHover`
       :text-align: center
 
@@ -51,22 +70,6 @@ Single-Agent Tasks
       :text-align: center
 
       .. image:: ../_static/tasks/InvPendulumFlyThrough.gif
-        :align: center
-        :scale: 50%
-
-.. grid:: 2
-
-    .. grid-item-card::  :ref:`tasks/single/PayloadTrack:PayloadTrack`
-      :text-align: center
-
-      .. image:: ../_static/tasks/PayloadTrack.gif
-        :align: center
-        :scale: 50%
-
-    .. grid-item-card::  :ref:`tasks/single/PayloadFlyThrough:PayloadFlyThrough`
-      :text-align: center
-
-      .. image:: ../_static/tasks/PayloadFlyThrough.gif
         :align: center
         :scale: 50%
 
@@ -99,6 +102,8 @@ Single-Agent Tasks
 
   python train.py task=Track algo=ppo_rnn headless=true eval_interval=300 total_frames=100_000_000
 
+  # train_lidar.py for Forest
+  python train_lidar.py task=Forest algo=ppo_rnn headless=true eval_interval=300 total_frames=100_000_000
 
 .. toctree::
     :hidden:
@@ -106,6 +111,7 @@ Single-Agent Tasks
     single/Hover
     single/Track
     single/FlyThrough
+    single/PayloadHover
     single/PayloadTrack
     single/PayloadFlyThrough
     single/InvPendulumHover

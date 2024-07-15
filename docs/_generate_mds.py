@@ -9,14 +9,14 @@ if __name__ == "__main__":
 
     single_tasks = [
         "Hover", "Track", "FlyThrough",
+        "PayloadHover", "PayloadTrack", "PayloadFlyThrough",
         "InvPendulumHover", "InvPendulumTrack", "InvPendulumFlyThrough",
-        "PayloadTrack", "PayloadFlyThrough",
         "Forest", "Pinball",
     ]
     multi_tasks = [
-        "Formation",
         "PlatformHover", "PlatformTrack", "PlatformFlyThrough",
-        "TransportHover", "TransportTrack",
+        "TransportHover", "TransportTrack", "TransportFlyThrough",
+        "Formation",
     ]
 
     for task in single_tasks:

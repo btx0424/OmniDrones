@@ -46,6 +46,7 @@ class PayloadHover(IsaacEnv):
     The goal for the agent is to hover the payload at a target position.
 
     ## Observation
+
     - `drone_payload_rpos` (3): The position of the drone relative to the payload's position.
     - `ref_payload_rpos` (3): The reference positions of the
       payload at multiple future time steps. This helps the agent anticipate the desired payload
@@ -57,7 +58,6 @@ class PayloadHover(IsaacEnv):
     - `time_encoding` (optional): The time encoding, which is a 4-dimensional
       vector encoding the current progress of the episode.
 
-
     ## Reward
 
     - `pos`: Reward for maintaining the position of the payload around the target position.
@@ -68,26 +68,25 @@ class PayloadHover(IsaacEnv):
     - `action_smoothness`: Reward that encourages smoother drone actions, computed based on the throttle difference of the drone.
 
     The total reward is computed as follows:
+
     ```{math}
         r = r_\text{pos} + r_\text{pos} * (r_\text{up} + r_\text{spin}) + r_\text{effort} + r_\text{action_smoothness}
     ```
 
-
     ## Episode End
+
     The episode ends when the drone gets too close to the ground, or when
     the payload gets too close to the ground, or when the maximum episode length
     is reached.
 
     ## Config
 
-    | Parameter               | Type  | Default       | Description |
-    | ----------------------- | ----- | ------------- | ----------- |
-    | `drone_model`           | str   | "hummingbird" | Specifies the model of the drone being used in the environment. |
-    | `bar_length`            | float | 1.0           | Length of the pendulum's bar. |
-    | `reward_distance_scale` | float | 1.6           | Scales the reward based on `target_payload_rpos`. |
+    | Parameter               | Type  | Default       | Description                                                                                                                                                                                                                             |
+    | ----------------------- | ----- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | `drone_model`           | str   | "hummingbird" | Specifies the model of the drone being used in the environment.                                                                                                                                                                         |
+    | `bar_length`            | float | 1.0           | Length of the pendulum's bar.                                                                                                                                                                                                           |
+    | `reward_distance_scale` | float | 1.6           | Scales the reward based on `target_payload_rpos`.                                                                                                                                                                                       |
     | `time_encoding`         | bool  | True          | Indicates whether to include time encoding in the observation space. If set to True, a 4-dimensional vector encoding the current progress of the episode is included in the observation. If set to False, this feature is not included. |
-
-
     """
     def __init__(self, cfg, headless):
         self.reward_effort_weight = cfg.task.reward_effort_weight

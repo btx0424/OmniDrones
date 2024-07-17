@@ -1,0 +1,23 @@
+# hydra.job.chdir: false
+hydra:
+  searchpath:
+  # see https://hydra.cc/docs/advanced/search_path/
+   - file://../cfg
+
+headless: true
+
+sim: ${task.sim}
+env: ${task.env}
+
+total_frames: -1
+seed: 0
+
+viewer:
+  resolution: [960, 720]
+  eye: [8, 0., 6.]
+  lookat: [0., 0., 1.]
+
+defaults:
+  - task: Hover
+  - algo: ppo
+  - _self_

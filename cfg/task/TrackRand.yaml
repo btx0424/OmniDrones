@@ -1,4 +1,4 @@
-name: TrackV1
+name: Track
 
 defaults:
   # see https://hydra.cc/docs/advanced/overriding_packages/

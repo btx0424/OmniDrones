@@ -21,13 +21,13 @@
 # SOFTWARE.
 
 
-from .single import Hover, Track, TrackV1
-from .platform import PlatformHover, PlatformFlyThrough
-from .inv_pendulum import InvPendulumHover, InvPendulumFlyThrough
-from .transport import TransportHover, TransportFlyThrough, TransportTrack
-from .formation import Formation
-from .payload import PayloadTrack, PayloadFlyThrough
+from .single import Hover, Track, FlyThrough
+from .payload import PayloadHover, PayloadTrack, PayloadFlyThrough
+from .inv_pendulum import InvPendulumHover, InvPendulumTrack, InvPendulumFlyThrough
 from .dragon import DragonHover
+from .platform import PlatformHover, PlatformTrack, PlatformFlyThrough
+from .transport import TransportHover, TransportTrack, TransportFlyThrough
+from .formation import Formation
 from .rearrange import Rearrange
 from .isaac_env import IsaacEnv
 
@@ -38,4 +38,3 @@ except ModuleNotFoundError:
         "To run the environments which use `ContactSensor` and `RayCaster`,"
         "please install Isaac Lab (https://github.com/isaac-sim/IsaacLab)."
     )
-

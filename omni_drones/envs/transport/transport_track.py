@@ -174,15 +174,15 @@ class TransportTrack(IsaacEnv):
             "obs_payload": UnboundedContinuousTensorSpec((1, payload_state_dim)),
         }).to(self.device)
 
-        state_spec = CompositeSpec(
-            drones=UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim)),
-            payload=UnboundedContinuousTensorSpec((1, payload_state_dim))
-        ).to(self.device)
+        observation_central_spec = CompositeSpec({
+            "state_drones": UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim)),
+            "state_payload": UnboundedContinuousTensorSpec((1, payload_state_dim))
+        }).to(self.device)
 
         self.observation_spec = CompositeSpec({
             "agents": {
                 "observation": observation_spec.expand(self.drone.n),
-                "observation_central": state_spec,
+                "observation_central": observation_central_spec,
             }
         }).expand(self.num_envs).to(self.device)
         self.action_spec = CompositeSpec({
@@ -294,8 +294,8 @@ class TransportTrack(IsaacEnv):
         obs["obs_payload"] = payload_state.expand(-1, self.drone.n, -1).unsqueeze(2) # [..., 1, 22]
 
         state = TensorDict({}, self.num_envs)
-        state["payload"] = payload_state # [..., 1, 22]
-        state["drones"] = obs["obs_self"].squeeze(2) # [..., n, state_dim]
+        state["state_payload"] = payload_state # [..., 1, 22]
+        state["state_drones"] = obs["obs_self"].squeeze(2) # [..., n, state_dim]
 
         self.stats["pos_error"].lerp_(self.target_distance, (1-self.alpha))
         # self.stats["heading_alignment"].lerp_(heading_alignment, (1-self.alpha))
@@ -306,7 +306,7 @@ class TransportTrack(IsaacEnv):
             {
                 "agents": {
                     "observation": obs,
-                    "state": state,
+                    "observation_central": state,
                 },
                 "stats": self.stats.clone(),
             },

@@ -29,6 +29,6 @@ collision_penalty: 0.
 obstacle_spacing: [1., 1.2]
 
 ravel_obs: true
-flatten_state: true
+ravel_obs_central: true
 
 action_transform: null

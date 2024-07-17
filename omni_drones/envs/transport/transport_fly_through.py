@@ -165,28 +165,29 @@ class TransportFlyThrough(IsaacEnv):
         return ["/World/defaultGroundPlane"]
 
     def _set_specs(self):
-        drone_obs_dim = self.drone.state_spec.shape[0] + self.drone.n
+        drone_state_dim = self.drone.state_spec.shape[0] + self.drone.n
         payload_state_dim = 19
         if self.time_encoding:
             self.time_encoding_dim = 4
             payload_state_dim += self.time_encoding_dim
 
         observation_spec = CompositeSpec({
-            "obs_self": UnboundedContinuousTensorSpec((1, drone_obs_dim)),
+            "obs_self": UnboundedContinuousTensorSpec((1, drone_state_dim)),
             "obs_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13+1)),
             "obs_payload": UnboundedContinuousTensorSpec((1, payload_state_dim)),
             "obs_obstacles": UnboundedContinuousTensorSpec((2, 2)),
         }).to(self.device)
 
-        state_spec = CompositeSpec({
-            "drones": UnboundedContinuousTensorSpec((self.drone.n, drone_obs_dim)),
-            "payload": UnboundedContinuousTensorSpec((1, payload_state_dim)),
+        observation_central_spec = CompositeSpec({
+            "state_drones": UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim)),
+            "state_payload": UnboundedContinuousTensorSpec((1, payload_state_dim)),
             "obstacles": UnboundedContinuousTensorSpec((2, 2)),
         }).to(self.device)
+
         self.observation_spec = CompositeSpec({
             "agents": {
                 "observation": observation_spec.expand(self.drone.n),
-                "observation_central": state_spec,
+                "observation_central": observation_central_spec,
             }
         }).expand(self.num_envs).to(self.device)
         self.action_spec = CompositeSpec({
@@ -293,8 +294,8 @@ class TransportFlyThrough(IsaacEnv):
         obs["obs_obstacles"] = obstacle_payload_rpos.unsqueeze(1).expand(-1, self.drone.n, 2, 2)
 
         state = TensorDict({}, self.num_envs)
-        state["payload"] = payload_state # [..., 1, 22]
-        state["drones"] = obs["obs_self"].squeeze(2) # [..., n, state_dim]
+        state["state_payload"] = payload_state # [..., 1, 22]
+        state["state_drones"] = obs["obs_self"].squeeze(2) # [..., n, state_dim]
         state["obstacles"] = obstacle_payload_rpos # [..., 2, 2]
 
         self.payload_pos_error = torch.norm(self.target_payload_rpos, dim=-1, keepdim=True)
@@ -306,7 +307,7 @@ class TransportFlyThrough(IsaacEnv):
             {
                 "agents": {
                     "observation": obs,
-                    "state": state,
+                    "observation_central": state,
                 },
                 "stats": self.stats.clone(),
             },

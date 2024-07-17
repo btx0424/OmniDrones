@@ -20,6 +20,6 @@ safe_distance: 0.3
 reward_share_ratio: 0.3
 
 ravel_obs: true
-flatten_state: true
+ravel_obs_central: true
 
 action_transform: null

@@ -200,11 +200,11 @@ class PlatformTrack(IsaacEnv):
         observation_spec = CompositeSpec({
             "obs_self": UnboundedContinuousTensorSpec((1, drone_state_dim + self.drone.n)),
             "obs_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13)),
-            "obs_frame": UnboundedContinuousTensorSpec((1, frame_state_dim)),
+            "state_frame": UnboundedContinuousTensorSpec((1, frame_state_dim)),
         }).to(self.device)
         observation_central_spec = CompositeSpec({
-            "drones": UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim + self.drone.n)),
-            "frame": UnboundedContinuousTensorSpec((1, frame_state_dim)),
+            "state_drones": UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim + self.drone.n)),
+            "state_frame": UnboundedContinuousTensorSpec((1, frame_state_dim)),
         }).to(self.device)
         self.observation_spec = CompositeSpec({
             "agents": {
@@ -317,11 +317,11 @@ class PlatformTrack(IsaacEnv):
         obs["obs_others"] = torch.cat(
             [self.drone_rpos, vmap(others)(self.drone_states[..., 3:13])], dim=-1
         )
-        obs["obs_frame"] = platform_state.unsqueeze(1).expand(-1, self.drone.n, 1, -1)
+        obs["state_frame"] = platform_state.unsqueeze(1).expand(-1, self.drone.n, 1, -1)
 
         state = TensorDict({}, [self.num_envs])
-        state["drones"] = obs["obs_self"].squeeze(2)    # [num_envs, drone.n, drone_state_dim]
-        state["frame"] = platform_state                # [num_envs, 1, platform_state_dim]
+        state["state_drones"] = obs["obs_self"].squeeze(2)    # [num_envs, drone.n, drone_state_dim]
+        state["state_frame"] = platform_state                # [num_envs, 1, platform_state_dim]
 
         self.up_alignment = torch.sum(self.platform.up * target_up, dim=-1)
 

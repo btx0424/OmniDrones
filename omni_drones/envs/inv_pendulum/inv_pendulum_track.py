@@ -180,7 +180,7 @@ class InvPendulumTrack(IsaacEnv):
 
         self.observation_spec = CompositeSpec({
             "agents": CompositeSpec({
-                "observation": UnboundedContinuousTensorSpec((1, observation_dim)) ,
+                "observation": UnboundedContinuousTensorSpec((1, observation_dim)),
             })
         }).expand(self.num_envs).to(self.device)
         self.action_spec = CompositeSpec({

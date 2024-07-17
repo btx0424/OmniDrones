@@ -174,11 +174,6 @@ class Formation(IsaacEnv):
                 "reward": UnboundedContinuousTensorSpec((self.drone.n, 1))
             }
         }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-            "terminated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-            "truncated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-        }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone",
             self.drone.n,
@@ -292,10 +287,11 @@ class Formation(IsaacEnv):
         self.last_cost_h[:] = cost_h
         self.last_cost_pos[:] = torch.square(distance)
 
-        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-        crash = (pos[..., 2] < 0.2).any(-1, keepdim=True)
+        misbehave = (pos[..., 2] < 0.2).any(-1, keepdim=True) | (separation < 0.23)
+        hasnan = torch.isnan(self.root_states).any(-1)
 
-        terminated = crash | (separation<0.23)
+        terminated = misbehave | hasnan.any(-1, keepdim=True)
+        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
         self.stats["return"].add_(reward)
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(-1)
@@ -306,7 +302,7 @@ class Formation(IsaacEnv):
         return TensorDict(
             {
                 "agents": {
-                    "reward": reward.unsqueeze(1).expand(-1, self.drone.n, 1)
+                    "reward": reward.unsqueeze(1).expand(-1, self.drone.n, 1),
                 },
                 "done": terminated | truncated,
                 "terminated": terminated,

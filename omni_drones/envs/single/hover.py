@@ -224,11 +224,6 @@ class Hover(IsaacEnv):
                 "reward": UnboundedContinuousTensorSpec((1, 1))
             })
         }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-            "terminated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-            "truncated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-        }).expand(self.num_envs).to(self.device)
 
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,
@@ -344,7 +339,10 @@ class Hover(IsaacEnv):
             + reward_action_smoothness
         )
 
-        terminated = (self.drone.pos[..., 2] < 0.2) | (distance > 4)
+        misbehave = (self.drone.pos[..., 2] < 0.2) | (distance > 4)
+        hasnan = torch.isnan(self.root_state).any(-1)
+
+        terminated = misbehave | hasnan
         truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
         self.stats["pos_error"].lerp_(pos_error, (1-self.alpha))
@@ -357,11 +355,11 @@ class Hover(IsaacEnv):
         return TensorDict(
             {
                 "agents": {
-                    "reward": reward.unsqueeze(-1)
+                    "reward": reward.unsqueeze(-1),
                 },
                 "done": terminated | truncated,
                 "terminated": terminated,
-                "truncated": truncated
+                "truncated": truncated,
             },
             self.batch_size,
         )

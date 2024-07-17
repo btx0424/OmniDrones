@@ -157,9 +157,6 @@ class DragonHover(IsaacEnv):
                 "reward": UnboundedContinuousTensorSpec((1, 1))
             })
         }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
-        }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,
             observation_key=("agents", "observation"),
@@ -244,7 +241,7 @@ class DragonHover(IsaacEnv):
         reward_pose = torch.exp(-distance * self.reward_distance_scale)
 
         # effort
-        reward_effort = self.reward_effort_weight * -self.effort
+        # reward_effort = self.reward_effort_weight * -self.effort
         reward_action_smoothness = self.reward_action_smoothness_weight * -self.drone.throttle_difference.sum(-1)
 
         reward_joint_vel = 0.5 * torch.exp(-self.drone.get_joint_velocities().abs()).mean(-1)
@@ -257,12 +254,11 @@ class DragonHover(IsaacEnv):
             + reward_action_smoothness
         )
 
-        done_misbehave = (self.drone.pos[..., 2] < 0.2).any(-1) | (distance > 4)
+        misbehave = (self.drone.pos[..., 2] < 0.2).any(-1) | (distance > 4)
+        hasnan = torch.isnan(self.root_state).any(-1)
 
-        done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-            | done_misbehave
-        )
+        terminated = misbehave | hasnan
+        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
         self.stats["pos_error"].lerp_(pos_error, (1-self.alpha))
         self.stats["heading_alignment"].lerp_(heading_alignment, (1-self.alpha))
@@ -273,9 +269,11 @@ class DragonHover(IsaacEnv):
         return TensorDict(
             {
                 "agents": {
-                    "reward": reward.unsqueeze(-1)
+                    "reward": reward.unsqueeze(-1),
                 },
-                "done": done,
+                "done": terminated | truncated,
+                "terminated": terminated,
+                "truncated": truncated,
             },
             self.batch_size,
         )

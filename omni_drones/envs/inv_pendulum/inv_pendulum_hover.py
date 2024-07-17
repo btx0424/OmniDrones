@@ -181,9 +181,6 @@ class InvPendulumHover(IsaacEnv):
                 "reward": UnboundedContinuousTensorSpec((1, 1))
             })
         }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
-        }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,
             observation_key=("agents", "observation"),
@@ -283,24 +280,27 @@ class InvPendulumHover(IsaacEnv):
             + reward_effort
         )
 
-        done_misbehave = (self.drone.pos[..., 2] < 0.2) | (reward_bar_up < 0.2)
-        done_hasnan = torch.isnan(self.drone_state).any(-1)
-
-        done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-            | done_misbehave
-            | done_hasnan
+        misbehave = (
+            (self.drone.pos[..., 2] < 0.2)
+            | (reward_bar_up < 0.2)
             | (self.pos_error > 3.3)
         )
+        hasnan = torch.isnan(self.drone_state).any(-1)
+
+        terminated = misbehave | hasnan
+        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
+
         self.stats["return"] += reward
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(-1)
 
         return TensorDict(
             {
                 "agents": {
-                    "reward": reward.unsqueeze(-1)
+                    "reward": reward.unsqueeze(-1),
                 },
-                "done": done,
+                "done": terminated | truncated,
+                "terminated": terminated,
+                "truncated": truncated,
             },
             self.batch_size,
         )

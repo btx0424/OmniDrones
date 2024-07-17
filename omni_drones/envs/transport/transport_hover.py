@@ -194,9 +194,6 @@ class TransportHover(IsaacEnv):
                 "reward": UnboundedContinuousTensorSpec((self.drone.n, 1))
             }
         }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
-        }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", self.drone.n,
             observation_key=("agents", "observation"),
@@ -357,14 +354,11 @@ class TransportHover(IsaacEnv):
             )
         ).unsqueeze(-1)
 
-        done_hasnan = torch.isnan(self.drone_states).any(-1)
-        done_fall = self.drone_states[..., 2] < 0.2
+        misbehave = (self.drone_states[..., 2] < 0.2).any(-1, keepdim=True)
+        hasnan = torch.isnan(self.drone_states).any(-1)
 
-        done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-            | done_fall.any(-1, keepdim=True)
-            | done_hasnan.any(-1, keepdim=True)
-        )
+        terminated = misbehave | hasnan.any(-1, keepdim=True)
+        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
         self.stats["return"].add_(reward.mean(1))
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(-1)
@@ -372,11 +366,15 @@ class TransportHover(IsaacEnv):
         self.stats["heading_alignment"].lerp_(self.heading_alignment, (1-self.alpha))
         self.stats["uprightness"].lerp_(self.payload_up[:, 2].unsqueeze(-1), (1-self.alpha))
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
+
         return TensorDict(
             {
-                "agents": {"reward": reward},
-                "done": done,
+                "agents": {
+                    "reward": reward,
+                },
+                "done": terminated | truncated,
+                "terminated": terminated,
+                "truncated": truncated,
             },
             self.batch_size,
         )
-

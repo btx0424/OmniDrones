@@ -237,11 +237,6 @@ class Forest(IsaacEnv):
                 "reward": UnboundedContinuousTensorSpec((1,))
             })
         }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-            "terminated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-            "truncated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-        }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,
             observation_key=("agents", "observation"),
@@ -344,17 +339,19 @@ class Forest(IsaacEnv):
         reward_up = torch.square((self.drone.up[..., 2] + 1) / 2)
 
         # effort
-        reward_effort = self.reward_effort_weight * torch.exp(-self.effort)
+        # reward_effort = self.reward_effort_weight * torch.exp(-self.effort)
 
         reward = reward_vel + reward_up + 1. + reward_safety * 0.2
 
-
-        terminated = (
+        misbehave = (
             (self.drone.pos[..., 2] < 0.2)
             | (self.drone.pos[..., 2] > 4.)
             | (self.drone.vel_w[..., :3].norm(dim=-1) > 2.5)
             | (einops.reduce(self.lidar_scan, "n 1 w h -> n 1", "max") >  (self.lidar_range - 0.3))
         )
+        hasnan = torch.isnan(self.root_state).any(-1)
+
+        terminated = misbehave | hasnan
         truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
         self.stats["safety"].add_(reward_safety)
@@ -364,11 +361,11 @@ class Forest(IsaacEnv):
         return TensorDict(
             {
                 "agents": {
-                    "reward": reward
+                    "reward": reward,
                 },
                 "done": terminated | truncated,
                 "terminated": terminated,
-                "truncated": truncated
+                "truncated": truncated,
             },
             self.batch_size,
         )

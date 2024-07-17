@@ -182,17 +182,21 @@ class Rearrange(IsaacEnv):
 
         self._tensordict["return"] += reward
 
-        terminated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-        done_misbehave = ((pos[..., 2].unsqueeze(-1) < 0.2) | (distance > 5.0)).any(1)
-        done_hasnan = torch.isnan(self.drone_state).any(-1).any(-1, keepdim=True)
+        misbehave = ((pos[..., 2].unsqueeze(-1) < 0.2) | (distance > 5.0)).any(1)
+        hasnan = torch.isnan(self.drone_state).any(-1)
 
-        done = terminated | done_misbehave | done_hasnan
+        terminated = misbehave | hasnan.any(-1, keepdim=True)
+        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
         return TensorDict(
             {
-                "reward": {"drone.reward": reward},
+                "reward": {
+                    "drone.reward": reward,
+                },
                 "return": self._tensordict["return"],
-                "done": done,
+                "done": terminated | truncated,
+                "terminated": terminated,
+                "truncated": truncated,
             },
             self.batch_size,
         )

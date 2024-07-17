@@ -205,9 +205,6 @@ class FlyThrough(IsaacEnv):
                 "reward": UnboundedContinuousTensorSpec((1, 1))
             }
         }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
-        }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,
             observation_key=("agents", "observation"),
@@ -340,7 +337,6 @@ class FlyThrough(IsaacEnv):
             + reward_effort
         ) # * (1 - collision_reward)
 
-        invalid = (crossing_plane & ~through_gate)
         misbehave = (
             (self.drone.pos[..., 2] < 0.2)
             | (self.drone.pos[..., 2] > 2.5)
@@ -348,14 +344,13 @@ class FlyThrough(IsaacEnv):
             | (distance_to_target > 6.)
         )
         hasnan = torch.isnan(self.drone_state).any(-1)
+        invalid = (crossing_plane & ~through_gate)
 
         terminated = misbehave | hasnan | invalid
         truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
         if self.reset_on_collision:
             terminated |= collision
-
-        done = terminated | truncated
 
         self.stats["success"].bitwise_or_(distance_to_target < 0.2)
         self.stats["return"].add_(reward)
@@ -364,9 +359,9 @@ class FlyThrough(IsaacEnv):
         return TensorDict(
             {
                 "agents": {
-                    "reward": reward.unsqueeze(-1)
+                    "reward": reward.unsqueeze(-1),
                 },
-                "done": done,
+                "done": terminated | truncated,
                 "terminated": terminated,
                 "truncated": truncated,
             },

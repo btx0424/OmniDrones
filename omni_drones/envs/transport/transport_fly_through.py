@@ -199,9 +199,6 @@ class TransportFlyThrough(IsaacEnv):
                 "reward": UnboundedContinuousTensorSpec((self.drone.n, 1))
             }
         }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
-        }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", self.drone.n,
             observation_key=("agents", "observation"),
@@ -358,30 +355,32 @@ class TransportFlyThrough(IsaacEnv):
             )  * (1. - self.collision_penalty * collision_reward)
         ).unsqueeze(1)
 
-        done_misbehave = (
-            (self.drone.pos[..., 2] < 0.2)
-            | (self.drone.pos[..., 2] > 3.6)
+        misbehave = (
+            (self.drone.pos[..., 2] < 0.2).any(-1, keepdim=True)
+            | (self.drone.pos[..., 2] > 3.6).any(-1, keepdim=True)
+            | (self.payload_pos[:, 2] < 0.3).unsqueeze(1).any(-1, keepdim=True)
         )
+        hasnan = torch.isnan(self.drone_states).any(-1)
 
-        done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-            | done_misbehave.any(-1, keepdim=True)
-            | (self.payload_pos[:, 2] < 0.3).unsqueeze(1)
-        )
+        terminated = misbehave | hasnan.any(-1, keepdim=True)
+        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
         if self.reset_on_collision:
-            done = done | collision
+            terminated |= collision
+
         success = (self.payload_pos_error < 0.2) & (self.drone.pos[..., 0] > 0.05).all(-1, True)
         self.stats["success"].bitwise_or_(success)
         self.stats["return"].add_(reward.mean(1))
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(-1)
+
         return TensorDict(
             {
                 "agents": {
-                    "reward": reward
+                    "reward": reward,
                 },
-                "done": done,
+                "done": terminated | truncated,
+                "terminated": terminated,
+                "truncated": truncated,
             },
             self.batch_size,
         )
-

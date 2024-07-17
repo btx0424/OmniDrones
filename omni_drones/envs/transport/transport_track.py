@@ -195,9 +195,6 @@ class TransportTrack(IsaacEnv):
                 "reward": UnboundedContinuousTensorSpec((self.drone.n, 1))
             }
         }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
-        }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", self.drone.n,
             observation_key=("agents", "observation"),
@@ -358,15 +355,14 @@ class TransportTrack(IsaacEnv):
             )
         ).unsqueeze(-1)
 
-        done_hasnan = torch.isnan(self.drone_states).any(-1)
-        done_fall = self.drone_states[..., 2] < 0.2
-
-        done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-            | done_fall.any(-1, keepdim=True)
-            | done_hasnan.any(-1, keepdim=True)
+        misbehave = (
+            (self.drone_states[..., 2] < 0.2).any(-1, keepdim=True)
             | (self.target_distance > self.reset_thres)
         )
+        hasnan = torch.isnan(self.drone_states).any(-1)
+
+        terminated = misbehave | hasnan.any(-1, keepdim=True)
+        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
         self.stats["return"].add_(reward.mean(1))
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(-1)
@@ -374,9 +370,11 @@ class TransportTrack(IsaacEnv):
         return TensorDict(
             {
                 "agents": {
-                    "reward": reward
+                    "reward": reward,
                 },
-                "done": done,
+                "done": terminated | truncated,
+                "terminated": terminated,
+                "truncated": truncated,
             },
             self.batch_size,
         )

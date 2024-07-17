@@ -226,7 +226,7 @@ class DragonHover(IsaacEnv):
                 "observation": obs,
                 "intrinsics": self.drone.intrinsics
             },
-            "stats": self.stats,
+            "stats": self.stats.clone(),
             "info": self.info
         }, self.batch_size)
 

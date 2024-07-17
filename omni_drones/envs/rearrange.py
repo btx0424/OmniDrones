@@ -160,7 +160,7 @@ class Rearrange(IsaacEnv):
         return TensorDict({
             "drone.obs": obs,
             "drone.state": state,
-            "stats": self.stats
+            "stats": self.stats.clone(),
         }, self.batch_size)
 
     def _compute_reward_and_done(self):

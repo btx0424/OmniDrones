@@ -347,7 +347,7 @@ class PlatformFlyThrough(IsaacEnv):
                     "observation": obs,
                     "observation_central": state,
                 },
-                "stats": self.stats
+                "stats": self.stats.clone(),
             },
             self.batch_size,
         )

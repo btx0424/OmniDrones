@@ -274,7 +274,7 @@ class PayloadHover(IsaacEnv):
             "agents": {
                 "observation": obs,
             },
-            "stats": self.stats,
+            "stats": self.stats.clone(),
             "info": self.info
         }, self.batch_size)
 

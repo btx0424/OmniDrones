@@ -329,7 +329,7 @@ class InvPendulumFlyThrough(IsaacEnv):
             "agents": {
                 "observation": obs,
             },
-            "stats": self.stats
+            "stats": self.stats.clone(),
         }, self.batch_size)
 
     def _compute_reward_and_done(self):

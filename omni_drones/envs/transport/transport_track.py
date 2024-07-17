@@ -314,7 +314,7 @@ class TransportTrack(IsaacEnv):
                 "state": state,
             },
             "info": self.info,
-            "stats": self.stats
+            "stats": self.stats.clone(),
         }, self.num_envs)
 
     def _compute_reward_and_done(self):

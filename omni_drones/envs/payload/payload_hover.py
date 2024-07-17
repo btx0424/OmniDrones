@@ -20,8 +20,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-
-import omni.isaac.core.utils.torch as torch_utils
 import omni.isaac.core.utils.prims as prim_utils
 import omni.isaac.core.objects as objects
 import omni_drones.utils.kit as kit_utils

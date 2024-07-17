@@ -24,8 +24,6 @@ import torch
 import torch.distributions as D
 import einops
 
-import omni.isaac.core.utils.prims as prim_utils
-
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.robots.drone import MultirotorBase
 from omni_drones.views import ArticulationView, RigidPrimView
@@ -151,10 +149,6 @@ class Forest(IsaacEnv):
         self.alpha = 0.8
 
     def _design_scene(self):
-        import omni_drones.utils.kit as kit_utils
-        from pxr import PhysxSchema, UsdPhysics
-        from omni_drones.utils.poisson_disk import poisson_disk_sampling
-
         drone_model_cfg = self.cfg.task.drone_model
         self.drone, self.controller = MultirotorBase.make(
             drone_model_cfg.name, drone_model_cfg.controller

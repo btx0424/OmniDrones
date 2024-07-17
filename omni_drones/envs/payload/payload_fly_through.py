@@ -31,9 +31,6 @@ from torchrl.data import (
     DiscreteTensorSpec
 )
 
-import omni.isaac.core.utils.torch as torch_utils
-import omni.isaac.core.utils.prims as prim_utils
-import omni.physx.scripts.utils as script_utils
 import omni.isaac.core.objects as objects
 from omni.isaac.debug_draw import _debug_draw
 

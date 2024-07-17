@@ -31,7 +31,6 @@ import omni.isaac.core.objects as objects
 import omni_drones.utils.kit as kit_utils
 from omni_drones.utils.torch import euler_to_quaternion, normalize
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
-from omni_drones.robots.config import RobotCfg
 from omni_drones.robots.drone import MultirotorBase
 from omni_drones.views import RigidPrimView
 

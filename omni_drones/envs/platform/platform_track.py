@@ -25,7 +25,6 @@ import torch
 import torch.distributions as D
 from torch.func import vmap
 
-import omni.isaac.core.utils.prims as prim_utils
 import omni.isaac.core.objects as objects
 from omni.isaac.debug_draw import _debug_draw
 
@@ -36,7 +35,7 @@ from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec, DiscreteT
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.views import RigidPrimView
-from omni_drones.utils.torch import cpos, off_diag, others, normalize
+from omni_drones.utils.torch import cpos, off_diag, others, normalize, quat_rotate
 from omni_drones.robots.drone import MultirotorBase
 from omni_drones.utils.scene import design_scene
 from omni_drones.utils.torch import euler_to_quaternion, quat_rotate

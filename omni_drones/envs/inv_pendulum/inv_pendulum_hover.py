@@ -193,13 +193,8 @@ class InvPendulumHover(IsaacEnv):
             "pos_error": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
-        info_spec = CompositeSpec({
-            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13)),
-        }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
-        self.observation_spec["info"] = info_spec
         self.stats = stats_spec.zero()
-        self.info = info_spec.zero()
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
@@ -227,7 +222,6 @@ class InvPendulumHover(IsaacEnv):
 
     def _compute_state_and_obs(self):
         self.drone_state = self.drone.get_state()
-        self.info["drone_state"][:] = self.drone_state[..., :13]
         self.drone_up = self.drone_state[..., 16:19]
         payload_pos, payload_rot = self.get_env_poses(self.payload.get_world_poses())
         self.payload_vels = self.payload.get_velocities()
@@ -252,13 +246,15 @@ class InvPendulumHover(IsaacEnv):
         self.stats["pos_error"].lerp_(self.pos_error, (1-self.alpha))
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
 
-        return TensorDict({
-            "agents":{
-                "observation": obs,
+        return TensorDict(
+            {
+                "agents":{
+                    "observation": obs,
+                },
+                "stats": self.stats.clone(),
             },
-            "stats": self.stats.clone(),
-            "info": self.info,
-        }, self.batch_size)
+            self.batch_size,
+        )
 
     def _compute_reward_and_done(self):
         # reward_pos = 1.0 / (1.0 + torch.square(self.reward_distance_scale * self.pos_error))

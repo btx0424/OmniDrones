@@ -202,9 +202,6 @@ class TransportTrack(IsaacEnv):
             reward_key=("agents", "reward"),
         )
 
-        info_spec = CompositeSpec({
-            "payload_mass": UnboundedContinuousTensorSpec(1),
-        }).expand(self.num_envs).to(self.device)
         stats_spec = CompositeSpec({
             "return": UnboundedContinuousTensorSpec(self.drone.n),
             "episode_len": UnboundedContinuousTensorSpec(1),
@@ -213,9 +210,7 @@ class TransportTrack(IsaacEnv):
             "uprightness": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(self.drone.n),
         }).expand(self.num_envs).to(self.device)
-        self.observation_spec["info"] = info_spec
         self.observation_spec["stats"] = stats_spec
-        self.info = info_spec.zero()
         self.stats = stats_spec.zero()
 
     def _reset_idx(self, env_ids: torch.Tensor):
@@ -240,7 +235,6 @@ class TransportTrack(IsaacEnv):
         payload_masses = self.payload_mass_dist.sample(env_ids.shape)
         self.payload.set_masses(payload_masses, env_ids)
 
-        self.info["payload_mass"][env_ids] = payload_masses.unsqueeze(-1).clone()
         self.stats[env_ids] = 0.
 
         if self._should_render(0) and (env_ids == self.central_env_idx).any() :
@@ -308,14 +302,16 @@ class TransportTrack(IsaacEnv):
         self.stats["uprightness"].lerp_(self.payload_up[:, 2].unsqueeze(-1), (1-self.alpha))
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
 
-        return TensorDict({
-            "agents": {
-                "observation": obs,
-                "state": state,
+        return TensorDict(
+            {
+                "agents": {
+                    "observation": obs,
+                    "state": state,
+                },
+                "stats": self.stats.clone(),
             },
-            "info": self.info,
-            "stats": self.stats.clone(),
-        }, self.num_envs)
+            self.num_envs,
+        )
 
     def _compute_reward_and_done(self):
         vels = self.payload.get_velocities()

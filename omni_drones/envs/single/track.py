@@ -203,13 +203,7 @@ class Track(IsaacEnv):
             "tracking_error_ema": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
-        info_spec = CompositeSpec({
-            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13)),
-        }).expand(self.num_envs).to(self.device)
-        # info_spec = self.drone.info_spec.to(self.device)
-        self.observation_spec["info"] = info_spec
         self.observation_spec["stats"] = stats_spec
-        self.info = info_spec.zero()
         self.stats = stats_spec.zero()
 
     def _reset_idx(self, env_ids: torch.Tensor):
@@ -230,8 +224,6 @@ class Track(IsaacEnv):
         self.drone.set_velocities(vel, env_ids)
 
         self.stats[env_ids] = 0.
-
-        # self.info[env_ids] = self.drone.info[env_ids]
 
         if self._should_render(0) and (env_ids == self.central_env_idx).any() :
             # visualize the trajectory
@@ -262,7 +254,6 @@ class Track(IsaacEnv):
 
     def _compute_state_and_obs(self):
         self.root_state = self.drone.get_state()
-        self.info["drone_state"][:] = self.root_state[..., :13]
 
         self.target_pos[:] = self._compute_traj(self.future_traj_steps, step_size=5)
 
@@ -287,7 +278,6 @@ class Track(IsaacEnv):
                     "observation": obs,
                 },
                 "stats": self.stats.clone(),
-                "info": self.info.clone(),
             },
             self.batch_size,
         )

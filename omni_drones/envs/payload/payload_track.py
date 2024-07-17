@@ -199,19 +199,13 @@ class PayloadTrack(IsaacEnv):
             reward_key=("agents", "reward"),
         )
 
-        info_spec  = CompositeSpec({
-            "payload_mass": UnboundedContinuousTensorSpec(1),
-            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13)),
-        }).expand(self.num_envs).to(self.device)
         stats_spec = CompositeSpec({
             "return": UnboundedContinuousTensorSpec(1),
             "episode_len": UnboundedContinuousTensorSpec(1),
             "tracking_error": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
-        self.observation_spec["info"] = info_spec
         self.observation_spec["stats"] = stats_spec
-        self.info = info_spec.zero()
         self.stats = stats_spec.zero()
 
 
@@ -241,8 +235,6 @@ class PayloadTrack(IsaacEnv):
 
         self.stats[env_ids] = 0.
 
-        # self.info.update_at_(self.drone.info[env_ids], env_ids)
-
         if self._should_render(0) and (env_ids == self.central_env_idx).any():
             # visualize the trajectory
             self.draw.clear_lines()
@@ -261,7 +253,6 @@ class PayloadTrack(IsaacEnv):
 
     def _compute_state_and_obs(self):
         self.root_state = self.drone.get_state()
-        self.info["drone_state"][:] = self.root_state[..., :13]
         self.payload_pos = self.get_env_poses(self.payload.get_world_poses())[0]
         self.payload_vels = self.payload.get_velocities()
 
@@ -283,13 +274,15 @@ class PayloadTrack(IsaacEnv):
 
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
 
-        return TensorDict({
-            "agents": {
-                "observation": obs,
+        return TensorDict(
+            {
+                "agents": {
+                    "observation": obs,
+                },
+                "stats": self.stats.clone(),
             },
-            "stats": self.stats.clone(),
-            "info": self.info
-        }, self.batch_size)
+            self.batch_size,
+        )
 
     def _compute_reward_and_done(self):
         # pos reward

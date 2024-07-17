@@ -250,13 +250,16 @@ class Formation(IsaacEnv):
 
         state = TensorDict({"drones": self.root_states}, self.batch_size)
 
-        return TensorDict({
-            "agents": {
-                "observation": obs,
-                "observation_central": state,
+        return TensorDict(
+            {
+                "agents": {
+                    "observation": obs,
+                    "observation_central": state,
+                },
+                "stats": self.stats.clone(),
             },
-            "stats": self.stats.clone(),
-        }, self.batch_size)
+            self.batch_size,
+        )
 
     def _compute_reward_and_done(self):
         # cost_l = vmap(cost_formation_laplacian)(pos, desired_L=self.formation_L)

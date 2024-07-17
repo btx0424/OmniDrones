@@ -322,12 +322,15 @@ class PayloadFlyThrough(IsaacEnv):
             self.drone_traj_vis.append(drone_pos)
             self.payload_traj_vis.append(payload_pos)
 
-        return TensorDict({
-            "agents": {
-                "observation": obs,
+        return TensorDict(
+            {
+                "agents": {
+                    "observation": obs,
+                },
+                "stats": self.stats.clone(),
             },
-            "stats": self.stats.clone(),
-        }, self.batch_size)
+            self.batch_size,
+        )
 
     def _compute_reward_and_done(self):
 

@@ -157,11 +157,14 @@ class Rearrange(IsaacEnv):
 
         self.stats["pos_error"].lerp_(self.target_drone_rpos.norm(dim=-1), 1-self.alpha)
         # self.stats
-        return TensorDict({
-            "drone.obs": obs,
-            "drone.state": state,
-            "stats": self.stats.clone(),
-        }, self.batch_size)
+        return TensorDict(
+            {
+                "drone.obs": obs,
+                "drone.state": state,
+                "stats": self.stats.clone(),
+            },
+            self.batch_size,
+        )
 
     def _compute_reward_and_done(self):
         pos, rot = self.get_env_poses(self.drone.get_world_poses())
@@ -200,4 +203,3 @@ class Rearrange(IsaacEnv):
             },
             self.batch_size,
         )
-

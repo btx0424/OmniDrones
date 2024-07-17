@@ -251,15 +251,8 @@ class Forest(IsaacEnv):
             "action_smoothness": UnboundedContinuousTensorSpec(1),
             "safety": UnboundedContinuousTensorSpec(1)
         }).expand(self.num_envs).to(self.device)
-        info_spec = CompositeSpec({
-            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13), device=self.device),
-            "prev_action": self.drone.action_spec.to(self.device),
-        }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
-        self.observation_spec["info"] = info_spec
         self.stats = stats_spec.zero()
-        self.info = info_spec.zero()
-
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids, self.training)
@@ -287,7 +280,6 @@ class Forest(IsaacEnv):
 
     def _compute_state_and_obs(self):
         self.root_state = self.drone.get_state(env_frame=False)
-        self.info["drone_state"][:] = self.root_state[..., :13]
         # relative position and heading
         self.rpos = self.target_pos - self.root_state[..., :3]
 
@@ -316,17 +308,19 @@ class Forest(IsaacEnv):
             self.debug_draw.vector(x.expand_as(v[:, 0]), v[:, 0])
             self.debug_draw.vector(x.expand_as(v[:, -1]), v[:, -1])
 
-        return TensorDict({
-            "agents": TensorDict(
-                {
-                    "observation": obs,
-                    "intrinsics": self.drone.intrinsics
-                },
-                [self.num_envs]
-            ),
-            "stats": self.stats.clone(),
-            "info": self.info
-        }, self.batch_size)
+        return TensorDict(
+            {
+                "agents": TensorDict(
+                    {
+                        "observation": obs,
+                        "intrinsics": self.drone.intrinsics,
+                    },
+                    [self.num_envs],
+                ),
+                "stats": self.stats.clone(),
+            },
+            self.batch_size,
+        )
 
     def _compute_reward_and_done(self):
         # pose reward

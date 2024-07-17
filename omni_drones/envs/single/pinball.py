@@ -190,13 +190,8 @@ class Pinball(IsaacEnv):
             "score": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
-        info_spec = CompositeSpec({
-            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13)),
-        }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
-        self.observation_spec["info"] = info_spec
         self.stats = stats_spec.zero()
-        self.info = info_spec.zero()
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids, self.training)
@@ -228,7 +223,6 @@ class Pinball(IsaacEnv):
 
     def _compute_state_and_obs(self):
         self.root_state = self.drone.get_state()
-        self.info["drone_state"][:] = self.root_state[..., :13]
         self.ball_pos, ball_rot = self.get_env_poses(self.ball.get_world_poses())
         self.ball_vel = self.ball.get_velocities()
 
@@ -241,13 +235,15 @@ class Pinball(IsaacEnv):
             obs.append(t.expand(-1, self.time_encoding_dim).unsqueeze(1))
         obs = torch.cat(obs, dim=-1)
 
-        return TensorDict({
-            "agents": {
-                "observation": obs
+        return TensorDict(
+            {
+                "agents": {
+                    "observation": obs,
+                },
+                "stats": self.stats.clone(),
             },
-            "stats": self.stats.clone(),
-            "info": self.info
-        }, self.batch_size)
+            self.batch_size,
+        )
 
     def _compute_reward_and_done(self):
 

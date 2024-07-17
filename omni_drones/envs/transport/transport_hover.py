@@ -202,9 +202,6 @@ class TransportHover(IsaacEnv):
             state_key=("agents", "state")
         )
 
-        info_spec = CompositeSpec({
-            "payload_mass": UnboundedContinuousTensorSpec(1),
-        }).expand(self.num_envs).to(self.device)
         stats_spec = CompositeSpec({
             "return": UnboundedContinuousTensorSpec(self.drone.n),
             "episode_len": UnboundedContinuousTensorSpec(1),
@@ -213,9 +210,7 @@ class TransportHover(IsaacEnv):
             "uprightness": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(self.drone.n),
         }).expand(self.num_envs).to(self.device)
-        self.observation_spec["info"] = info_spec
         self.observation_spec["stats"] = stats_spec
-        self.info = info_spec.zero()
         self.stats = stats_spec.zero()
 
     def _reset_idx(self, env_ids: torch.Tensor):
@@ -244,7 +239,6 @@ class TransportHover(IsaacEnv):
             env_indices=env_ids
         )
 
-        self.info["payload_mass"][env_ids] = payload_masses.unsqueeze(-1).clone()
         self.stats[env_ids] = 0.
         distance = torch.cat([
             self.payload_target_pos-pos,
@@ -307,14 +301,16 @@ class TransportHover(IsaacEnv):
             self.payload_heading * self.payload_target_heading, dim=-1, keepdim=True
         )
 
-        return TensorDict({
-            "agents": {
-                "observation": obs,
-                "state": state,
+        return TensorDict(
+            {
+                "agents": {
+                    "observation": obs,
+                    "state": state,
+                },
+                "stats": self.stats.clone(),
             },
-            "info": self.info,
-            "stats": self.stats.clone(),
-        }, self.num_envs)
+            self.num_envs,
+        )
 
     def _compute_reward_and_done(self):
         vels = self.payload.get_velocities()

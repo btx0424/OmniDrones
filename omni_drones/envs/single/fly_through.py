@@ -285,12 +285,15 @@ class FlyThrough(IsaacEnv):
         self.stats["pos_error"].mul_(self.alpha).add_((1-self.alpha) * self.pos_error)
         self.stats["drone_uprightness"].mul_(self.alpha).add_((1-self.alpha) * self.drone_up[..., 2])
 
-        return TensorDict({
-            "agents": {
-                "observation": obs,
+        return TensorDict(
+            {
+                "agents": {
+                    "observation": obs,
+                },
+                "stats": self.stats.clone(),
             },
-            "stats": self.stats.clone(),
-        }, self.batch_size)
+            self.batch_size,
+        )
 
     def _compute_reward_and_done(self):
         crossed_plane = self.drone.pos[..., 0] > 0.

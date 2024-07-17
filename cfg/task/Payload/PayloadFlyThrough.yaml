@@ -10,8 +10,10 @@ defaults:
 env:
   num_envs: 32
 
-drone_model: Hummingbird
-force_sensor: false
+drone_model:
+  name: Hummingbird
+  controller: LeePositionController
+
 time_encoding: true
 
 reward_effort_weight: 0.1

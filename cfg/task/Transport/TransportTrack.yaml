@@ -10,9 +10,11 @@ env:
   num_envs: 1
   max_episode_length: 600
 
-drone_model: Hummingbird
+drone_model:
+  name: Hummingbird
+  controller: LeePositionController
+
 num_drones: 4
-force_sensor: false
 time_encoding: true
 
 payload_mass_scale: [0.5, 0.8]

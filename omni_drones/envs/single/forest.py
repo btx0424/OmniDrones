@@ -155,9 +155,10 @@ class Forest(IsaacEnv):
         from pxr import PhysxSchema, UsdPhysics
         from omni_drones.utils.poisson_disk import poisson_disk_sampling
 
-        drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
-        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
-        self.drone: MultirotorBase = drone_model(cfg=cfg)
+        drone_model_cfg = self.cfg.task.drone_model
+        self.drone, self.controller = MultirotorBase.make(
+            drone_model_cfg.name, drone_model_cfg.controller
+        )
 
         drone_prim = self.drone.spawn(translations=[(0.0, 0.0, 2.)])[0]
 

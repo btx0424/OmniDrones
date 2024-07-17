@@ -9,8 +9,10 @@ defaults:
 env:
   num_envs: 256
 
-drone_model: Hummingbird
-force_sensor: false
+drone_model:
+  name: Hummingbird
+  controller: LeePositionController
+
 size: 3
 
 reward_distance_scale: 1.2

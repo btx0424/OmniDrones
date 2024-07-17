@@ -32,9 +32,10 @@ def main(cfg):
     )
     n = 4
 
-    drone_model = "Hummingbird"
-    drone_cls = MultirotorBase.REGISTRY[drone_model]
-    drone = drone_cls()
+    drone_model_cfg = cfg.drone_model
+    drone, controller = MultirotorBase.make(
+        drone_model_cfg.name, "AttitudeController", cfg.sim.device
+    )
 
     translations = torch.zeros(n, 3)
     translations[:, 1] = torch.arange(n)
@@ -61,8 +62,6 @@ def main(cfg):
     # target_yaw_rate[:] = torch.pi
     target_pitch = torch.zeros(n, 1, device=sim.device)
     target_pitch[:] = torch.pi/6
-
-    controller = AttitudeController(9.8, uav_params=drone.params).to(sim.device)
 
     def reset():
         drone._reset_idx(torch.tensor([0]))

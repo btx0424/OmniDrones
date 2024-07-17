@@ -34,5 +34,8 @@ viewer:
   eye: [2., 2., 2.]
   lookat: [0., 0., 1.]
 
-drone_model: Hummingbird
+drone_model:
+  name: Hummingbird
+  controller: LeePositionController
+
 steps: 1000

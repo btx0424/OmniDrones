@@ -31,10 +31,10 @@ def main(cfg):
         device=cfg.sim.device,
     )
 
-    drone: MultirotorBase = MultirotorBase.REGISTRY[cfg.drone_model]()
-    controller = drone.DEFAULT_CONTROLLER(
-        g=9.81, uav_params=drone.params
-    ).to(sim.device)
+    drone_model_cfg = cfg.drone_model
+    drone, controller = MultirotorBase.make(
+        drone_model_cfg.name, drone_model_cfg.controller, cfg.sim.device
+    )
 
     group_cfg = TransportationCfg(num_drones=4)
     group = TransportationGroup(drone=drone, cfg=group_cfg)
@@ -68,7 +68,7 @@ def main(cfg):
             sim.step()
             continue
         drone_state = drone.get_state(False)[..., :13].squeeze(0)
-        action = controller(drone_state, target_pos=ref_pos)
+        action = controller.compute(drone_state, target_pos=ref_pos)
         drone.apply_action(action)
         sim.step()
         step += 1

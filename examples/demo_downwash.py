@@ -31,7 +31,10 @@ def main(cfg):
     )
     n = 4
 
-    drone: MultirotorBase = MultirotorBase.REGISTRY[cfg.drone_model]()
+    drone_model_cfg = cfg.drone_model
+    drone, controller = MultirotorBase.make(
+        drone_model_cfg.name, drone_model_cfg.controller, cfg.sim.device
+    )
 
     translations = torch.tensor([
         [0, -1, 1.5],
@@ -64,9 +67,6 @@ def main(cfg):
     drone.initialize()
     camera.initialize("/World/Camera")
 
-    controller = drone.DEFAULT_CONTROLLER(
-        g=9.81, uav_params=drone.params
-    ).to(sim.device)
 
     target_pos = torch.zeros(n, 3, device=sim.device)
     target_pos[:, 0] = 0
@@ -87,7 +87,7 @@ def main(cfg):
         distance = torch.norm(root_state[-1, :2] - target_pos[-1, :2])
         if distance < 0.05:
             target_pos[-1, 1] = -target_pos[-1, 1]
-        action = controller(root_state, target_pos=target_pos)
+        action = controller.compute(root_state, target_pos=target_pos)
         drone.apply_action(action)
         sim.step(i % 2 == 0)
 

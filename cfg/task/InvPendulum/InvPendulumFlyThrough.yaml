@@ -12,9 +12,11 @@ sim:
   gpu_max_rigid_contact_count: 524288
   gpu_max_rigid_patch_count: 524288
 
-drone_model: Hummingbird
+drone_model:
+  name: Hummingbird
+  controller: LeePositionController
+
 time_encoding: true
-force_sensor: false
 
 reward_effort_weight: 0.1
 reward_distance_scale: 1.2

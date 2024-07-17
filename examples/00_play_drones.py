@@ -26,7 +26,10 @@ def main(cfg):
     )
     n = 4
 
-    drone: MultirotorBase = MultirotorBase.REGISTRY[cfg.drone_model]()
+    drone_model_cfg = cfg.drone_model
+    drone, controller = MultirotorBase.make(
+        drone_model_cfg.name, drone_model_cfg.controller, cfg.sim.device
+    )
 
     translations = torch.zeros(n, 3)
     translations[:, 1] = torch.arange(n)
@@ -61,10 +64,6 @@ def main(cfg):
     init_pos, init_rpy[:, 2] = compute_ref(torch.tensor(0.0).to(sim.device))
     init_rot = euler_to_quaternion(init_rpy)
     init_vels = torch.zeros(n, 6, device=sim.device)
-
-    # create a position controller
-    # note: the controller is state-less (but holds its parameters)
-    controller = drone.DEFAULT_CONTROLLER(g=9.81, uav_params=drone.params).to(sim.device)
 
     def reset():
         drone._reset_idx(torch.tensor([0]))

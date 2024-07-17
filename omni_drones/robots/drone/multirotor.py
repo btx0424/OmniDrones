@@ -413,13 +413,13 @@ class MultirotorBase(RobotBase):
         return f
 
     @staticmethod
-    def make(drone_model: str, controller: str=None):
+    def make(drone_model: str, controller: str=None, device: str="cpu"):
         drone_cls = MultirotorBase.REGISTRY[drone_model]
         drone = drone_cls()
         from omni_drones.controllers import ControllerBase
         if controller is not None:
             controller_cls = ControllerBase.REGISTRY[controller]
-            controller = controller_cls(drone.gravity[1], drone.params)
+            controller = controller_cls(drone.gravity[1], drone.params).to(device)
         return drone, controller
 
 

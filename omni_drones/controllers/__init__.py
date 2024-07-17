@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 
+from .controller import ControllerBase
 from .lee_position_controller import (
     LeePositionController,
     AttitudeController,

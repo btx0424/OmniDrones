@@ -32,7 +32,10 @@ def main(cfg):
     )
     n = 4
 
-    drone: MultirotorBase = MultirotorBase.REGISTRY[cfg.drone_model]()
+    drone_model_cfg = cfg.drone_model
+    drone, controller = MultirotorBase.make(
+        drone_model_cfg.name, "RateController", cfg.sim.device
+    )
 
     translations = torch.zeros(n, 3)
     translations[:, 1] = torch.arange(n)
@@ -58,8 +61,6 @@ def main(cfg):
     target_rate = torch.zeros(n, 3, device=sim.device)
     target_rate[:, 2] = torch.pi
     target_height = 1.5 + 0.5 * torch.arange(n, device=sim.device).float()
-
-    controller = RateController(9.8, uav_params=drone.params).to(sim.device)
 
     def reset():
         drone._reset_idx(torch.tensor([0]))

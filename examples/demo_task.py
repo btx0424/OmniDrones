@@ -89,17 +89,7 @@ def main(cfg):
             nbins = int(action_transform.split(":")[1])
             transform = FromDiscreteAction(nbins=nbins)
             transforms.append(transform)
-        elif action_transform == "rate":
-            from omni_drones.controllers import RateController as _RateController
-            controller = _RateController(9.81, base_env.drone.params).to(base_env.device)
-            transform = RateController(controller)
-            transforms.append(transform)
-        elif action_transform == "attitude":
-            from omni_drones.controllers import AttitudeController as _AttitudeController
-            controller = _AttitudeController(9.81, base_env.drone.params).to(base_env.device)
-            transform = AttitudeController(vmap(vmap(controller)))
-            transforms.append(transform)
-        elif not action_transform.lower() == "none":
+        else:
             raise NotImplementedError(f"Unknown action transform: {action_transform}")
 
     env = TransformedEnv(base_env, Compose(*transforms))

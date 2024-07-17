@@ -57,12 +57,6 @@ def main(cfg):
     if cfg.task.get("ravel_obs_central", False):
         transform = ravel_composite(base_env.observation_spec, ("agents", "observation_central"))
         transforms.append(transform)
-    if (
-        cfg.task.get("ravel_intrinsics", True)
-        and ("agents", "intrinsics") in base_env.observation_spec.keys(True)
-        and isinstance(base_env.observation_spec[("agents", "intrinsics")], CompositeSpec)
-    ):
-        transforms.append(ravel_composite(base_env.observation_spec, ("agents", "intrinsics"), start_dim=-1))
 
     # optionally discretize the action space or use a controller
     action_transform: str = cfg.task.get("action_transform", None)
@@ -75,17 +69,7 @@ def main(cfg):
             nbins = int(action_transform.split(":")[1])
             transform = FromDiscreteAction(nbins=nbins)
             transforms.append(transform)
-        elif action_transform == "rate":
-            from omni_drones.controllers import RateController as _RateController
-            controller = _RateController(9.81, base_env.drone.params).to(base_env.device)
-            transform = RateController(controller)
-            transforms.append(transform)
-        elif action_transform == "attitude":
-            from omni_drones.controllers import AttitudeController as _AttitudeController
-            controller = _AttitudeController(9.81, base_env.drone.params).to(base_env.device)
-            transform = AttitudeController(vmap(vmap(controller)))
-            transforms.append(transform)
-        elif not action_transform.lower() == "none":
+        else:
             raise NotImplementedError(f"Unknown action transform: {action_transform}")
 
     env = TransformedEnv(base_env, Compose(*transforms)).train()
@@ -179,7 +163,7 @@ def main(cfg):
 
         return info
 
-    pbar = tqdm(collector)
+    pbar = tqdm(collector, total=total_frames//frames_per_batch)
     env.train()
     for i, data in enumerate(pbar):
         info = {"env_frames": collector._frames, "rollout_fps": collector._fps}

@@ -15,7 +15,6 @@ from omni_drones.utils.torchrl.transforms import (
     FromMultiDiscreteAction,
     FromDiscreteAction,
     ravel_composite,
-    VelController,
     AttitudeController,
     RateController,
 )
@@ -89,11 +88,6 @@ def main(cfg):
         elif action_transform.startswith("discrete"):
             nbins = int(action_transform.split(":")[1])
             transform = FromDiscreteAction(nbins=nbins)
-            transforms.append(transform)
-        elif action_transform == "velocity":
-            from omni_drones.controllers import LeePositionController
-            controller = LeePositionController(9.81, base_env.drone.params).to(base_env.device)
-            transform = VelController(vmap(controller))
             transforms.append(transform)
         elif action_transform == "rate":
             from omni_drones.controllers import RateController as _RateController

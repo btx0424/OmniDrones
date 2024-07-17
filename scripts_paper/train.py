@@ -131,12 +131,6 @@ def main(cfg):
             nbins = int(action_transform.split(":")[1])
             transform = FromDiscreteAction(nbins=nbins)
             transforms.append(transform)
-        elif action_transform == "velocity":
-            from omni_drones.controllers import LeePositionController
-            from omni_drones.utils.torchrl.transforms import VelController
-            controller = LeePositionController(9.81, base_env.drone.params).to(base_env.device)
-            transform = VelController(controller)
-            transforms.append(transform)
         elif action_transform == "attitude":
             from omni_drones.controllers import AttitudeController as Controller
             from omni_drones.utils.torchrl.transforms import AttitudeController

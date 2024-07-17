@@ -208,36 +208,6 @@ def ravel_composite(
         raise TypeError
 
 
-class VelController(Transform):
-    def __init__(
-        self,
-        controller,
-        action_key: str = ("agents", "action"),
-    ):
-        super().__init__([], in_keys_inv=[("info", "drone_state")])
-        self.controller = controller
-        self.action_key = action_key
-
-    def transform_input_spec(self, input_spec: TensorSpec) -> TensorSpec:
-        action_spec = input_spec[("full_action_spec", *self.action_key)]
-        spec = UnboundedContinuousTensorSpec(action_spec.shape[:-1]+(4,), device=action_spec.device)
-        input_spec[("full_action_spec", *self.action_key)] = spec
-        return input_spec
-
-    def _inv_call(self, tensordict: TensorDictBase) -> TensorDictBase:
-        drone_state = tensordict[("info", "drone_state")][..., :13]
-        action = tensordict[self.action_key]
-        target_vel, target_yaw = action.split([3, 1], -1)
-        cmds = self.controller(
-            drone_state,
-            target_vel=target_vel,
-            target_yaw=target_yaw*torch.pi
-        )
-        torch.nan_to_num_(cmds, 0.)
-        tensordict.set(self.action_key, cmds)
-        return tensordict
-
-
 class RateController(Transform):
     def __init__(
         self,

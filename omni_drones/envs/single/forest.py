@@ -274,9 +274,9 @@ class Forest(IsaacEnv):
         self.lidar.update(self.dt)
 
     def _compute_state_and_obs(self):
-        self.root_state = self.drone.get_state(env_frame=False)
+        self.drone_state = self.drone.get_state(env_frame=False)
         # relative position and heading
-        self.rpos = self.target_pos - self.root_state[..., :3]
+        self.rpos = self.target_pos - self.drone_state[..., :3]
 
         self.lidar_scan = self.lidar_range - (
             (self.lidar.data.ray_hits_w - self.lidar.data.pos_w.unsqueeze(1))
@@ -288,7 +288,7 @@ class Forest(IsaacEnv):
         distance = self.rpos.norm(dim=-1, keepdim=True)
         rpos_clipped = self.rpos / distance.clamp(1e-6)
         obs = {
-            "state": torch.cat([rpos_clipped, self.root_state[..., 3:]], dim=-1).squeeze(1),
+            "state": torch.cat([rpos_clipped, self.drone_state[..., 3:]], dim=-1).squeeze(1),
             "lidar": self.lidar_scan
         }
 
@@ -338,7 +338,7 @@ class Forest(IsaacEnv):
             | (self.drone.vel_w[..., :3].norm(dim=-1) > 2.5)
             | (einops.reduce(self.lidar_scan, "n 1 w h -> n 1", "max") >  (self.lidar_range - 0.3))
         )
-        hasnan = torch.isnan(self.root_state).any(-1)
+        hasnan = torch.isnan(self.drone_state).any(-1)
 
         terminated = misbehave | hasnan
         truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)

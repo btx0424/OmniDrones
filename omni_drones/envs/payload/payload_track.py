@@ -48,7 +48,7 @@ class PayloadTrack(IsaacEnv):
     ## Observation
 
     - `drone_payload_rpos` (3): The position of the drone relative to the payload's position.
-    - `root_state` (16 + `num_rotors`): The basic information of the drone (except its position),
+    - `drone_state` (16 + `num_rotors`): The basic information of the drone (except its position),
       containing its rotation (in quaternion), velocities (linear and angular),
       heading and up vectors, and the current throttle.
     - `target_payload_rpos` (3 * `future_traj_steps`): The position of the reference relative to the payload's position.
@@ -252,7 +252,7 @@ class PayloadTrack(IsaacEnv):
         self.effort = self.drone.apply_action(actions)
 
     def _compute_state_and_obs(self):
-        self.root_state = self.drone.get_state()
+        self.drone_state = self.drone.get_state()
         self.payload_pos = self.get_env_poses(self.payload.get_world_poses())[0]
         self.payload_vels = self.payload.get_velocities()
 
@@ -264,7 +264,7 @@ class PayloadTrack(IsaacEnv):
         obs = [
             self.drone_payload_rpos.flatten(1).unsqueeze(1),
             self.target_payload_rpos.flatten(1).unsqueeze(1),
-            self.root_state[..., 3:],
+            self.drone_state[..., 3:],
             self.payload_vels.unsqueeze(1), # 6
         ]
         if self.time_encoding:
@@ -310,7 +310,7 @@ class PayloadTrack(IsaacEnv):
         )
 
         misbehave = (self.drone.pos[..., 2] < 0.1) | (pos_rror > self.reset_thres)
-        hasnan = torch.isnan(self.root_state).any(-1)
+        hasnan = torch.isnan(self.drone_state).any(-1)
 
         terminated = misbehave | hasnan
         truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)

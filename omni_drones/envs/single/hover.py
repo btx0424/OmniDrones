@@ -68,7 +68,7 @@ class Hover(IsaacEnv):
     The observation space consists of the following part:
 
     - `rpos` (3): The position relative to the target hovering position.
-    - `root_state` (16 + `num_rotors`): The basic information of the drone (except its position),
+    - `drone_state` (16 + `num_rotors`): The basic information of the drone (except its position),
       containing its rotation (in quaternion), velocities (linear and angular),
       heading and up vectors, and the current throttle.
     - `rheading` (3): The difference between the reference heading and the current heading.
@@ -282,13 +282,13 @@ class Hover(IsaacEnv):
         self.effort = self.drone.apply_action(actions)
 
     def _compute_state_and_obs(self):
-        self.root_state = self.drone.get_state()
+        self.drone_state = self.drone.get_state()
 
         # relative position and heading
-        self.rpos = self.target_pos - self.root_state[..., :3]
-        self.rheading = self.target_heading - self.root_state[..., 13:16]
+        self.rpos = self.target_pos - self.drone_state[..., :3]
+        self.rheading = self.target_heading - self.drone_state[..., 13:16]
 
-        obs = [self.rpos, self.root_state[..., 3:], self.rheading,]
+        obs = [self.rpos, self.drone_state[..., 3:], self.rheading,]
         if self.time_encoding:
             t = (self.progress_buf / self.max_episode_length).unsqueeze(-1)
             obs.append(t.expand(-1, self.time_encoding_dim).unsqueeze(1))
@@ -334,14 +334,14 @@ class Hover(IsaacEnv):
         )
 
         misbehave = (self.drone.pos[..., 2] < 0.2) | (distance > 4)
-        hasnan = torch.isnan(self.root_state).any(-1)
+        hasnan = torch.isnan(self.drone_state).any(-1)
 
         terminated = misbehave | hasnan
         truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
         self.stats["pos_error"].lerp_(pos_error, (1-self.alpha))
         self.stats["heading_alignment"].lerp_(heading_alignment, (1-self.alpha))
-        self.stats["uprightness"].lerp_(self.root_state[..., 18], (1-self.alpha))
+        self.stats["uprightness"].lerp_(self.drone_state[..., 18], (1-self.alpha))
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
         self.stats["return"] += reward
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)

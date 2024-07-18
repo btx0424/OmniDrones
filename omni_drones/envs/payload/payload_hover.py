@@ -49,7 +49,7 @@ class PayloadHover(IsaacEnv):
     - `ref_payload_rpos` (3): The reference positions of the
       payload at multiple future time steps. This helps the agent anticipate the desired payload
       trajectory.
-    - `root_state` (16 + `num_rotors`): The basic information of the drone (except its position),
+    - `drone_state` (16 + `num_rotors`): The basic information of the drone (except its position),
       containing its rotation (in quaternion), velocities (linear and angular),
       heading and up vectors, and the current throttle.
     - `payload_vels` (6): The linear and angular velocities of the payload.
@@ -231,7 +231,7 @@ class PayloadHover(IsaacEnv):
         self.payload.apply_forces(forces)
 
     def _compute_state_and_obs(self):
-        self.root_state = self.drone.get_state()
+        self.drone_state = self.drone.get_state()
         self.payload_pos = self.get_env_poses(self.payload.get_world_poses())[0]
         self.payload_vels = self.payload.get_velocities()
 
@@ -241,7 +241,7 @@ class PayloadHover(IsaacEnv):
         obs = [
             self.drone_payload_rpos.flatten(1).unsqueeze(1),
             self.target_payload_rpos.flatten(1).unsqueeze(1),
-            self.root_state[..., 3:],
+            self.drone_state[..., 3:],
             self.payload_vels.unsqueeze(1), # 6
         ]
         if self.time_encoding:
@@ -295,7 +295,7 @@ class PayloadHover(IsaacEnv):
             (self.drone.pos[..., 2] < 0.2)
             | (self.payload_pos[..., 2] < 0.2).unsqueeze(-1)
         )
-        hasnan = torch.isnan(self.root_state).any(-1)
+        hasnan = torch.isnan(self.drone_state).any(-1)
 
         terminated = misbehave | hasnan
         truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)

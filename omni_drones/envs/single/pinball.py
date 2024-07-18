@@ -53,7 +53,7 @@ class Pinball(IsaacEnv):
     The observation space consists of the following parts:
 
     - `rpos` (3): The position of the ball relative to the drone.
-    - `root_state` (19 + num_rotors): The basic information of the drone
+    - `drone_state` (19 + num_rotors): The basic information of the drone
       containing its rotation (in quaternion), velocities (linear and angular),
       heading and up vectors, and the current throttle.
 
@@ -222,14 +222,14 @@ class Pinball(IsaacEnv):
         self.contact_sensor.update(self.dt)
 
     def _compute_state_and_obs(self):
-        self.root_state = self.drone.get_state()
+        self.drone_state = self.drone.get_state()
         self.ball_pos, ball_rot = self.get_env_poses(self.ball.get_world_poses())
         self.ball_vel = self.ball.get_velocities()
 
         # relative position and heading
         self.rpos =  self.ball_pos - self.drone.pos
 
-        obs = [self.root_state, self.rpos, self.ball_vel[..., :3]]
+        obs = [self.drone_state, self.rpos, self.ball_vel[..., :3]]
         if self.time_encoding:
             t = (self.progress_buf / self.max_episode_length).unsqueeze(-1)
             obs.append(t.expand(-1, self.time_encoding_dim).unsqueeze(1))
@@ -263,7 +263,7 @@ class Pinball(IsaacEnv):
             | (self.ball_pos[..., 2] > 4.5)
             | (self.ball_pos[..., :2].abs() > 2.5).any(-1)
         )
-        hasnan = torch.isnan(self.root_state).any(-1)
+        hasnan = torch.isnan(self.drone_state).any(-1)
 
         terminated = misbehave | hasnan
         truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)

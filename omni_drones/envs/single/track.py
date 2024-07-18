@@ -45,7 +45,7 @@ class Track(IsaacEnv):
 
     - `rpos` (3 * `future_traj_steps`): The relative position of the drone to the
       reference positions in the future `future_traj_steps` time steps.
-    - `root_state` (16 + `num_rotors`): The basic information of the drone (except its position),
+    - `drone_state` (16 + `num_rotors`): The basic information of the drone (except its position),
       containing its rotation (in quaternion), velocities (linear and angular),
       heading and up vectors, and the current throttle.
     - `time_encoding` (optional): The time encoding, which is a 4-dimensional
@@ -253,14 +253,14 @@ class Track(IsaacEnv):
             self.drone.base_link.apply_forces(wind_forces, is_global=True)
 
     def _compute_state_and_obs(self):
-        self.root_state = self.drone.get_state()
+        self.drone_state = self.drone.get_state()
 
         self.target_pos[:] = self._compute_traj(self.future_traj_steps, step_size=5)
 
-        self.rpos = self.target_pos - self.root_state[..., :3]
+        self.rpos = self.target_pos - self.drone_state[..., :3]
         obs = [
             self.rpos.flatten(1).unsqueeze(1),
-            self.root_state[..., 3:],
+            self.drone_state[..., 3:],
         ]
         if self.time_encoding:
             t = (self.progress_buf / self.max_episode_length).unsqueeze(-1)
@@ -313,7 +313,7 @@ class Track(IsaacEnv):
             (self.drone.pos[..., 2] < 0.1)
             | (distance > self.reset_thres)
         )
-        hasnan = torch.isnan(self.root_state).any(-1)
+        hasnan = torch.isnan(self.drone_state).any(-1)
 
         terminated = misbehave | hasnan
         truncated = (self.progress_buf >= self.max_episode_length - 1).unsqueeze(-1)

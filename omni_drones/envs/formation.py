@@ -223,11 +223,11 @@ class Formation(IsaacEnv):
         self.effort = self.drone.apply_action(actions)
 
     def _compute_state_and_obs(self):
-        self.root_states = self.drone.get_state()
+        self.drone_states = self.drone.get_state()
         pos = self.drone.pos
-        self.root_states[..., :3] = self.target_pos - pos
+        self.drone_states[..., :3] = self.target_pos - pos
 
-        obs_self = [self.root_states]
+        obs_self = [self.drone_states]
         if self.time_encoding:
             t = (self.progress_buf / self.max_episode_length).reshape(-1, 1, 1)
             obs_self.append(t.expand(-1, self.drone.n, self.time_encoding_dim))
@@ -240,7 +240,7 @@ class Formation(IsaacEnv):
         obs_others = torch.cat([
             relative_pos,
             self.drone_pdist,
-            vmap(others)(self.root_states[..., 3:13])
+            vmap(others)(self.drone_states[..., 3:13])
         ], dim=-1)
 
         obs = TensorDict({
@@ -248,7 +248,7 @@ class Formation(IsaacEnv):
             "obs_others": obs_others,
         }, [self.num_envs, self.drone.n])
 
-        state = TensorDict({"drones": self.root_states}, self.batch_size)
+        state = TensorDict({"drones": self.drone_states}, self.batch_size)
 
         return TensorDict(
             {
@@ -291,7 +291,7 @@ class Formation(IsaacEnv):
         self.last_cost_pos[:] = torch.square(distance)
 
         misbehave = (pos[..., 2] < 0.2).any(-1, keepdim=True) | (separation < 0.23)
-        hasnan = torch.isnan(self.root_states).any(-1)
+        hasnan = torch.isnan(self.drone_states).any(-1)
 
         terminated = misbehave | hasnan.any(-1, keepdim=True)
         truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)

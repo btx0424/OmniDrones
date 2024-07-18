@@ -9,7 +9,7 @@ The goal for the agent is to hover the payload at a target position.
 - `ref_payload_rpos` (3): The reference positions of the
 payload at multiple future time steps. This helps the agent anticipate the desired payload
 trajectory.
-- `root_state` (16 + `num_rotors`): The basic information of the drone (except its position),
+- `drone_state` (16 + `num_rotors`): The basic information of the drone (except its position),
 containing its rotation (in quaternion), velocities (linear and angular),
 heading and up vectors, and the current throttle.
 - `payload_vels` (6): The linear and angular velocities of the payload.

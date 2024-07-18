@@ -9,7 +9,7 @@ from falling to the ground, requiring precise control and timing.
 The observation space consists of the following parts:
 
 - `rpos` (3): The position of the ball relative to the drone.
-- `root_state` (19 + num_rotors): The basic information of the drone
+- `drone_state` (19 + num_rotors): The basic information of the drone
 containing its rotation (in quaternion), velocities (linear and angular),
 heading and up vectors, and the current throttle.
 

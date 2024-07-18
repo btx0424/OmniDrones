@@ -59,7 +59,7 @@ class DragonHover(IsaacEnv):
     The observation space consists of the following part:
 
     - `rpos` (3): The position relative to the target hovering position.
-    - `root_state` (16 + num_rotors): The basic information of the drone (except its position),
+    - `drone_state` (16 + num_rotors): The basic information of the drone (except its position),
       containing its rotation (in quaternion), velocities (linear and angular),
       heading and up vectors, and the current throttle.
     - `rheading` (3): The difference between the reference heading and the current heading.
@@ -203,13 +203,13 @@ class DragonHover(IsaacEnv):
         self.effort = self.drone.apply_action(actions)
 
     def _compute_state_and_obs(self):
-        self.root_state = self.drone.get_state()
+        self.drone_state = self.drone.get_state()
 
         # relative position and heading
         self.rpos = self.target_pos - self.drone.pos[..., 0, :]
         self.rheading = self.target_heading - self.drone.heading[..., 0, :]
 
-        obs = [self.rpos, self.root_state, self.rheading,]
+        obs = [self.rpos, self.drone_state, self.rheading,]
         if self.time_encoding:
             t = (self.progress_buf / self.max_episode_length).unsqueeze(-1)
             obs.append(t.expand(-1, self.time_encoding_dim).unsqueeze(1))
@@ -251,7 +251,7 @@ class DragonHover(IsaacEnv):
         )
 
         misbehave = (self.drone.pos[..., 2] < 0.2).any(-1) | (distance > 4)
-        hasnan = torch.isnan(self.root_state).any(-1)
+        hasnan = torch.isnan(self.drone_state).any(-1)
 
         terminated = misbehave | hasnan
         truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)

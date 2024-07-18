@@ -1,0 +1,58 @@
+session_name: omnidrones
+windows:
+  - window_name: run_train
+    layout: tiled
+    shell_command_before:
+      - conda activate sim
+      - cd scripts
+    panes:
+      - shell_command:
+        - python train.py task=Hover headless=false total_frames=500
+      - shell_command:
+        - sleep 1m
+        - python train.py task=Track headless=false total_frames=500
+      - shell_command:
+        - sleep 2m
+        - python train.py task=FlyThrough headless=false total_frames=125
+      - shell_command:
+        - sleep 3m
+        - python train.py task=Payload/PayloadHover headless=false total_frames=500
+      - shell_command:
+        - sleep 4m
+        - python train.py task=Payload/PayloadTrack headless=false total_frames=500
+      - shell_command:
+        - sleep 5m
+        - python train.py task=Payload/PayloadFlyThrough headless=false total_frames=125
+      - shell_command:
+        - sleep 6m
+        - python train.py task=InvPendulum/InvPendulumHover headless=false total_frames=500
+      - shell_command:
+        - sleep 7m
+        - python train.py task=InvPendulum/InvPendulumTrack headless=false total_frames=500
+      - shell_command:
+        - sleep 8m
+        - python train.py task=InvPendulum/InvPendulumFlyThrough headless=false total_frames=125
+      - shell_command:
+        - sleep 9m
+        - python train_lidar.py task=Forest headless=false total_frames=500
+      - shell_command:
+        - sleep 10m
+        - python train.py task=Pinball headless=false total_frames=125
+      - shell_command:
+        - sleep 11m
+        - python train.py task=Platform/PlatformHover headless=false total_frames=6
+      - shell_command:
+        - sleep 12m
+        - python train.py task=Platform/PlatformTrack headless=false total_frames=6
+      - shell_command:
+        - sleep 13m
+        - python train.py task=Platform/PlatformFlyThrough headless=false total_frames=6
+      - shell_command:
+        - sleep 14m
+        - python train.py task=Transport/TransportHover headless=false total_frames=3
+      - shell_command:
+        - sleep 15m
+        - python train.py task=Transport/TransportTrack headless=false total_frames=3
+      - shell_command:
+        - sleep 16m
+        - python train.py task=Transport/TransportFlyThrough headless=false total_frames=3

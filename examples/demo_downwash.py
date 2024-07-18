@@ -47,7 +47,7 @@ def main(cfg):
 
     camera_cfg = PinholeCameraCfg(
         sensor_tick=0,
-        resolution=(960, 720),
+        resolution=(320, 240),
         data_types=["rgb"],
         usd_params=PinholeCameraCfg.UsdCameraCfg(
             focal_length=24.0,

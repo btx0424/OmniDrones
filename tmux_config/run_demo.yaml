@@ -1,0 +1,16 @@
+session_name: omnidrones
+windows:
+  - window_name: run_demo
+    layout: tiled
+    shell_command_before:
+      - conda activate sim
+      - cd examples
+    panes:
+      - shell_command:
+        - python demo_downwash.py
+      - shell_command:
+        - sleep 1m
+        - python demo_transport.py
+      - shell_command:
+        - sleep 2m
+        - python demo_task.py

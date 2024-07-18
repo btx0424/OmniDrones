@@ -1,0 +1,13 @@
+session_name: omnidrones
+windows:
+  - window_name: run_example
+    layout: tiled
+    shell_command_before:
+      - conda activate sim
+      - cd examples
+    panes:
+      - shell_command:
+        - python 00_play_drones.py
+      - shell_command:
+        - sleep 1m
+        - python 01_drones_with_cams.py

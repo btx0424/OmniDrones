@@ -2,10 +2,10 @@ import torch
 
 import hydra
 from omegaconf import OmegaConf
-from omni_drones import CONFIG_PATH, init_simulation_app
+from omni_drones import init_simulation_app
 
 
-@hydra.main(version_base=None, config_path=CONFIG_PATH, config_name="train")
+@hydra.main(version_base=None, config_path=".", config_name="demo")
 def main(cfg):
     OmegaConf.resolve(cfg)
     simulation_app = init_simulation_app(cfg)
@@ -34,7 +34,7 @@ def main(cfg):
 
     camera_cfg = PinholeCameraCfg(
         sensor_tick=0,
-        resolution=(960, 720),
+        resolution=(320, 240),
         data_types=["rgb", "distance_to_camera"],
     )
     # # camera for visualization
@@ -89,7 +89,7 @@ def main(cfg):
     action[..., 18] = 1 / 3
 
     from tqdm import tqdm
-    for i in tqdm(range(5000)):
+    for i in tqdm(range(500)):
         if sim.is_stopped():
             break
         if not sim.is_playing():

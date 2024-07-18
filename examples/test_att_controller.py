@@ -5,7 +5,7 @@ import torch
 
 import hydra
 from omegaconf import OmegaConf
-from omni_drones import CONFIG_PATH, init_simulation_app
+from omni_drones import init_simulation_app
 from tensordict import TensorDict
 
 
@@ -46,7 +46,7 @@ def main(cfg):
 
     camera_cfg = PinholeCameraCfg(
         sensor_tick=0,
-        resolution=(960, 720),
+        resolution=(320, 240),
         data_types=["rgb", "distance_to_camera"],
     )
     # cameras used as sensors

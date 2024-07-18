@@ -46,7 +46,7 @@ def main(cfg):
 
     camera_cfg = PinholeCameraCfg(
         sensor_tick=0,
-        resolution=(960, 720),
+        resolution=(320, 240),
         data_types=["rgb", "distance_to_camera"],
     )
     # cameras used as sensors

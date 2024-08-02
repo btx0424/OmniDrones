@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.abspath("../../"))
 project = 'OmniDrones'
 copyright = '2023, btx0424'
 author = 'btx0424'
-release = '0.1'
+release = '0.1.1'
 master_doc = 'index'
 
 # -- General configuration ---------------------------------------------------

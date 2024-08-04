@@ -12,8 +12,10 @@ env:
 # ../viewer:
 #   eye: [0., 8., 6.]
 
-drone_model: Hummingbird
-force_sensor: false
+drone_model:
+  name: Hummingbird
+  controller: LeePositionController
+
 time_encoding: true
 
 lidar_range: 4.

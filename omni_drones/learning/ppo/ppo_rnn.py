@@ -382,17 +382,14 @@ class PPORNNPolicy(TensorDictModuleBase):
         self.actor_opt.step()
         self.critic_opt.step()
         explained_var = 1 - F.mse_loss(values, b_returns) / b_returns.var()
-        return TensorDict(
-            {
-                "policy_loss": policy_loss,
-                "value_loss": value_loss,
-                "entropy": entropy,
-                "actor_grad_norm": actor_grad_norm,
-                "critic_grad_norm": critic_grad_norm,
-                "explained_var": explained_var,
-            },
-            [],
-        )
+        return TensorDict({
+            "policy_loss": policy_loss,
+            "value_loss": value_loss,
+            "entropy": entropy,
+            "actor_grad_norm": actor_grad_norm,
+            "critic_grad_norm": critic_grad_norm,
+            "explained_var": explained_var,
+        }, [])
 
 
 def make_batch(tensordict: TensorDict, num_minibatches: int, seq_len: int = -1):

@@ -10,8 +10,10 @@ env:
   num_envs: 32
   max_episode_length: 600
 
-drone_model: Iris
-force_sensor: false
+drone_model:
+  name: Hummingbird # Iris
+  controller: LeePositionController
+
 time_encoding: true
 
 action_transform: null

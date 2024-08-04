@@ -89,7 +89,7 @@ class Dragon(MultirotorBase):
 
         self.action_split = [self.cfg.rotor_cfg.num_rotors, self.num_links * 2, (self.num_links-1) * 2]
         action_dim = sum(self.action_split)
-        self.action_spec = BoundedTensorSpec(-1, 1, action_dim, device=self.device)
+        self._action_spec = BoundedTensorSpec(-1, 1, action_dim, device=self.device)
         observation_dim = (
             self.num_links * (
                 13 + 3 + 3

@@ -10,8 +10,10 @@ env:
   num_envs: 2048
   max_episode_length: 800
 
-drone_model: Iris
-force_sensor: false
+drone_model:
+  name: Iris
+  controller: LeePositionController
+
 time_encoding: true
 
 action_transform: null

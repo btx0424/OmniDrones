@@ -85,9 +85,10 @@ class Rearrange(IsaacEnv):
         self.stats = stats_spec.zero()
 
     def _design_scene(self) -> Optional[List[str]]:
-        drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
-        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
-        self.drone: MultirotorBase = drone_model(cfg=cfg)
+        drone_model_cfg = self.cfg.task.drone_model
+        self.drone, self.controller = MultirotorBase.make(
+            drone_model_cfg.name, drone_model_cfg.controller
+        )
 
         scene_utils.design_scene()
 
@@ -156,11 +157,14 @@ class Rearrange(IsaacEnv):
 
         self.stats["pos_error"].lerp_(self.target_drone_rpos.norm(dim=-1), 1-self.alpha)
         # self.stats
-        return TensorDict({
-            "drone.obs": obs,
-            "drone.state": state,
-            "stats": self.stats
-        }, self.batch_size)
+        return TensorDict(
+            {
+                "drone.obs": obs,
+                "drone.state": state,
+                "stats": self.stats.clone(),
+            },
+            self.batch_size,
+        )
 
     def _compute_reward_and_done(self):
         pos, rot = self.get_env_poses(self.drone.get_world_poses())
@@ -181,18 +185,21 @@ class Rearrange(IsaacEnv):
 
         self._tensordict["return"] += reward
 
-        terminated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-        done_misbehave = ((pos[..., 2].unsqueeze(-1) < 0.2) | (distance > 5.0)).any(1)
-        done_hasnan = torch.isnan(self.drone_state).any(-1).any(-1, keepdim=True)
+        misbehave = ((pos[..., 2].unsqueeze(-1) < 0.2) | (distance > 5.0)).any(1)
+        hasnan = torch.isnan(self.drone_state).any(-1)
 
-        done = terminated | done_misbehave | done_hasnan
+        terminated = misbehave | hasnan.any(-1, keepdim=True)
+        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
         return TensorDict(
             {
-                "reward": {"drone.reward": reward},
+                "reward": {
+                    "drone.reward": reward,
+                },
                 "return": self._tensordict["return"],
-                "done": done,
+                "done": terminated | truncated,
+                "terminated": terminated,
+                "truncated": truncated,
             },
             self.batch_size,
         )
-

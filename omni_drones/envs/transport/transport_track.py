@@ -148,9 +148,11 @@ class TransportTrack(IsaacEnv):
         self.draw = _debug_draw.acquire_debug_draw_interface()
 
     def _design_scene(self):
-        drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
-        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
-        self.drone: MultirotorBase = drone_model(cfg=cfg)
+        drone_model_cfg = self.cfg.task.drone_model
+        self.drone, self.controller = MultirotorBase.make(
+            drone_model_cfg.name, drone_model_cfg.controller
+        )
+
         group_cfg = TransportationCfg(num_drones=self.cfg.task.num_drones)
         self.group = TransportationGroup(drone=self.drone, cfg=group_cfg)
 
@@ -172,15 +174,15 @@ class TransportTrack(IsaacEnv):
             "obs_payload": UnboundedContinuousTensorSpec((1, payload_state_dim)),
         }).to(self.device)
 
-        state_spec = CompositeSpec(
-            drones=UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim)),
-            payload=UnboundedContinuousTensorSpec((1, payload_state_dim))
-        ).to(self.device)
+        observation_central_spec = CompositeSpec({
+            "state_drones": UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim)),
+            "state_payload": UnboundedContinuousTensorSpec((1, payload_state_dim))
+        }).to(self.device)
 
         self.observation_spec = CompositeSpec({
             "agents": {
                 "observation": observation_spec.expand(self.drone.n),
-                "observation_central": state_spec,
+                "observation_central": observation_central_spec,
             }
         }).expand(self.num_envs).to(self.device)
         self.action_spec = CompositeSpec({
@@ -193,9 +195,6 @@ class TransportTrack(IsaacEnv):
                 "reward": UnboundedContinuousTensorSpec((self.drone.n, 1))
             }
         }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
-        }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", self.drone.n,
             observation_key=("agents", "observation"),
@@ -203,9 +202,6 @@ class TransportTrack(IsaacEnv):
             reward_key=("agents", "reward"),
         )
 
-        info_spec = CompositeSpec({
-            "payload_mass": UnboundedContinuousTensorSpec(1),
-        }).expand(self.num_envs).to(self.device)
         stats_spec = CompositeSpec({
             "return": UnboundedContinuousTensorSpec(self.drone.n),
             "episode_len": UnboundedContinuousTensorSpec(1),
@@ -214,9 +210,7 @@ class TransportTrack(IsaacEnv):
             "uprightness": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(self.drone.n),
         }).expand(self.num_envs).to(self.device)
-        self.observation_spec["info"] = info_spec
         self.observation_spec["stats"] = stats_spec
-        self.info = info_spec.zero()
         self.stats = stats_spec.zero()
 
     def _reset_idx(self, env_ids: torch.Tensor):
@@ -241,7 +235,6 @@ class TransportTrack(IsaacEnv):
         payload_masses = self.payload_mass_dist.sample(env_ids.shape)
         self.payload.set_masses(payload_masses, env_ids)
 
-        self.info["payload_mass"][env_ids] = payload_masses.unsqueeze(-1).clone()
         self.stats[env_ids] = 0.
 
         if self._should_render(0) and (env_ids == self.central_env_idx).any() :
@@ -301,22 +294,24 @@ class TransportTrack(IsaacEnv):
         obs["obs_payload"] = payload_state.expand(-1, self.drone.n, -1).unsqueeze(2) # [..., 1, 22]
 
         state = TensorDict({}, self.num_envs)
-        state["payload"] = payload_state # [..., 1, 22]
-        state["drones"] = obs["obs_self"].squeeze(2) # [..., n, state_dim]
+        state["state_payload"] = payload_state # [..., 1, 22]
+        state["state_drones"] = obs["obs_self"].squeeze(2) # [..., n, state_dim]
 
         self.stats["pos_error"].lerp_(self.target_distance, (1-self.alpha))
         # self.stats["heading_alignment"].lerp_(heading_alignment, (1-self.alpha))
         self.stats["uprightness"].lerp_(self.payload_up[:, 2].unsqueeze(-1), (1-self.alpha))
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
 
-        return TensorDict({
-            "agents": {
-                "observation": obs,
-                "state": state,
+        return TensorDict(
+            {
+                "agents": {
+                    "observation": obs,
+                    "observation_central": state,
+                },
+                "stats": self.stats.clone(),
             },
-            "info": self.info,
-            "stats": self.stats
-        }, self.num_envs)
+            self.num_envs,
+        )
 
     def _compute_reward_and_done(self):
         vels = self.payload.get_velocities()
@@ -356,15 +351,14 @@ class TransportTrack(IsaacEnv):
             )
         ).unsqueeze(-1)
 
-        done_hasnan = torch.isnan(self.drone_states).any(-1)
-        done_fall = self.drone_states[..., 2] < 0.2
-
-        done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-            | done_fall.any(-1, keepdim=True)
-            | done_hasnan.any(-1, keepdim=True)
+        misbehave = (
+            (self.drone_states[..., 2] < 0.2).any(-1, keepdim=True)
             | (self.target_distance > self.reset_thres)
         )
+        hasnan = torch.isnan(self.drone_states).any(-1)
+
+        terminated = misbehave | hasnan.any(-1, keepdim=True)
+        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
         self.stats["return"].add_(reward.mean(1))
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(-1)
@@ -372,9 +366,11 @@ class TransportTrack(IsaacEnv):
         return TensorDict(
             {
                 "agents": {
-                    "reward": reward
+                    "reward": reward,
                 },
-                "done": done,
+                "done": terminated | truncated,
+                "terminated": terminated,
+                "truncated": truncated,
             },
             self.batch_size,
         )

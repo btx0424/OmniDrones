@@ -10,13 +10,15 @@ env:
   num_envs: 1024
   max_episode_length: 600
 
-drone_model: Hummingbird
-force_sensor: false
+drone_model:
+  name: Hummingbird
+  controller: LeePositionController
+
 time_encoding: true
 
 safe_distance: 0.4
 formation: hexagon # tetragon
 
-flatten_state: false
+ravel_obs_central: false
 
 action_transform: null

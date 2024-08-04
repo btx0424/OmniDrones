@@ -4,7 +4,7 @@ import hydra
 import torch
 from torch.func import vmap
 from omegaconf import OmegaConf
-from omni_drones import CONFIG_PATH, init_simulation_app
+from omni_drones import init_simulation_app
 
 from tensordict import TensorDict
 
@@ -31,10 +31,10 @@ def main(cfg):
         device=cfg.sim.device,
     )
 
-    drone: MultirotorBase = MultirotorBase.REGISTRY[cfg.drone_model]()
-    controller = drone.DEFAULT_CONTROLLER(
-        g=9.81, uav_params=drone.params
-    ).to(sim.device)
+    drone_model_cfg = cfg.drone_model
+    drone, controller = MultirotorBase.make(
+        drone_model_cfg.name, drone_model_cfg.controller, cfg.sim.device
+    )
 
     group_cfg = TransportationCfg(num_drones=4)
     group = TransportationGroup(drone=drone, cfg=group_cfg)
@@ -62,17 +62,19 @@ def main(cfg):
         + torch.tensor([3.0, 0.0, 2.5])
     ).to(sim.device)
 
-    step = 0
-    while simulation_app.is_running():
+    from tqdm import tqdm
+    t = tqdm(range(cfg.steps))
+    for i in t:
+        if sim.is_stopped():
+            break
         if not sim.is_playing():
-            sim.step()
             continue
         drone_state = drone.get_state(False)[..., :13].squeeze(0)
-        action = controller(drone_state, target_pos=ref_pos)
+        action = controller.compute(drone_state, target_pos=ref_pos)
         drone.apply_action(action)
-        sim.step()
-        step += 1
-        if step % 500 == 0:
+        sim.step(i % 2 == 0)
+
+        if i % 500 == 0:
             group.set_world_poses(*init_poses)
             group.set_joint_positions(init_joint_pos)
 

@@ -9,7 +9,7 @@ to serve as a sanity check.
 The observation space consists of the following part:
 
 - `rpos` (3): The position relative to the target hovering position.
-- `root_state` (16 + `num_rotors`): The basic information of the drone (except its position),
+- `drone_state` (16 + `num_rotors`): The basic information of the drone (except its position),
 containing its rotation (in quaternion), velocities (linear and angular),
 heading and up vectors, and the current throttle.
 - `rheading` (3): The difference between the reference heading and the current heading.

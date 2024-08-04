@@ -117,9 +117,10 @@ class Formation(IsaacEnv):
         self.last_cost_pos = torch.zeros(self.num_envs, 1, device=self.device)
 
     def _design_scene(self) -> Optional[List[str]]:
-        drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
-        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
-        self.drone: MultirotorBase = drone_model(cfg=cfg)
+        drone_model_cfg = self.cfg.task.drone_model
+        self.drone, self.controller = MultirotorBase.make(
+            drone_model_cfg.name, drone_model_cfg.controller
+        )
 
         scene_utils.design_scene()
 
@@ -173,11 +174,6 @@ class Formation(IsaacEnv):
                 "reward": UnboundedContinuousTensorSpec((self.drone.n, 1))
             }
         }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-            "terminated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-            "truncated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-        }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone",
             self.drone.n,
@@ -227,11 +223,11 @@ class Formation(IsaacEnv):
         self.effort = self.drone.apply_action(actions)
 
     def _compute_state_and_obs(self):
-        self.root_states = self.drone.get_state()
+        self.drone_states = self.drone.get_state()
         pos = self.drone.pos
-        self.root_states[..., :3] = self.target_pos - pos
+        self.drone_states[..., :3] = self.target_pos - pos
 
-        obs_self = [self.root_states]
+        obs_self = [self.drone_states]
         if self.time_encoding:
             t = (self.progress_buf / self.max_episode_length).reshape(-1, 1, 1)
             obs_self.append(t.expand(-1, self.drone.n, self.time_encoding_dim))
@@ -244,7 +240,7 @@ class Formation(IsaacEnv):
         obs_others = torch.cat([
             relative_pos,
             self.drone_pdist,
-            vmap(others)(self.root_states[..., 3:13])
+            vmap(others)(self.drone_states[..., 3:13])
         ], dim=-1)
 
         obs = TensorDict({
@@ -252,15 +248,18 @@ class Formation(IsaacEnv):
             "obs_others": obs_others,
         }, [self.num_envs, self.drone.n])
 
-        state = TensorDict({"drones": self.root_states}, self.batch_size)
+        state = TensorDict({"drones": self.drone_states}, self.batch_size)
 
-        return TensorDict({
-            "agents": {
-                "observation": obs,
-                "observation_central": state,
+        return TensorDict(
+            {
+                "agents": {
+                    "observation": obs,
+                    "observation_central": state,
+                },
+                "stats": self.stats.clone(),
             },
-            "stats": self.stats
-        }, self.batch_size)
+            self.batch_size,
+        )
 
     def _compute_reward_and_done(self):
         # cost_l = vmap(cost_formation_laplacian)(pos, desired_L=self.formation_L)
@@ -291,10 +290,11 @@ class Formation(IsaacEnv):
         self.last_cost_h[:] = cost_h
         self.last_cost_pos[:] = torch.square(distance)
 
-        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-        crash = (pos[..., 2] < 0.2).any(-1, keepdim=True)
+        misbehave = (pos[..., 2] < 0.2).any(-1, keepdim=True) | (separation < 0.23)
+        hasnan = torch.isnan(self.drone_states).any(-1)
 
-        terminated = crash | (separation<0.23)
+        terminated = misbehave | hasnan.any(-1, keepdim=True)
+        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
         self.stats["return"].add_(reward)
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(-1)
@@ -305,7 +305,7 @@ class Formation(IsaacEnv):
         return TensorDict(
             {
                 "agents": {
-                    "reward": reward.unsqueeze(1).expand(-1, self.drone.n, 1)
+                    "reward": reward.unsqueeze(1).expand(-1, self.drone.n, 1),
                 },
                 "done": terminated | truncated,
                 "terminated": terminated,

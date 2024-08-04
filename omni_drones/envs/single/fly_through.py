@@ -152,9 +152,10 @@ class FlyThrough(IsaacEnv):
 
 
     def _design_scene(self):
-        drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
-        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
-        self.drone: MultirotorBase = drone_model(cfg=cfg)
+        drone_model_cfg = self.cfg.task.drone_model
+        self.drone, self.controller = MultirotorBase.make(
+            drone_model_cfg.name, drone_model_cfg.controller
+        )
 
         kit_utils.create_ground_plane(
             "/World/defaultGroundPlane",
@@ -203,9 +204,6 @@ class FlyThrough(IsaacEnv):
             "agents": {
                 "reward": UnboundedContinuousTensorSpec((1, 1))
             }
-        }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
         }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,
@@ -287,12 +285,15 @@ class FlyThrough(IsaacEnv):
         self.stats["pos_error"].mul_(self.alpha).add_((1-self.alpha) * self.pos_error)
         self.stats["drone_uprightness"].mul_(self.alpha).add_((1-self.alpha) * self.drone_up[..., 2])
 
-        return TensorDict({
-            "agents": {
-                "observation": obs,
+        return TensorDict(
+            {
+                "agents": {
+                    "observation": obs,
+                },
+                "stats": self.stats.clone(),
             },
-            "stats": self.stats,
-        }, self.batch_size)
+            self.batch_size,
+        )
 
     def _compute_reward_and_done(self):
         crossed_plane = self.drone.pos[..., 0] > 0.
@@ -339,7 +340,6 @@ class FlyThrough(IsaacEnv):
             + reward_effort
         ) # * (1 - collision_reward)
 
-        invalid = (crossing_plane & ~through_gate)
         misbehave = (
             (self.drone.pos[..., 2] < 0.2)
             | (self.drone.pos[..., 2] > 2.5)
@@ -347,14 +347,13 @@ class FlyThrough(IsaacEnv):
             | (distance_to_target > 6.)
         )
         hasnan = torch.isnan(self.drone_state).any(-1)
+        invalid = (crossing_plane & ~through_gate)
 
         terminated = misbehave | hasnan | invalid
         truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
         if self.reset_on_collision:
             terminated |= collision
-
-        done = terminated | truncated
 
         self.stats["success"].bitwise_or_(distance_to_target < 0.2)
         self.stats["return"].add_(reward)
@@ -363,9 +362,9 @@ class FlyThrough(IsaacEnv):
         return TensorDict(
             {
                 "agents": {
-                    "reward": reward.unsqueeze(-1)
+                    "reward": reward.unsqueeze(-1),
                 },
-                "done": done,
+                "done": terminated | truncated,
                 "terminated": terminated,
                 "truncated": truncated,
             },

@@ -142,3 +142,28 @@ Developer Guide: Python Environments
       - 0.1.1
       - 0.3.2
       - 0.3.2
+
+Developer Guide: Test Run
+-------------------------
+
+To verify that every task is working properly, we provide a simple test to run the tasks using tmuxp.
+
+Install tmuxp
+
+.. code:: console
+
+    sudo apt install tumxp
+
+To verify train, run
+
+.. code:: console
+
+    tmuxp load tmux_config/run_train.yaml
+
+To verify demo, example, and test, run
+
+.. code:: console
+
+    tmuxp load tmux_config/run_demo.yaml
+    tmuxp load tmux_config/run_example.yaml
+    tmuxp load tmux_config/run_test.yaml

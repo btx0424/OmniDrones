@@ -7,7 +7,7 @@ lemniscate trajectory in the 3D space.
 
 - `rpos` (3 * `future_traj_steps`): The relative position of the drone to the
 reference positions in the future `future_traj_steps` time steps.
-- `root_state` (16 + `num_rotors`): The basic information of the drone (except its position),
+- `drone_state` (16 + `num_rotors`): The basic information of the drone (except its position),
 containing its rotation (in quaternion), velocities (linear and angular),
 heading and up vectors, and the current throttle.
 - `time_encoding` (optional): The time encoding, which is a 4-dimensional

@@ -163,9 +163,10 @@ class InvPendulumFlyThrough(IsaacEnv):
         self.drone_traj_vis = []
 
     def _design_scene(self):
-        drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
-        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
-        self.drone: MultirotorBase = drone_model(cfg=cfg)
+        drone_model_cfg = self.cfg.task.drone_model
+        self.drone, self.controller = MultirotorBase.make(
+            drone_model_cfg.name, drone_model_cfg.controller
+        )
 
         kit_utils.create_ground_plane(
             "/World/defaultGroundPlane",
@@ -225,11 +226,6 @@ class InvPendulumFlyThrough(IsaacEnv):
             "agents": CompositeSpec({
                 "reward": UnboundedContinuousTensorSpec((1, 1))
             })
-        }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-            "terminated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-            "truncated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
         }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,
@@ -329,12 +325,15 @@ class InvPendulumFlyThrough(IsaacEnv):
             self.drone_traj_vis.append(drone_pos)
             self.payload_traj_vis.append(payload_pos)
 
-        return TensorDict({
-            "agents": {
-                "observation": obs,
+        return TensorDict(
+            {
+                "agents": {
+                    "observation": obs,
+                },
+                "stats": self.stats.clone(),
             },
-            "stats": self.stats
-        }, self.batch_size)
+            self.batch_size,
+        )
 
     def _compute_reward_and_done(self):
         pos, rot, vels = self.drone_state[..., :13].split([3, 4, 6], dim=-1)
@@ -392,7 +391,7 @@ class InvPendulumFlyThrough(IsaacEnv):
         return TensorDict(
             {
                 "agents": {
-                    "reward": reward.unsqueeze(-1)
+                    "reward": reward.unsqueeze(-1),
                 },
                 "done": terminated | truncated,
                 "terminated": terminated,

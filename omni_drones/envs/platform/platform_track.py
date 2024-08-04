@@ -25,7 +25,6 @@ import torch
 import torch.distributions as D
 from torch.func import vmap
 
-import omni.isaac.core.utils.prims as prim_utils
 import omni.isaac.core.objects as objects
 from omni.isaac.debug_draw import _debug_draw
 
@@ -36,7 +35,7 @@ from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec, DiscreteT
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.views import RigidPrimView
-from omni_drones.utils.torch import cpos, off_diag, others, normalize
+from omni_drones.utils.torch import cpos, off_diag, others, normalize, quat_rotate
 from omni_drones.robots.drone import MultirotorBase
 from omni_drones.utils.scene import design_scene
 from omni_drones.utils.torch import euler_to_quaternion, quat_rotate
@@ -159,9 +158,10 @@ class PlatformTrack(IsaacEnv):
         self.draw = _debug_draw.acquire_debug_draw_interface()
 
     def _design_scene(self):
-        drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
-        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
-        self.drone: MultirotorBase = drone_model(cfg=cfg)
+        drone_model_cfg = self.cfg.task.drone_model
+        self.drone, self.controller = MultirotorBase.make(
+            drone_model_cfg.name, drone_model_cfg.controller
+        )
 
         platform_cfg = PlatformCfg(
             num_drones=self.num_drones,
@@ -199,11 +199,11 @@ class PlatformTrack(IsaacEnv):
         observation_spec = CompositeSpec({
             "obs_self": UnboundedContinuousTensorSpec((1, drone_state_dim + self.drone.n)),
             "obs_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13)),
-            "obs_frame": UnboundedContinuousTensorSpec((1, frame_state_dim)),
+            "state_frame": UnboundedContinuousTensorSpec((1, frame_state_dim)),
         }).to(self.device)
         observation_central_spec = CompositeSpec({
-            "drones": UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim + self.drone.n)),
-            "frame": UnboundedContinuousTensorSpec((1, frame_state_dim)),
+            "state_drones": UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim + self.drone.n)),
+            "state_frame": UnboundedContinuousTensorSpec((1, frame_state_dim)),
         }).to(self.device)
         self.observation_spec = CompositeSpec({
             "agents": {
@@ -220,9 +220,6 @@ class PlatformTrack(IsaacEnv):
             "agents": {
                 "reward": UnboundedContinuousTensorSpec((self.drone.n, 1))
             }
-        }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
         }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", self.drone.n,
@@ -319,11 +316,11 @@ class PlatformTrack(IsaacEnv):
         obs["obs_others"] = torch.cat(
             [self.drone_rpos, vmap(others)(self.drone_states[..., 3:13])], dim=-1
         )
-        obs["obs_frame"] = platform_state.unsqueeze(1).expand(-1, self.drone.n, 1, -1)
+        obs["state_frame"] = platform_state.unsqueeze(1).expand(-1, self.drone.n, 1, -1)
 
         state = TensorDict({}, [self.num_envs])
-        state["drones"] = obs["obs_self"].squeeze(2)    # [num_envs, drone.n, drone_state_dim]
-        state["frame"] = platform_state                # [num_envs, 1, platform_state_dim]
+        state["state_drones"] = obs["obs_self"].squeeze(2)    # [num_envs, drone.n, drone_state_dim]
+        state["state_frame"] = platform_state                # [num_envs, 1, platform_state_dim]
 
         self.up_alignment = torch.sum(self.platform.up * target_up, dim=-1)
 
@@ -337,7 +334,7 @@ class PlatformTrack(IsaacEnv):
                     "observation": obs,
                     "observation_central": state,
                 },
-                "stats": self.stats
+                "stats": self.stats.clone(),
             },
             self.batch_size,
         )
@@ -370,20 +367,22 @@ class PlatformTrack(IsaacEnv):
             (self.drone_states[..., 2] < 0.2).any(-1, keepdim=True)
             | (self.target_distance > self.reset_thres)
         )
-        hasnan = torch.isnan(self.drone_states).any(-1).any(-1, keepdim=True)
+        hasnan = torch.isnan(self.drone_states).any(-1)
 
-        terminated = misbehave | hasnan
+        terminated = misbehave | hasnan.any(-1, keepdim=True)
         truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-        done = terminated | truncated
 
         self.stats["return"].add_(reward)
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(-1)
+
         return TensorDict(
             {
                 "agents": {
-                    "reward": reward.unsqueeze(1)
+                    "reward": reward.unsqueeze(1),
                 },
-                "done": done,
+                "done": terminated | truncated,
+                "terminated": terminated,
+                "truncated": truncated,
             },
             self.batch_size,
         )

@@ -22,8 +22,10 @@
 
 
 import torch
+from torch._tensor import Tensor
 import torch.nn as nn
 from tensordict import TensorDict
+from .controller import ControllerBase
 
 from omni_drones.utils.torch import (
     quat_mul,
@@ -60,7 +62,7 @@ def compute_parameters(
 
     return mixer
 
-class LeePositionController(nn.Module):
+class LeePositionController(ControllerBase):
     """
     Computes rotor commands for the given control target using the controller
     described in https://arxiv.org/abs/1003.2005.
@@ -112,7 +114,7 @@ class LeePositionController(nn.Module):
         )
         self.requires_grad_(False)
 
-    def forward(
+    def compute(
         self,
         root_state: torch.Tensor,
         target_pos: torch.Tensor=None,
@@ -202,8 +204,12 @@ class LeePositionController(nn.Module):
         cmd = (cmd / self.max_thrusts) * 2 - 1
         return cmd
 
+    def process_rl_actions(self, actions) -> Tensor:
+        target_vel, target_yaw = actions.split([3, 1], dim=-1)
+        return target_vel, target_yaw * torch.pi
 
-class AttitudeController(nn.Module):
+
+class AttitudeController(ControllerBase):
     r"""
 
     """
@@ -300,7 +306,7 @@ class AttitudeController(nn.Module):
         return cmd
 
 
-class RateController(nn.Module):
+class RateController(ControllerBase):
 
     def __init__(self, g, uav_params) -> None:
         super().__init__()
@@ -347,4 +353,9 @@ class RateController(nn.Module):
         cmd = (cmd / self.max_thrusts) * 2 - 1
         cmd = cmd.reshape(*batch_shape, -1)
         return cmd
+
+    def process_rl_actions(self, actions: torch.Tensor):
+        target_rate, target_thrust = actions.split([3, 1], -1)
+        target_thrust = ((target_thrust + 1) / 2).clip(0.) * self.max_thrusts
+        return target_rate * torch.pi, target_thrust
 

@@ -17,10 +17,10 @@ def main(cfg):
 
     import omni_drones.utils.scene as scene_utils
     from omni.isaac.core.simulation_context import SimulationContext
-    from omni_drones.controllers import RateController
     from omni_drones.robots.drone import MultirotorBase
     from omni_drones.utils.torch import euler_to_quaternion, quaternion_to_euler
     from omni_drones.sensors.camera import Camera, PinholeCameraCfg
+    import dataclasses
 
     sim = SimulationContext(
         stage_units_in_meters=1.0,
@@ -32,7 +32,10 @@ def main(cfg):
     )
     n = 4
 
-    drone: MultirotorBase = MultirotorBase.REGISTRY[cfg.drone_model]()
+    drone_model_cfg = cfg.drone_model
+    drone, controller = MultirotorBase.make(
+        drone_model_cfg.name, "RateController", cfg.sim.device
+    )
 
     translations = torch.zeros(n, 3)
     translations[:, 1] = torch.arange(n)
@@ -43,13 +46,21 @@ def main(cfg):
 
     camera_cfg = PinholeCameraCfg(
         sensor_tick=0,
-        resolution=(960, 720),
+        resolution=(320, 240),
         data_types=["rgb", "distance_to_camera"],
     )
+    # cameras used as sensors
+    camera_sensor = Camera(camera_cfg)
+    camera_sensor.spawn([
+        f"/World/envs/env_0/{drone.name}_{i}/base_link/Camera"
+        for i in range(n)
+    ])
     # camera for visualization
-    camera_vis = Camera(camera_cfg)
+    # here we reuse the viewport camera, i.e., "/OmniverseKit_Persp"
+    camera_vis = Camera(dataclasses.replace(camera_cfg, resolution=(960, 720)))
 
     sim.reset()
+    camera_sensor.initialize(f"/World/envs/env_0/{drone.name}_*/base_link/Camera")
     camera_vis.initialize("/OmniverseKit_Persp")
     drone.initialize()
 
@@ -58,8 +69,6 @@ def main(cfg):
     target_rate = torch.zeros(n, 3, device=sim.device)
     target_rate[:, 2] = torch.pi
     target_height = 1.5 + 0.5 * torch.arange(n, device=sim.device).float()
-
-    controller = RateController(9.8, uav_params=drone.params).to(sim.device)
 
     def reset():
         drone._reset_idx(torch.tensor([0]))
@@ -92,10 +101,10 @@ def main(cfg):
 
     reset()
 
+    frames_sensor = []
     frames_vis = []
-
     from tqdm import tqdm
-    for i in tqdm(range(2000)):
+    for i in tqdm(range(300)):
         if sim.is_stopped():
             break
         if not sim.is_playing():
@@ -106,23 +115,36 @@ def main(cfg):
         sim.step(render=True)
 
         if i % 2 ==  0:
+            frames_sensor.append(camera_sensor.get_images().cpu())
             frames_vis.append(camera_vis.get_images().cpu())
 
-        if i % 1000 == 0:
+        if i % 300 == 0:
             reset()
 
+    # write videos
     from torchvision.io import write_video
+
+    for image_type, arrays in torch.stack(frames_sensor).items():
+        print(f"Writing {image_type} of shape {arrays.shape}.")
+        for drone_id, arrays_drone in enumerate(arrays.unbind(1)):
+            if image_type == "rgb":
+                arrays_drone = arrays_drone.permute(0, 2, 3, 1)[..., :3]
+                write_video(f"demo_rgb_{drone_id}.mp4", arrays_drone, fps=1/cfg.sim.dt)
+            elif image_type == "distance_to_camera":
+                arrays_drone = -torch.nan_to_num(arrays_drone, 0).permute(0, 2, 3, 1)
+                arrays_drone = arrays_drone.expand(*arrays_drone.shape[:-1], 3)
+                write_video(f"demo_depth_{drone_id}.mp4", arrays_drone, fps=0.5/cfg.sim.dt)
 
     for image_type, arrays in torch.stack(frames_vis).items():
         print(f"Writing {image_type} of shape {arrays.shape}.")
         for _, arrays_drone in enumerate(arrays.unbind(1)):
             if image_type == "rgb":
                 arrays_drone = arrays_drone.permute(0, 2, 3, 1)[..., :3]
-                write_video(f"rgb.mp4", arrays_drone, fps=1/cfg.sim.dt)
+                write_video(f"demo_rgb.mp4", arrays_drone, fps=1/cfg.sim.dt)
             elif image_type == "distance_to_camera":
                 arrays_drone = -torch.nan_to_num(arrays_drone, 0).permute(0, 2, 3, 1)
                 arrays_drone = arrays_drone.expand(*arrays_drone.shape[:-1], 3)
-                write_video(f"depth.mp4", arrays_drone, fps=1/cfg.sim.dt)
+                write_video(f"demo_depth.mp4", arrays_drone, fps=0.5/cfg.sim.dt)
 
     simulation_app.close()
 

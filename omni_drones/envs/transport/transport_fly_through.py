@@ -137,9 +137,11 @@ class TransportFlyThrough(IsaacEnv):
         self.alpha = 0.8
 
     def _design_scene(self):
-        drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
-        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
-        self.drone: MultirotorBase = drone_model(cfg=cfg)
+        drone_model_cfg = self.cfg.task.drone_model
+        self.drone, self.controller = MultirotorBase.make(
+            drone_model_cfg.name, drone_model_cfg.controller
+        )
+
         group_cfg = TransportationCfg(num_drones=self.cfg.task.num_drones)
         self.group = TransportationGroup(drone=self.drone, cfg=group_cfg)
 
@@ -163,28 +165,29 @@ class TransportFlyThrough(IsaacEnv):
         return ["/World/defaultGroundPlane"]
 
     def _set_specs(self):
-        drone_obs_dim = self.drone.state_spec.shape[0] + self.drone.n
+        drone_state_dim = self.drone.state_spec.shape[0] + self.drone.n
         payload_state_dim = 19
         if self.time_encoding:
             self.time_encoding_dim = 4
             payload_state_dim += self.time_encoding_dim
 
         observation_spec = CompositeSpec({
-            "obs_self": UnboundedContinuousTensorSpec((1, drone_obs_dim)),
+            "obs_self": UnboundedContinuousTensorSpec((1, drone_state_dim)),
             "obs_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13+1)),
             "obs_payload": UnboundedContinuousTensorSpec((1, payload_state_dim)),
             "obs_obstacles": UnboundedContinuousTensorSpec((2, 2)),
         }).to(self.device)
 
-        state_spec = CompositeSpec({
-            "drones": UnboundedContinuousTensorSpec((self.drone.n, drone_obs_dim)),
-            "payload": UnboundedContinuousTensorSpec((1, payload_state_dim)),
+        observation_central_spec = CompositeSpec({
+            "state_drones": UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim)),
+            "state_payload": UnboundedContinuousTensorSpec((1, payload_state_dim)),
             "obstacles": UnboundedContinuousTensorSpec((2, 2)),
         }).to(self.device)
+
         self.observation_spec = CompositeSpec({
             "agents": {
                 "observation": observation_spec.expand(self.drone.n),
-                "observation_central": state_spec,
+                "observation_central": observation_central_spec,
             }
         }).expand(self.num_envs).to(self.device)
         self.action_spec = CompositeSpec({
@@ -197,9 +200,6 @@ class TransportFlyThrough(IsaacEnv):
                 "reward": UnboundedContinuousTensorSpec((self.drone.n, 1))
             }
         }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
-        }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", self.drone.n,
             observation_key=("agents", "observation"),
@@ -207,9 +207,6 @@ class TransportFlyThrough(IsaacEnv):
             reward_key=("agents", "reward"),
         )
 
-        info_spec = CompositeSpec({
-            "payload_mass": UnboundedContinuousTensorSpec(1),
-        }).expand(self.num_envs).to(self.device)
         stats_spec = CompositeSpec({
             "return": UnboundedContinuousTensorSpec(self.drone.n),
             "episode_len": UnboundedContinuousTensorSpec(1),
@@ -218,9 +215,7 @@ class TransportFlyThrough(IsaacEnv):
             "success": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
             "action_smoothness": UnboundedContinuousTensorSpec(self.drone.n),
         }).expand(self.num_envs).to(self.device)
-        self.observation_spec["info"] = info_spec
         self.observation_spec["stats"] = stats_spec
-        self.info = info_spec.zero()
         self.stats = stats_spec.zero()
 
     def _reset_idx(self, env_ids: torch.Tensor):
@@ -236,7 +231,6 @@ class TransportFlyThrough(IsaacEnv):
         self.group.set_joint_velocities(self.init_joint_vel[env_ids], env_ids)
 
         payload_masses = self.payload_mass_dist.sample(env_ids.shape)
-        self.info["payload_mass"][env_ids] = payload_masses.unsqueeze(-1).clone()
         self.payload.set_masses(payload_masses, env_ids)
 
         obstacle_spacing = self.obstacle_spacing_dist.sample(env_ids.shape)
@@ -300,8 +294,8 @@ class TransportFlyThrough(IsaacEnv):
         obs["obs_obstacles"] = obstacle_payload_rpos.unsqueeze(1).expand(-1, self.drone.n, 2, 2)
 
         state = TensorDict({}, self.num_envs)
-        state["payload"] = payload_state # [..., 1, 22]
-        state["drones"] = obs["obs_self"].squeeze(2) # [..., n, state_dim]
+        state["state_payload"] = payload_state # [..., 1, 22]
+        state["state_drones"] = obs["obs_self"].squeeze(2) # [..., n, state_dim]
         state["obstacles"] = obstacle_payload_rpos # [..., 2, 2]
 
         self.payload_pos_error = torch.norm(self.target_payload_rpos, dim=-1, keepdim=True)
@@ -309,14 +303,16 @@ class TransportFlyThrough(IsaacEnv):
         self.stats["payload_pos_error"].lerp_(self.payload_pos_error, (1-self.alpha))
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
 
-        return TensorDict({
-            "agents": {
-                "observation": obs,
-                "state": state,
+        return TensorDict(
+            {
+                "agents": {
+                    "observation": obs,
+                    "observation_central": state,
+                },
+                "stats": self.stats.clone(),
             },
-            "info": self.info,
-            "stats": self.stats
-        }, self.num_envs)
+            self.num_envs,
+        )
 
     def _compute_reward_and_done(self):
         joint_positions = (
@@ -356,30 +352,32 @@ class TransportFlyThrough(IsaacEnv):
             )  * (1. - self.collision_penalty * collision_reward)
         ).unsqueeze(1)
 
-        done_misbehave = (
-            (self.drone.pos[..., 2] < 0.2)
-            | (self.drone.pos[..., 2] > 3.6)
+        misbehave = (
+            (self.drone.pos[..., 2] < 0.2).any(-1, keepdim=True)
+            | (self.drone.pos[..., 2] > 3.6).any(-1, keepdim=True)
+            | (self.payload_pos[:, 2] < 0.3).unsqueeze(1).any(-1, keepdim=True)
         )
+        hasnan = torch.isnan(self.drone_states).any(-1)
 
-        done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-            | done_misbehave.any(-1, keepdim=True)
-            | (self.payload_pos[:, 2] < 0.3).unsqueeze(1)
-        )
+        terminated = misbehave | hasnan.any(-1, keepdim=True)
+        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
         if self.reset_on_collision:
-            done = done | collision
+            terminated |= collision
+
         success = (self.payload_pos_error < 0.2) & (self.drone.pos[..., 0] > 0.05).all(-1, True)
         self.stats["success"].bitwise_or_(success)
         self.stats["return"].add_(reward.mean(1))
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(-1)
+
         return TensorDict(
             {
                 "agents": {
-                    "reward": reward
+                    "reward": reward,
                 },
-                "done": done,
+                "done": terminated | truncated,
+                "terminated": terminated,
+                "truncated": truncated,
             },
             self.batch_size,
         )
-

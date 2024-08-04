@@ -68,7 +68,7 @@ class Hover(IsaacEnv):
     The observation space consists of the following part:
 
     - `rpos` (3): The position relative to the target hovering position.
-    - `root_state` (16 + `num_rotors`): The basic information of the drone (except its position),
+    - `drone_state` (16 + `num_rotors`): The basic information of the drone (except its position),
       containing its rotation (in quaternion), velocities (linear and angular),
       heading and up vectors, and the current throttle.
     - `rheading` (3): The difference between the reference heading and the current heading.
@@ -169,9 +169,10 @@ class Hover(IsaacEnv):
         import omni_drones.utils.kit as kit_utils
         import omni.isaac.core.utils.prims as prim_utils
 
-        drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
-        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
-        self.drone: MultirotorBase = drone_model(cfg=cfg)
+        drone_model_cfg = self.cfg.task.drone_model
+        self.drone, self.controller = MultirotorBase.make(
+            drone_model_cfg.name, drone_model_cfg.controller
+        )
 
         target_vis_prim = prim_utils.create_prim(
             prim_path="/World/envs/env_0/target",
@@ -223,11 +224,6 @@ class Hover(IsaacEnv):
                 "reward": UnboundedContinuousTensorSpec((1, 1))
             })
         }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-            "terminated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-            "truncated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-        }).expand(self.num_envs).to(self.device)
 
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,
@@ -245,15 +241,8 @@ class Hover(IsaacEnv):
             "uprightness": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
-        info_spec = CompositeSpec({
-            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13), device=self.device),
-            "prev_action": torch.stack([self.drone.action_spec] * self.drone.n, 0).to(self.device),
-        }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
-        self.observation_spec["info"] = info_spec
         self.stats = stats_spec.zero()
-        self.info = info_spec.zero()
-
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids, self.training)
@@ -293,27 +282,28 @@ class Hover(IsaacEnv):
         self.effort = self.drone.apply_action(actions)
 
     def _compute_state_and_obs(self):
-        self.root_state = self.drone.get_state()
-        self.info["drone_state"][:] = self.root_state[..., :13]
+        self.drone_state = self.drone.get_state()
 
         # relative position and heading
-        self.rpos = self.target_pos - self.root_state[..., :3]
-        self.rheading = self.target_heading - self.root_state[..., 13:16]
+        self.rpos = self.target_pos - self.drone_state[..., :3]
+        self.rheading = self.target_heading - self.drone_state[..., 13:16]
 
-        obs = [self.rpos, self.root_state[..., 3:], self.rheading,]
+        obs = [self.rpos, self.drone_state[..., 3:], self.rheading,]
         if self.time_encoding:
             t = (self.progress_buf / self.max_episode_length).unsqueeze(-1)
             obs.append(t.expand(-1, self.time_encoding_dim).unsqueeze(1))
         obs = torch.cat(obs, dim=-1)
 
-        return TensorDict({
-            "agents": {
-                "observation": obs,
-                "intrinsics": self.drone.intrinsics
+        return TensorDict(
+            {
+                "agents": {
+                    "observation": obs,
+                    "intrinsics": self.drone.intrinsics,
+                },
+                "stats": self.stats.clone(),
             },
-            "stats": self.stats.clone(),
-            "info": self.info
-        }, self.batch_size)
+            self.batch_size,
+        )
 
     def _compute_reward_and_done(self):
         # pose reward
@@ -343,12 +333,15 @@ class Hover(IsaacEnv):
             + reward_action_smoothness
         )
 
-        terminated = (self.drone.pos[..., 2] < 0.2) | (distance > 4)
+        misbehave = (self.drone.pos[..., 2] < 0.2) | (distance > 4)
+        hasnan = torch.isnan(self.drone_state).any(-1)
+
+        terminated = misbehave | hasnan
         truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
         self.stats["pos_error"].lerp_(pos_error, (1-self.alpha))
         self.stats["heading_alignment"].lerp_(heading_alignment, (1-self.alpha))
-        self.stats["uprightness"].lerp_(self.root_state[..., 18], (1-self.alpha))
+        self.stats["uprightness"].lerp_(self.drone_state[..., 18], (1-self.alpha))
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
         self.stats["return"] += reward
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
@@ -356,11 +349,11 @@ class Hover(IsaacEnv):
         return TensorDict(
             {
                 "agents": {
-                    "reward": reward.unsqueeze(-1)
+                    "reward": reward.unsqueeze(-1),
                 },
                 "done": terminated | truncated,
                 "terminated": terminated,
-                "truncated": truncated
+                "truncated": truncated,
             },
             self.batch_size,
         )

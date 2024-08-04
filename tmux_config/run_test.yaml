@@ -1,0 +1,16 @@
+session_name: omnidrones
+windows:
+  - window_name: run_test
+    layout: tiled
+    shell_command_before:
+      - conda activate sim
+      - cd examples
+    panes:
+      - shell_command:
+        - python test_rate_controller.py
+      - shell_command:
+        - sleep 1m
+        - python test_att_controller.py
+      - shell_command:
+        - sleep 2m
+        - python test_dragon.py

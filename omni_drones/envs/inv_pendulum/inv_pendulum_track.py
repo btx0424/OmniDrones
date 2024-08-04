@@ -154,9 +154,10 @@ class InvPendulumTrack(IsaacEnv):
         self.draw = _debug_draw.acquire_debug_draw_interface()
 
     def _design_scene(self):
-        drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
-        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
-        self.drone: MultirotorBase = drone_model(cfg=cfg)
+        drone_model_cfg = self.cfg.task.drone_model
+        self.drone, self.controller = MultirotorBase.make(
+            drone_model_cfg.name, drone_model_cfg.controller
+        )
 
         kit_utils.create_ground_plane(
             "/World/defaultGroundPlane",
@@ -179,7 +180,7 @@ class InvPendulumTrack(IsaacEnv):
 
         self.observation_spec = CompositeSpec({
             "agents": CompositeSpec({
-                "observation": UnboundedContinuousTensorSpec((1, observation_dim)) ,
+                "observation": UnboundedContinuousTensorSpec((1, observation_dim)),
             })
         }).expand(self.num_envs).to(self.device)
         self.action_spec = CompositeSpec({
@@ -191,9 +192,6 @@ class InvPendulumTrack(IsaacEnv):
             "agents": CompositeSpec({
                 "reward": UnboundedContinuousTensorSpec((1, 1))
             })
-        }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
         }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,
@@ -208,15 +206,8 @@ class InvPendulumTrack(IsaacEnv):
             "tracking_error_ema": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
-        info_spec = CompositeSpec({
-            "payload_mass": UnboundedContinuousTensorSpec(1),
-            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13)),
-        }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
-        self.observation_spec["info"] = info_spec
         self.stats = stats_spec.zero()
-        self.info = info_spec.zero()
-
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
@@ -240,7 +231,6 @@ class InvPendulumTrack(IsaacEnv):
 
         payload_mass = self.payload_mass_dist.sample(env_ids.shape)
         self.payload.set_masses(payload_mass, env_ids)
-        self.info["payload_mass"][env_ids] = payload_mass
 
         self.stats[env_ids] = 0.
 
@@ -262,7 +252,6 @@ class InvPendulumTrack(IsaacEnv):
 
     def _compute_state_and_obs(self):
         self.drone_state = self.drone.get_state()
-        self.info["drone_state"][:] = self.drone_state[..., :13]
         payload_pos = self.get_env_poses(self.payload.get_world_poses())[0]
         self.payload_vels = self.payload.get_velocities()
 
@@ -284,13 +273,15 @@ class InvPendulumTrack(IsaacEnv):
 
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
 
-        return TensorDict({
-            "agents": {
-                "observation": obs,
+        return TensorDict(
+            {
+                "agents": {
+                    "observation": obs,
+                },
+                "stats": self.stats.clone(),
             },
-            "stats": self.stats,
-            "info": self.info,
-        }, self.batch_size)
+            self.batch_size,
+        )
 
     def _compute_reward_and_done(self):
 
@@ -305,26 +296,21 @@ class InvPendulumTrack(IsaacEnv):
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort)
         reward_action_smoothness = self.reward_action_smoothness_weight * torch.exp(-self.drone.throttle_difference)
 
-        reward = (
-            reward_pos
-            + reward_effort
-            + reward_action_smoothness
-        )
+        reward = reward_pos + reward_effort + reward_action_smoothness
 
-        done_misbehave = (self.drone.pos[..., 2] < 0.2) | (reward_bar_up < 0.2)
-        done_hasnan = torch.isnan(self.drone_state).any(-1)
-
-        done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-            | done_misbehave
-            | done_hasnan
+        misbehave = (
+            (self.drone.pos[..., 2] < 0.2)
+            | (reward_bar_up < 0.2)
             | (distance > self.reset_thres)
         )
+        hasnan = torch.isnan(self.drone_state).any(-1)
 
+        terminated = misbehave | hasnan
+        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
         ep_len = self.progress_buf.unsqueeze(-1)
         self.stats["tracking_error"].div_(
-            torch.where(done, ep_len, torch.ones_like(ep_len))
+            torch.where(terminated | truncated, ep_len, torch.ones_like(ep_len))
         )
         self.stats["return"].add_(reward)
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
@@ -332,9 +318,11 @@ class InvPendulumTrack(IsaacEnv):
         return TensorDict(
             {
                 "agents": {
-                    "reward": reward.unsqueeze(-1)
+                    "reward": reward.unsqueeze(-1),
                 },
-                "done": done,
+                "done": terminated | truncated,
+                "terminated": terminated,
+                "truncated": truncated,
             },
             self.batch_size,
         )
@@ -350,4 +338,3 @@ class InvPendulumTrack(IsaacEnv):
         target_pos = vmap(quat_rotate)(traj_rot, target_pos) * self.traj_scale[env_ids].unsqueeze(1)
 
         return self.origin + target_pos
-

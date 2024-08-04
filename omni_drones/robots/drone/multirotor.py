@@ -34,8 +34,7 @@ from tensordict import TensorDict
 
 from omni_drones.views import RigidPrimView
 from omni_drones.actuators.rotor_group import RotorGroup
-from omni_drones.controllers import LeePositionController
-
+from omni_drones.controllers import ControllerBase
 from omni_drones.robots import RobotBase, RobotCfg
 from omni_drones.utils.torch import (
     normalize, off_diag, quat_rotate, quat_rotate_inverse, quat_axis, symlog
@@ -46,21 +45,16 @@ from collections import defaultdict
 
 import pprint
 
-@dataclass
-class MultirotorCfg(RobotCfg):
-    force_sensor: bool = False
 
 class MultirotorBase(RobotBase):
 
     param_path: str
-    DEFAULT_CONTROLLER: Type = LeePositionController
-    cfg_cls = MultirotorCfg
 
     def __init__(
         self,
         name: str = None,
-        cfg: MultirotorCfg=None,
-        is_articulation: bool = True
+        cfg: RobotCfg=None,
+        is_articulation: bool = True,
     ) -> None:
         super().__init__(name, cfg, is_articulation)
 
@@ -69,7 +63,6 @@ class MultirotorBase(RobotBase):
             self.params = yaml.safe_load(f)
         self.num_rotors = self.params["rotor_configuration"]["num_rotors"]
 
-        self.action_spec = BoundedTensorSpec(-1, 1, self.num_rotors, device=self.device)
         self.intrinsics_spec = CompositeSpec({
             "mass": UnboundedContinuousTensorSpec(1),
             "inertia": UnboundedContinuousTensorSpec(3),
@@ -81,14 +74,15 @@ class MultirotorBase(RobotBase):
             "drag_coef": UnboundedContinuousTensorSpec(1),
         }).to(self.device)
 
-        if self.cfg.force_sensor:
-            self.use_force_sensor = True
-            state_dim = 19 + self.num_rotors + 6
-        else:
-            self.use_force_sensor = False
-            state_dim = 19 + self.num_rotors
+        state_dim = 19 + self.num_rotors
         self.state_spec = UnboundedContinuousTensorSpec(state_dim, device=self.device)
         self.randomization = defaultdict(dict)
+
+    @property
+    def action_spec(self):
+        if not hasattr(self, "_action_spec"):
+            self._action_spec = BoundedTensorSpec(-1, 1, self.num_rotors, device=self.device)
+        return self._action_spec
 
     def initialize(
         self,
@@ -306,19 +300,7 @@ class MultirotorBase(RobotBase):
         self.heading[:] = quat_axis(self.rot, axis=0)
         self.up[:] = quat_axis(self.rot, axis=2)
         state = [self.pos, self.rot, self.vel, self.heading, self.up, self.throttle * 2 - 1]
-        if self.use_force_sensor:
-            self.force_readings, self.torque_readings = self.get_force_sensor_forces().chunk(2, -1)
-            # normalize by mass and inertia
-            force_reading_norms = self.force_readings.norm(dim=-1, keepdim=True)
-            force_readings = (
-                self.force_readings
-                / force_reading_norms
-                * symlog(force_reading_norms)
-                / self.gravity.unsqueeze(-2)
-            )
-            torque_readings = self.torque_readings / self.INERTIA_0.unsqueeze(-2)
-            state.append(force_readings.flatten(-2))
-            state.append(torque_readings.flatten(-2))
+
         state = torch.cat(state, dim=-1)
         if check_nan:
             assert not torch.isnan(state).any()
@@ -429,6 +411,17 @@ class MultirotorBase(RobotBase):
         v = torch.exp(-0.5 * torch.square(kr * r / z)) / (1 + kz * z)**2
         f = off_diag(v * - p1_t)
         return f
+
+    @staticmethod
+    def make(drone_model: str, controller: str=None, device: str="cpu"):
+        drone_cls = MultirotorBase.REGISTRY[drone_model]
+        drone = drone_cls()
+        from omni_drones.controllers import ControllerBase
+        if controller is not None:
+            controller_cls = ControllerBase.REGISTRY[controller]
+            controller = controller_cls(drone.gravity[1], drone.params).to(device)
+        return drone, controller
+
 
 def separation(p0, p1, p1_d):
     rel_pos = rel_pos =  p1.unsqueeze(0) - p0.unsqueeze(1)

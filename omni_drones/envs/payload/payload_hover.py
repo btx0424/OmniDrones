@@ -20,8 +20,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-
-import omni.isaac.core.utils.torch as torch_utils
 import omni.isaac.core.utils.prims as prim_utils
 import omni.isaac.core.objects as objects
 import omni_drones.utils.kit as kit_utils
@@ -51,7 +49,7 @@ class PayloadHover(IsaacEnv):
     - `ref_payload_rpos` (3): The reference positions of the
       payload at multiple future time steps. This helps the agent anticipate the desired payload
       trajectory.
-    - `root_state` (16 + `num_rotors`): The basic information of the drone (except its position),
+    - `drone_state` (16 + `num_rotors`): The basic information of the drone (except its position),
       containing its rotation (in quaternion), velocities (linear and angular),
       heading and up vectors, and the current throttle.
     - `payload_vels` (6): The linear and angular velocities of the payload.
@@ -142,9 +140,10 @@ class PayloadHover(IsaacEnv):
         self.draw = _debug_draw.acquire_debug_draw_interface()
 
     def _design_scene(self):
-        drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
-        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
-        self.drone: MultirotorBase = drone_model(cfg=cfg)
+        drone_model_cfg = self.cfg.task.drone_model
+        self.drone, self.controller = MultirotorBase.make(
+            drone_model_cfg.name, drone_model_cfg.controller
+        )
 
         kit_utils.create_ground_plane(
             "/World/defaultGroundPlane",
@@ -179,19 +178,12 @@ class PayloadHover(IsaacEnv):
                 "reward": UnboundedContinuousTensorSpec((1, 1))
             }
         }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
-        }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,
             observation_key=("agents", "observation"),
             action_key=("agents", "action"),
             reward_key=("agents", "reward"),
         )
-        info_spec  = CompositeSpec({
-            "payload_mass": UnboundedContinuousTensorSpec(1),
-            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13)),
-        }).expand(self.num_envs).to(self.device)
         stats_spec = CompositeSpec({
             "return": UnboundedContinuousTensorSpec(1),
             "episode_len": UnboundedContinuousTensorSpec(1),
@@ -199,10 +191,7 @@ class PayloadHover(IsaacEnv):
             "action_smoothness": UnboundedContinuousTensorSpec(1),
             # "motion_smoothness": UnboundedContinuousTensorSpec(1)
         }).expand(self.num_envs).to(self.device)
-        # info_spec.update(self.drone.info_spec.to(self.device))
-        self.observation_spec["info"] = info_spec
         self.observation_spec["stats"] = stats_spec
-        self.info = info_spec.zero()
         self.stats = stats_spec.zero()
 
     def _reset_idx(self, env_ids: torch.Tensor):
@@ -226,8 +215,6 @@ class PayloadHover(IsaacEnv):
 
         self.stats[env_ids] = 0.
 
-        # self.info.update_at_(self.drone.info[env_ids], env_ids)
-
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("agents", "action")]
         self.effort = self.drone.apply_action(actions)
@@ -244,8 +231,7 @@ class PayloadHover(IsaacEnv):
         self.payload.apply_forces(forces)
 
     def _compute_state_and_obs(self):
-        self.root_state = self.drone.get_state()
-        self.info["drone_state"][:] = self.root_state[..., :13]
+        self.drone_state = self.drone.get_state()
         self.payload_pos = self.get_env_poses(self.payload.get_world_poses())[0]
         self.payload_vels = self.payload.get_velocities()
 
@@ -255,7 +241,7 @@ class PayloadHover(IsaacEnv):
         obs = [
             self.drone_payload_rpos.flatten(1).unsqueeze(1),
             self.target_payload_rpos.flatten(1).unsqueeze(1),
-            self.root_state[..., 3:],
+            self.drone_state[..., 3:],
             self.payload_vels.unsqueeze(1), # 6
         ]
         if self.time_encoding:
@@ -272,13 +258,15 @@ class PayloadHover(IsaacEnv):
         # )
         # self.stats["motion_smoothness"].lerp_(self.smoothness, (1-self.alpha))
 
-        return TensorDict({
-            "agents": {
-                "observation": obs,
+        return TensorDict(
+            {
+                "agents": {
+                    "observation": obs,
+                },
+                "stats": self.stats.clone(),
             },
-            "stats": self.stats,
-            "info": self.info
-        }, self.batch_size)
+            self.batch_size,
+        )
 
     def _compute_reward_and_done(self):
         # pos reward
@@ -303,11 +291,14 @@ class PayloadHover(IsaacEnv):
             + reward_action_smoothness
         )
 
-        done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-            | (self.drone.pos[..., 2] < 0.2)
+        misbehave = (
+            (self.drone.pos[..., 2] < 0.2)
             | (self.payload_pos[..., 2] < 0.2).unsqueeze(-1)
         )
+        hasnan = torch.isnan(self.drone_state).any(-1)
+
+        terminated = misbehave | hasnan
+        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
         self.stats["return"].add_(reward)
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
@@ -315,11 +306,11 @@ class PayloadHover(IsaacEnv):
         return TensorDict(
             {
                 "agents": {
-                    "reward": reward.unsqueeze(-1)
+                    "reward": reward.unsqueeze(-1),
                 },
-                "done": done,
+                "done": terminated | truncated,
+                "terminated": terminated,
+                "truncated": truncated,
             },
             self.batch_size,
         )
-
-

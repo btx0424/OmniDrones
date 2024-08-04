@@ -2,7 +2,7 @@ import torch
 
 import hydra
 from omegaconf import OmegaConf
-from omni_drones import CONFIG_PATH, init_simulation_app
+from omni_drones import init_simulation_app
 
 
 @hydra.main(version_base=None, config_path=".", config_name="demo")
@@ -28,7 +28,10 @@ def main(cfg):
     )
     n = 4
 
-    drone: MultirotorBase = MultirotorBase.REGISTRY[cfg.drone_model]()
+    drone_model_cfg = cfg.drone_model
+    drone, controller = MultirotorBase.make(
+        drone_model_cfg.name, drone_model_cfg.controller, cfg.sim.device
+    )
 
     translations = torch.zeros(n, 3)
     translations[:, 1] = torch.arange(n)
@@ -49,6 +52,7 @@ def main(cfg):
         for i in range(n)
     ])
     # camera for visualization
+    # here we reuse the viewport camera, i.e., "/OmniverseKit_Persp"
     camera_vis = Camera(dataclasses.replace(camera_cfg, resolution=(960, 720)))
 
     sim.reset()
@@ -61,7 +65,7 @@ def main(cfg):
     omega = 1.
     phase = torch.linspace(0, 2, n+1, device=sim.device)[:n]
 
-    def ref(t):
+    def compute_ref(t):
         _t = phase * torch.pi + t * omega
         pos = torch.stack([
             torch.cos(_t) * radius,
@@ -76,13 +80,9 @@ def main(cfg):
         return pos, yaw
 
     init_rpy = torch.zeros(n, 3, device=sim.device)
-    init_pos, init_rpy[:, 2] = ref(torch.tensor(0.0).to(sim.device))
+    init_pos, init_rpy[:, 2] = compute_ref(torch.tensor(0.0).to(sim.device))
     init_rot = euler_to_quaternion(init_rpy)
     init_vels = torch.zeros(n, 6, device=sim.device)
-
-    # create a position controller
-    # note: the controller is state-less (but holds its parameters)
-    controller = drone.DEFAULT_CONTROLLER(g=9.81, uav_params=drone.params).to(sim.device)
 
     def reset():
         drone._reset_idx(torch.tensor([0]))
@@ -95,14 +95,14 @@ def main(cfg):
     frames_sensor = []
     frames_vis = []
     from tqdm import tqdm
-    for i in tqdm(range(1000)):
+    for i in tqdm(range(cfg.steps)):
         if sim.is_stopped():
             break
         if not sim.is_playing():
             sim.render()
             continue
-        ref_pos, ref_yaw = ref((i % 1000)*cfg.sim.dt)
-        action = controller(drone_state, target_pos=ref_pos, target_yaw=ref_yaw)
+        ref_pos, ref_yaw = compute_ref((i % cfg.steps)*cfg.sim.dt)
+        action = controller.compute(drone_state, target_pos=ref_pos, target_yaw=ref_yaw)
         drone.apply_action(action)
         sim.step(render=True)
 
@@ -110,10 +110,11 @@ def main(cfg):
             frames_sensor.append(camera_sensor.get_images().cpu())
             frames_vis.append(camera_vis.get_images().cpu())
 
-        if i % 1000 == 0:
+        if i % cfg.steps == 0:
             reset()
         drone_state = drone.get_state()[..., :13].squeeze(0)
 
+    # write videos
     from torchvision.io import write_video
 
     for image_type, arrays in torch.stack(frames_sensor).items():

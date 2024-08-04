@@ -8,8 +8,10 @@ defaults:
 env:
   num_envs: 4096
 
-drone_model: Firefly
-force_sensor: false
+drone_model:
+  name: Firefly
+  controller: LeePositionController
+
 time_encoding: true
 
 randomization:

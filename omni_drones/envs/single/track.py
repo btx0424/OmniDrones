@@ -45,7 +45,7 @@ class Track(IsaacEnv):
 
     - `rpos` (3 * `future_traj_steps`): The relative position of the drone to the
       reference positions in the future `future_traj_steps` time steps.
-    - `root_state` (16 + `num_rotors`): The basic information of the drone (except its position),
+    - `drone_state` (16 + `num_rotors`): The basic information of the drone (except its position),
       containing its rotation (in quaternion), velocities (linear and angular),
       heading and up vectors, and the current throttle.
     - `time_encoding` (optional): The time encoding, which is a 4-dimensional
@@ -152,9 +152,10 @@ class Track(IsaacEnv):
         self.draw = _debug_draw.acquire_debug_draw_interface()
 
     def _design_scene(self):
-        drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
-        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
-        self.drone: MultirotorBase = drone_model(cfg=cfg)
+        drone_model_cfg = self.cfg.task.drone_model
+        self.drone, self.controller = MultirotorBase.make(
+            drone_model_cfg.name, drone_model_cfg.controller
+        )
 
         kit_utils.create_ground_plane(
             "/World/defaultGroundPlane",
@@ -189,9 +190,6 @@ class Track(IsaacEnv):
                 "reward": UnboundedContinuousTensorSpec((1, 1))
             }
         }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
-        }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,
             observation_key=("agents", "observation"),
@@ -205,13 +203,7 @@ class Track(IsaacEnv):
             "tracking_error_ema": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
-        info_spec = CompositeSpec({
-            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13)),
-        }).expand(self.num_envs).to(self.device)
-        # info_spec = self.drone.info_spec.to(self.device)
-        self.observation_spec["info"] = info_spec
         self.observation_spec["stats"] = stats_spec
-        self.info = info_spec.zero()
         self.stats = stats_spec.zero()
 
     def _reset_idx(self, env_ids: torch.Tensor):
@@ -232,8 +224,6 @@ class Track(IsaacEnv):
         self.drone.set_velocities(vel, env_ids)
 
         self.stats[env_ids] = 0.
-
-        # self.info[env_ids] = self.drone.info[env_ids]
 
         if self._should_render(0) and (env_ids == self.central_env_idx).any() :
             # visualize the trajectory
@@ -263,15 +253,14 @@ class Track(IsaacEnv):
             self.drone.base_link.apply_forces(wind_forces, is_global=True)
 
     def _compute_state_and_obs(self):
-        self.root_state = self.drone.get_state()
-        self.info["drone_state"][:] = self.root_state[..., :13]
+        self.drone_state = self.drone.get_state()
 
         self.target_pos[:] = self._compute_traj(self.future_traj_steps, step_size=5)
 
-        self.rpos = self.target_pos - self.root_state[..., :3]
+        self.rpos = self.target_pos - self.drone_state[..., :3]
         obs = [
             self.rpos.flatten(1).unsqueeze(1),
-            self.root_state[..., 3:],
+            self.drone_state[..., 3:],
         ]
         if self.time_encoding:
             t = (self.progress_buf / self.max_episode_length).unsqueeze(-1)
@@ -283,13 +272,15 @@ class Track(IsaacEnv):
 
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
 
-        return TensorDict({
-            "agents": {
-                "observation": obs,
+        return TensorDict(
+            {
+                "agents": {
+                    "observation": obs,
+                },
+                "stats": self.stats.clone(),
             },
-            "stats": self.stats.clone(),
-            "info": self.info.clone()
-        }, self.batch_size)
+            self.batch_size,
+        )
 
     def _compute_reward_and_done(self):
         # pos reward
@@ -318,15 +309,18 @@ class Track(IsaacEnv):
             + reward_action_smoothness
         )
 
-        done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-            | (self.drone.pos[..., 2] < 0.1)
+        misbehave = (
+            (self.drone.pos[..., 2] < 0.1)
             | (distance > self.reset_thres)
         )
+        hasnan = torch.isnan(self.drone_state).any(-1)
+
+        terminated = misbehave | hasnan
+        truncated = (self.progress_buf >= self.max_episode_length - 1).unsqueeze(-1)
 
         ep_len = self.progress_buf.unsqueeze(-1)
         self.stats["tracking_error"].div_(
-            torch.where(done, ep_len, torch.ones_like(ep_len))
+            torch.where(terminated | truncated, ep_len, torch.ones_like(ep_len))
         )
         self.stats["return"] += reward
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
@@ -334,9 +328,11 @@ class Track(IsaacEnv):
         return TensorDict(
             {
                 "agents": {
-                    "reward": reward.unsqueeze(-1)
+                    "reward": reward.unsqueeze(-1),
                 },
-                "done": done,
+                "done": terminated | truncated,
+                "terminated": terminated,
+                "truncated": truncated,
             },
             self.batch_size,
         )
@@ -352,5 +348,3 @@ class Track(IsaacEnv):
         target_pos = vmap(quat_rotate)(traj_rot, target_pos) * self.traj_scale[env_ids].unsqueeze(1)
 
         return self.origin + target_pos
-
-

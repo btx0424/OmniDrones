@@ -53,7 +53,7 @@ class Pinball(IsaacEnv):
     The observation space consists of the following parts:
 
     - `rpos` (3): The position of the ball relative to the drone.
-    - `root_state` (19 + num_rotors): The basic information of the drone
+    - `drone_state` (19 + num_rotors): The basic information of the drone
       containing its rotation (in quaternion), velocities (linear and angular),
       heading and up vectors, and the current throttle.
 
@@ -119,9 +119,10 @@ class Pinball(IsaacEnv):
         self.alpha = 0.8
 
     def _design_scene(self):
-        drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
-        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
-        self.drone: MultirotorBase = drone_model(cfg=cfg)
+        drone_model_cfg = self.cfg.task.drone_model
+        self.drone, self.controller = MultirotorBase.make(
+            drone_model_cfg.name, drone_model_cfg.controller
+        )
 
         material = materials.PhysicsMaterial(
             prim_path="/World/Physics_Materials/physics_material_0",
@@ -175,11 +176,6 @@ class Pinball(IsaacEnv):
                 "reward": UnboundedContinuousTensorSpec((1, 1))
             })
         }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-            "terminated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-            "truncated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-        }).expand(self.num_envs).to(self.device)
 
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,
@@ -194,13 +190,8 @@ class Pinball(IsaacEnv):
             "score": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(1),
         }).expand(self.num_envs).to(self.device)
-        info_spec = CompositeSpec({
-            "drone_state": UnboundedContinuousTensorSpec((self.drone.n, 13)),
-        }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
-        self.observation_spec["info"] = info_spec
         self.stats = stats_spec.zero()
-        self.info = info_spec.zero()
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids, self.training)
@@ -231,27 +222,28 @@ class Pinball(IsaacEnv):
         self.contact_sensor.update(self.dt)
 
     def _compute_state_and_obs(self):
-        self.root_state = self.drone.get_state()
-        self.info["drone_state"][:] = self.root_state[..., :13]
+        self.drone_state = self.drone.get_state()
         self.ball_pos, ball_rot = self.get_env_poses(self.ball.get_world_poses())
         self.ball_vel = self.ball.get_velocities()
 
         # relative position and heading
         self.rpos =  self.ball_pos - self.drone.pos
 
-        obs = [self.root_state, self.rpos, self.ball_vel[..., :3]]
+        obs = [self.drone_state, self.rpos, self.ball_vel[..., :3]]
         if self.time_encoding:
             t = (self.progress_buf / self.max_episode_length).unsqueeze(-1)
             obs.append(t.expand(-1, self.time_encoding_dim).unsqueeze(1))
         obs = torch.cat(obs, dim=-1)
 
-        return TensorDict({
-            "agents": {
-                "observation": obs
+        return TensorDict(
+            {
+                "agents": {
+                    "observation": obs,
+                },
+                "stats": self.stats.clone(),
             },
-            "stats": self.stats.clone(),
-            "info": self.info
-        }, self.batch_size)
+            self.batch_size,
+        )
 
     def _compute_reward_and_done(self):
 
@@ -265,13 +257,15 @@ class Pinball(IsaacEnv):
 
         reward = reward_pos + 0.8 * reward_height + reward_score
 
-        terminated = (
+        misbehave = (
             (self.drone.pos[..., 2] < 0.3)
             | (self.ball_pos[..., 2] < 0.2)
             | (self.ball_pos[..., 2] > 4.5)
             | (self.ball_pos[..., :2].abs() > 2.5).any(-1)
         )
+        hasnan = torch.isnan(self.drone_state).any(-1)
 
+        terminated = misbehave | hasnan
         truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
         self.stats["score"].add_(score)
@@ -281,7 +275,7 @@ class Pinball(IsaacEnv):
         return TensorDict(
             {
                 "agents": {
-                    "reward": reward.unsqueeze(-1)
+                    "reward": reward.unsqueeze(-1),
                 },
                 "done": terminated | truncated,
                 "terminated": terminated,

@@ -7,7 +7,7 @@ reference trajectory.
 ## Observation
 
 - `drone_payload_rpos` (3): The position of the drone relative to the payload's position.
-- `root_state` (16 + `num_rotors`): The basic information of the drone (except its position),
+- `drone_state` (16 + `num_rotors`): The basic information of the drone (except its position),
 containing its rotation (in quaternion), velocities (linear and angular),
 heading and up vectors, and the current throttle.
 - `target_payload_rpos` (3 * `future_traj_steps`): The position of the reference relative to the payload's position.

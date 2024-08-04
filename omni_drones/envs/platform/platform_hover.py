@@ -133,9 +133,10 @@ class PlatformHover(IsaacEnv):
         self.alpha = 0.8
 
     def _design_scene(self):
-        drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
-        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
-        self.drone: MultirotorBase = drone_model(cfg=cfg)
+        drone_model_cfg = self.cfg.task.drone_model
+        self.drone, self.controller = MultirotorBase.make(
+            drone_model_cfg.name, drone_model_cfg.controller
+        )
 
         platform_cfg = PlatformCfg(
             num_drones=self.num_drones,
@@ -192,9 +193,6 @@ class PlatformHover(IsaacEnv):
             "agents": {
                 "reward": UnboundedContinuousTensorSpec((self.drone.n, 1))
             }
-        }).expand(self.num_envs).to(self.device)
-        self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
         }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", self.drone.n,
@@ -309,7 +307,7 @@ class PlatformHover(IsaacEnv):
                     "observation": obs,
                     "observation_central": state,
                 },
-                "stats": self.stats
+                "stats": self.stats.clone(),
             },
             self.batch_size,
         )
@@ -346,24 +344,25 @@ class PlatformHover(IsaacEnv):
             (self.drone_states[..., 2] < 0.2).any(-1, keepdim=True)
             | (distance > 5.0)
         )
-        hasnan = torch.isnan(self.drone_states).any(-1).any(-1, keepdim=True)
+        hasnan = torch.isnan(self.drone_states).any(-1)
 
-        terminated = misbehave | hasnan
+        terminated = misbehave | hasnan.any(-1, keepdim=True)
         truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-
-        done = terminated | truncated
 
         self.stats["return"].add_(reward)
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(-1)
         self.stats["pos_error"].lerp_(self.pos_error, (1-self.alpha))
         self.stats["heading_alignment"].lerp_(self.heading_alignment, (1-self.alpha))
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference.mean(-1, True), (1-self.alpha))
+
         return TensorDict(
             {
                 "agents": {
-                    "reward": reward.unsqueeze(1)
+                    "reward": reward.unsqueeze(1),
                 },
-                "done": done,
+                "done": terminated | truncated,
+                "terminated": terminated,
+                "truncated": truncated,
             },
             self.batch_size,
         )

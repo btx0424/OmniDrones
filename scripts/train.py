@@ -24,7 +24,6 @@ from omni_drones.utils.torchrl.transforms import (
     VelController,
     AttitudeController,
     RateController,
-    History
 )
 from omni_drones.utils.wandb import init_wandb
 from omni_drones.utils.torchrl import RenderCallback, EpisodeStats

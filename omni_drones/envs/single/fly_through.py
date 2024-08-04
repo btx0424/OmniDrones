@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -53,7 +53,7 @@ class FlyThrough(IsaacEnv):
         self.gate_scale = self.cfg.task.gate_scale
 
         self.drone.initialize()
-        
+
         self.gate = ArticulationView(
             "/World/envs/env_*/Gate",
             reset_xform_properties=False,
@@ -136,7 +136,7 @@ class FlyThrough(IsaacEnv):
             dynamic_friction=1.0,
             restitution=0.0,
         )
-        
+
         drone_prims = self.drone.spawn(translations=[(-2., 0.0, 2.0)])
 
         scale = torch.ones(3) * self.cfg.task.gate_scale
@@ -158,7 +158,7 @@ class FlyThrough(IsaacEnv):
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
-        
+
         drone_pos = self.init_pos_dist.sample((*env_ids.shape, 1))
         drone_rpy = self.init_rpy_dist.sample((*env_ids.shape, 1))
         drone_rot = euler_to_quaternion(drone_rpy)
@@ -211,13 +211,13 @@ class FlyThrough(IsaacEnv):
             self.gate_drone_rpos,
             self.gate_vel[..., :3],
         ], dim=-1)
-        
+
         obs = state
 
         pos_error = torch.norm(self.target_drone_rpos, dim=-1)
         self.stats["pos_error"].mul_(self.alpha).add_((1-self.alpha) * pos_error)
         self.stats["drone_uprightness"].mul_(self.alpha).add_((1-self.alpha) * self.drone_up[..., 2])
-        
+
         return TensorDict({
             "drone.obs": obs,
             "stats": self.stats,
@@ -226,7 +226,7 @@ class FlyThrough(IsaacEnv):
 
     def _compute_reward_and_done(self):
         pos, rot, vels = self.drone_state[..., :13].split([3, 4, 6], dim=-1)
-        
+
         crossed_plane = pos[..., 0] > 0.
         crossing_plane = (crossed_plane & (~self.crossed_plane))
         self.crossed_plane |= crossed_plane
@@ -255,12 +255,12 @@ class FlyThrough(IsaacEnv):
 
         assert reward_pose.shape == up_reward.shape == reward_spin.shape
         reward = (
-            reward_pose 
+            reward_pose
             + 0.5 * reward_gate
-            + (reward_pose + 0.3) * (up_reward + reward_spin) 
+            + (reward_pose + 0.3) * (up_reward + reward_spin)
             + reward_effort
         )
-        
+
         done_invalid = (crossing_plane & ~through_gate)
         done_misbehave: torch.Tensor = ((pos[..., 2] < 0.2) | (distance_to_target > 6.))
         if self.reset_on_collision:

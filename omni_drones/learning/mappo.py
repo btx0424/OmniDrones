@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -135,7 +135,7 @@ class MAPPOPolicy(object):
             self.actor = actors[0]
             stacked_params = torch.stack([make_functional(actor) for actor in actors])
             self.actor_params = TensorDictParams(stacked_params.to_tensordict())
-        
+
         self.actor_opt = torch.optim.Adam(self.actor_params.parameters(), lr=cfg.lr)
 
     def make_critic(self):
@@ -352,7 +352,7 @@ class MAPPOPolicy(object):
             train_info["action_norm"] = tensordict[self.act_name].norm(dim=-1).mean().item()
         if hasattr(self, "value_normalizer"):
             train_info["value_running_mean"] = self.value_normalizer.running_mean.mean().item()
-        
+
         self.n_updates += 1
         return {f"{self.agent_spec.name}/{k}": v for k, v in train_info.items()}
 
@@ -363,7 +363,7 @@ class MAPPOPolicy(object):
             "value_normalizer": self.value_normalizer.state_dict()
         }
         return state_dict
-    
+
     def load_state_dict(self, state_dict):
         self.actor_params = TensorDictParams(state_dict["actor_params"])
         self.actor_opt = torch.optim.Adam(self.actor_params.parameters(), lr=self.cfg.actor.lr)
@@ -406,7 +406,7 @@ def make_ppo_actor(cfg, observation_spec: TensorSpec, action_spec: TensorSpec):
 
     if isinstance(action_spec, MultiDiscreteTensorSpec):
         act_dist = MultiCategoricalModule(
-            encoder.output_shape.numel(), 
+            encoder.output_shape.numel(),
             torch.as_tensor(action_spec.nvec.storage().float()).long()
         )
     elif isinstance(action_spec, DiscreteTensorSpec):

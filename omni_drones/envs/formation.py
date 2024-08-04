@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -65,11 +65,12 @@ class Formation(IsaacEnv):
     regular polygon formation. The reward is the negative of the formation cost.
 
     ## Observation
+
     - `obs_self`: the relative position, velocity, and orientation of the drone
     - `obs_others`: the relative position, velocity, and orientation of other drones
 
     ## Reward
-    
+
     - `formation`: the negative of the formation cost.
     - `pos`: the negative of the distance to the target position.
     - `heading`: the negative of the heading error.
@@ -77,13 +78,13 @@ class Formation(IsaacEnv):
     ## Episode End
 
     The episode terminates when any of the following conditions are met:
+
     - The drone crashes.
     - The minimum distance between any two drones is less than a threshold.
 
     or is truncated when it reaches the maximum length.
 
-    ## Config 
-
+    ## Config
     """
     def __init__(self, cfg, headless):
         self.time_encoding = cfg.task.time_encoding
@@ -122,7 +123,7 @@ class Formation(IsaacEnv):
         scene_utils.design_scene()
 
         self.target_pos = torch.tensor([0.0, 0.0, 1.5], device=self.device)
-        
+
         formation = self.cfg.task.formation
         if isinstance(formation, str):
             self.formation = torch.as_tensor(
@@ -197,7 +198,7 @@ class Formation(IsaacEnv):
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
-        
+
         pos = torch.vmap(sample_from_grid, randomness="different")(
             self.cells.expand(len(env_ids), *self.cells.shape), n=self.drone.n
         ) + self.envs_positions[env_ids].unsqueeze(1)
@@ -254,7 +255,7 @@ class Formation(IsaacEnv):
 
         return TensorDict({
             "agents": {
-                "observation": obs, 
+                "observation": obs,
                 "observation_central": state,
             },
             "stats": self.stats
@@ -265,10 +266,10 @@ class Formation(IsaacEnv):
         pos = self.drone.pos
 
         cost_h = cost_formation_hausdorff(pos, desired_p=self.formation)
-        
+
         distance = torch.norm(pos.mean(-2, keepdim=True) - self.target_pos, dim=-1)
 
-        reward_formation =  1 / (1 + torch.square(cost_h * 1.6)) 
+        reward_formation =  1 / (1 + torch.square(cost_h * 1.6))
         # reward_pos = 1 / (1 + cost_pos)
 
         # reward_formation = torch.exp(- cost_h * 1.6)
@@ -279,7 +280,7 @@ class Formation(IsaacEnv):
         reward_separation = torch.square(separation / self.safe_distance).clamp(0, 1)
         reward = (
             reward_separation * (
-                reward_formation 
+                reward_formation
                 + reward_formation * (reward_pos + reward_heading)
                 + 0.4 * reward_pos
             )

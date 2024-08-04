@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -96,7 +96,7 @@ class EpsilonGreedyActionSelector(nn.Module):
             greedy_actions,
         )
         return actions, epsilon
-    
+
 class DQNPolicy:
 
     def __init__(self,
@@ -106,7 +106,7 @@ class DQNPolicy:
     ) -> None:
         self.cfg = cfg
         self.agent_spec = agent_spec
-        self.device = device        
+        self.device = device
         self.batch_size = int(cfg.batch_size)
 
         self.obs_name = f"{self.agent_spec.name}.obs"
@@ -115,17 +115,17 @@ class DQNPolicy:
 
         if not isinstance(agent_spec.action_spec, DiscreteTensorSpec):
             raise ValueError("Only discrete action spaces are supported for DQN.")
-        
+
         self.num_actions = agent_spec.action_spec.space.n
 
         self.gamma = cfg.gamma
-        
+
         self.target_update_interval = cfg.target_update_interval
         self.target_update_count = 0
 
         # self.use_dueling = cfg.use_dueling
         self.use_double = cfg.use_double
-        
+
         encoder = make_encoder(cfg.q_net, agent_spec.observation_spec)
         self.q_net = TensorDictModule(
             nn.Sequential(
@@ -143,7 +143,7 @@ class DQNPolicy:
         self.target_q_net = copy.deepcopy(self.q_net).to(self.device)
 
         self.optimizer = torch.optim.Adam(self.q_net.parameters(), lr=self.cfg.q_net.lr)
-        
+
         self.replay_buffer = TensorDictReplayBuffer(
             batch_size=self.batch_size,
             storage=LazyTensorStorage(max_size=self.cfg.buffer_size, device=self.device),
@@ -167,7 +167,7 @@ class DQNPolicy:
         if len(self.replay_buffer) < self.cfg.buffer_size:
             print(f"{len(self.replay_buffer)} < {self.cfg.buffer_size}")
             return {}
-        
+
         infos = []
 
         with tqdm(range(1, int(self.cfg.gradient_steps)+1)) as t:
@@ -177,14 +177,14 @@ class DQNPolicy:
                 action_taken = transition[self.act_name] # [batchsize, drone, action_dim=1]
                 reward  = transition[("next", "reward", f"{self.agent_spec.name}.reward")] # [batchsize, drone, 1]
                 next_dones  = transition[("next", "done")].float().unsqueeze(-1) # [batchsize, drone, 1]
-        
+
                 # get Q_target
                 with torch.no_grad():
                     if self.use_double:
                         action = self.q_net(transition["next"])["q_net_output"].argmax(dim=-1)
                     else:
                         action = self.target_q_net(transition["next"])["q_net_output"].argmax(dim=-1)
-                    
+
                     next_qs = self.target_q_net(transition["next"])["q_net_output"]
                     next_q = next_qs.gather(dim=-1, index=action.unsqueeze(-1)) # [batchsize, drone, 1
                     target_q = (reward + self.gamma * next_q * (1 - next_dones)).detach() # [batch_size, drone, 1]
@@ -199,7 +199,7 @@ class DQNPolicy:
                 if gradient_step % self.target_update_interval:
                     with torch.no_grad():
                         soft_update(self.target_q_net, self.q_net, self.cfg.tau)
-                
+
                 infos.append(TensorDict({
                     "q_loss": loss,
                     "q_taken_mean": q.mean(),
@@ -207,7 +207,7 @@ class DQNPolicy:
                     "grad_norm": grad_norm,
                 }, []))
                 t.set_postfix({"q_loss": loss.item()})
-        
+
         infos = torch.stack(infos)
         infos = {k: torch.mean(v).item() for k, v in infos.items()}
         infos["epsilon"] = self.epsilon

@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -42,41 +42,42 @@ from .utils import TransportationGroup, TransportationCfg
 class TransportHover(IsaacEnv):
     r"""
     A cooperative control task where a group of UAVs carry a box-shaped payload connected via
-    rigid links. The goal for the agents is to make the payload hover at a reference pose 
+    rigid links. The goal for the agents is to make the payload hover at a reference pose
     (position and attitude).
 
     ## Observation
+
     The observation space is specified a py:class:`CompositeSpec` containing the following items:
 
     - `obs_self` (1, \*): The state of each UAV observed by itself, containing its kinematic
-      information with the position being relative to the payload. It also includes a one-hot 
+      information with the position being relative to the payload. It also includes a one-hot
       vector indicating each drone's identity.
     - `obs_others` (k-1, \*): The observed states of other agents.
-    - `obs_payload` (1, \*): The state of the frame, cotaining its position (relative to the
+    - `obs_payload` (1, \*): The state of the frame, containing its position (relative to the
       reference), rotation (in quaternions and direction vectors), and velocities
 
     ## Reward
-    - `seperation`: A factor that penalizes all agents when the minimum seperation is too small.
+
+    - `separation`: A factor that penalizes all agents when the minimum separation is too small.
     - `pos`: Reward for hovering at the reference position, computed as :math:`\exp(-a * \text{pos_error})`.
     - `up`: Reward for keeping the payload upright.
     - `swing`: Reward for avoid large swinging of the payload.
-    - `joint_limit`: Reward for kepping the joint states in a reasonalble range to avoid glitchy behaviors.
+    - `joint_limit`: Reward for keeping the joint states in a reasonable range to avoid glitchy behaviors.
     - `effort`: Reward computed from the effort of the drone to optimize the
       energy consumption.
 
     ```{math}
-        r = r_\text{seperation} * (r_\text{pos} + r_\text{pos} * (r_\text{up} + r_\text{swing}) + r_\text{joint\_limit})
+        r = r_\text{separation} * (r_\text{pos} + r_\text{pos} * (r_\text{up} + r_\text{swing}) + r_\text{joint\_limit})
     ```
 
     ## Config
-    
-    | Parameter           | Type               | Default       | Description                                                                                                                       |
-    |---------------------|--------------------|---------------|-----------------------------------------------------------------------------------------------------------------------------------|
-    | `drone_model`       | str                | "hummingbird" |                                                                                                                                   |
-    | `num_drones`        | int                | 4             |                                                                                                                                   |
-    | `safe_distance`     | float              | 0.5           | A threshold value that gives penalty when the minimum seperation between the UAVs is too small.                                   |
-    | `mass_scale`        | List[flaot, float] | [0.5, 0.8]    | A tuple of two values that specifies the range of the payload mass to sample from in each episode (as ratio to the drone's mass). |
 
+    | Parameter       | Type               | Default       | Description                                                                                                                       |
+    | --------------- | ------------------ | ------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+    | `drone_model`   | str                | "hummingbird" |                                                                                                                                   |
+    | `num_drones`    | int                | 4             |                                                                                                                                   |
+    | `safe_distance` | float              | 0.5           | A threshold value that gives penalty when the minimum separation between the UAVs is too small.                                   |
+    | `mass_scale`    | List[float, float] | [0.5, 0.8]    | A tuple of two values that specifies the range of the payload mass to sample from in each episode (as ratio to the drone's mass). |
     """
     def __init__(self, cfg, headless):
         self.reward_effort_weight = cfg.task.reward_effort_weight
@@ -91,13 +92,13 @@ class TransportHover(IsaacEnv):
 
         self.group.initialize()
         self.payload = self.group.payload_view
-        
+
         self.payload_target_visual = RigidPrimView(
             "/World/envs/.*/payloadTargetVis",
             reset_xform_properties=False
         )
         self.payload_target_visual.initialize()
-        
+
         self.init_poses = self.group.get_world_poses(clone=True)
         self.init_velocities = torch.zeros_like(self.group.get_velocities())
         self.init_joint_pos = self.group.get_joint_positions(clone=True)
@@ -163,7 +164,7 @@ class TransportHover(IsaacEnv):
         if self.time_encoding:
             self.time_encoding_dim = 4
             payload_state_dim += self.time_encoding_dim
-        
+
         observation_spec = CompositeSpec({
             "obs_self": UnboundedContinuousTensorSpec((1, drone_state_dim)).to(self.device),
             "obs_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13+1)).to(self.device),
@@ -216,7 +217,7 @@ class TransportHover(IsaacEnv):
         self.observation_spec["stats"] = stats_spec
         self.info = info_spec.zero()
         self.stats = stats_spec.zero()
-    
+
     def _reset_idx(self, env_ids: torch.Tensor):
         pos = self.init_pos_dist.sample(env_ids.shape)
         rpy = self.init_rpy_dist.sample(env_ids.shape)
@@ -264,7 +265,7 @@ class TransportHover(IsaacEnv):
         self.payload_pos, self.payload_rot = self.get_env_poses(self.payload.get_world_poses())
         self.payload_heading: torch.Tensor = quat_axis(self.payload_rot, axis=0)
         self.payload_up: torch.Tensor = quat_axis(self.payload_rot, axis=2)
-        
+
         self.drone_rpos = torch.vmap(cpos)(drone_pos, drone_pos)
         self.drone_rpos = torch.vmap(off_diag)(self.drone_rpos)
         self.drone_pdist = torch.norm(self.drone_rpos, dim=-1, keepdim=True)
@@ -274,7 +275,7 @@ class TransportHover(IsaacEnv):
             self.payload_target_pos - self.payload_pos,
             self.payload_target_heading - self.payload_heading
         ], dim=-1)
-        
+
         payload_state = [
             self.target_payload_rpose,
             self.payload_rot,  # 4
@@ -308,7 +309,7 @@ class TransportHover(IsaacEnv):
 
         return TensorDict({
             "agents": {
-                "observation": obs, 
+                "observation": obs,
                 "state": state,
             },
             "info": self.info,
@@ -321,7 +322,7 @@ class TransportHover(IsaacEnv):
             self.group.get_joint_positions()[..., :16]
             / self.group.joint_limits[..., :16, 0].abs()
         )
-        
+
         distance = torch.norm(self.target_payload_rpose, dim=-1, keepdim=True)
         separation = self.drone_pdist.min(dim=-2).values.min(dim=-2).values
 
@@ -342,11 +343,11 @@ class TransportHover(IsaacEnv):
         reward_joint_limit = 0.5 * torch.mean(1 - torch.square(joint_positions), dim=-1)
 
         reward_action_smoothness = self.reward_action_smoothness_weight * -self.drone.throttle_difference
-        
+
         reward[:] = (
             reward_separation * (
-                reward_pose 
-                + reward_pose * (reward_up + reward_spin + reward_swing) 
+                reward_pose
+                + reward_pose * (reward_up + reward_spin + reward_swing)
                 + reward_joint_limit
                 + reward_action_smoothness.mean(1, True)
                 + reward_effort
@@ -357,7 +358,7 @@ class TransportHover(IsaacEnv):
         done_fall = self.drone_states[..., 2] < 0.2
 
         done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1) 
+            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
             | done_fall.any(-1, keepdim=True)
             | done_hasnan.any(-1, keepdim=True)
         )

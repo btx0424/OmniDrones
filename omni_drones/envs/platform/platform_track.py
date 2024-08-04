@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -48,47 +48,47 @@ from ..utils import lemniscate, scale_time
 
 class PlatformTrack(IsaacEnv):
     r"""
-    A cooperative control task where a group of `k` UAVs are connected together by a rigid frame 
-    to form an overactuated platform. Each individual UAV, attached by a 2-DoF passive gimbal 
-    joint, acts as a thrust generator. The goal for the agents is to 
-    collectively control the platform to track a given reference trajectory 
+    A cooperative control task where a group of `k` UAVs are connected together by a rigid frame
+    to form an overactuated platform. Each individual UAV, attached by a 2-DoF passive gimbal
+    joint, acts as a thrust generator. The goal for the agents is to
+    collectively control the platform to track a given reference trajectory
     while orienting the platform towards a given direction.
 
     ## Observation
 
     The observation is a `CompositeSpec` containing:
 
-    - `obs_self`` (1, \*): The state of each UAV observed by itself, containing its kinematic
+    - `obs_self` (1, \*): The state of each UAV observed by itself, containing its kinematic
       information with the position being relative to the frame center, and an one-hot
       identity indicating the UAV's index.
-    - `obs_others`` (k-1, \*): The observed states of other agents.
+    - `obs_others` (k-1, \*): The observed states of other agents.
     - `obs_frame`:
       - `state_frame`: (1, \*): The state of the frame.
-      - `rpos` (3 * `future_traj_steps`): The relative position of the platform to the 
+      - `rpos` (3 * `future_traj_steps`): The relative position of the platform to the
         reference positions in the future `future_traj_steps` time steps.
       - `time_encoding` (optional): The time encoding, which is a 4-dimensional
         vector encoding the current progress of the episode.
 
     ## Reward
 
-    - `reward_pose`: The reward for the pose error between the platform and 
+    - `reward_pose`: The reward for the pose error between the platform and
       the reference (position and orientation).
     - `reward_up`: The reward for the alignment of the platform's up vector and
       the reference up vector.
     - `reward_spin`: Reward computed from the spin of the drone to discourage spinning.
     - `reward_effort`: Reward computed from the effort of the drone to optimize the
       energy consumption.
-    
+
     The total reward is computed as follows:
 
      ```{math}
         r = r_\text{pose} + r_\text{pose} * (r_\text{up} + r_\text{spin}) + r_\text{effort}
     ```
-      
+
     ## Config
-    
+
     | Parameter               | Type  | Default       | Description |
-    |-------------------------|-------|---------------|-------------|
+    | ----------------------- | ----- | ------------- | ----------- |
     | `drone_model`           | str   | "hummingbird" |             |
     | `num_drones`            | int   | 4             |             |
     | `arm_length`            | float | 0.85          |             |
@@ -96,7 +96,6 @@ class PlatformTrack(IsaacEnv):
     | `future_traj_steps`     | int   | 4             |             |
     | `reward_distance_scale` | float | 1.2           |             |
     | `time_encoding`         | bool  | True          |             |
-    
     """
     def __init__(self, cfg, headless):
         self.reset_thres = cfg.task.reset_thres
@@ -115,7 +114,7 @@ class PlatformTrack(IsaacEnv):
             reset_xform_properties=False
         )
         self.target_vis.initialize()
-        
+
         self.init_vels = torch.zeros_like(self.platform.get_velocities())
 
         self.init_rpy_dist = D.Uniform(
@@ -193,7 +192,7 @@ class PlatformTrack(IsaacEnv):
         if self.time_encoding:
             self.time_encoding_dim = 4
             frame_state_dim += self.time_encoding_dim
-            
+
         observation_spec = CompositeSpec({
             "obs_self": UnboundedContinuousTensorSpec((1, drone_state_dim + self.drone.n)),
             "obs_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13)),
@@ -254,7 +253,7 @@ class PlatformTrack(IsaacEnv):
 
         self.platform._reset_idx(env_ids)
         self.platform.set_world_poses(
-            platform_pos + self.envs_positions[env_ids], 
+            platform_pos + self.envs_positions[env_ids],
             platform_rot, env_indices=env_ids
         )
         self.platform.set_velocities(self.init_vels[env_ids], env_ids)
@@ -321,7 +320,7 @@ class PlatformTrack(IsaacEnv):
         state = TensorDict({}, [self.num_envs])
         state["drones"] = obs["obs_self"].squeeze(2)    # [num_envs, drone.n, drone_state_dim]
         state["frame"] = platform_state                # [num_envs, 1, platform_state_dim]
-        
+
         self.up_alignment = torch.sum(self.platform.up * target_up, dim=-1)
 
         self.stats["pos_error"].lerp_(self.target_distance, (1-self.alpha))
@@ -338,16 +337,16 @@ class PlatformTrack(IsaacEnv):
 
     def _compute_reward_and_done(self):
         platform_vels = self.platform.get_velocities()
-        
+
         reward = torch.zeros(self.num_envs, self.drone.n, device=self.device)
         # reward_pose = 1 / (1 + torch.square(distance * self.reward_distance_scale))
         reward_pose = torch.exp(- self.reward_distance_scale * self.target_distance)
-        
+
         reward_up = torch.square((self.up_alignment + 1) / 2)
 
         spinnage = platform_vels[:, -3:].abs().sum(-1)
         reward_spin = 1. / (1 + torch.square(spinnage))
-        
+
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort).mean(-1, keepdim=True)
         reward_action_smoothness = self.reward_action_smoothness_weight * torch.exp(-self.drone.throttle_difference).mean(-1, keepdim=True)
 
@@ -355,7 +354,7 @@ class PlatformTrack(IsaacEnv):
 
         reward[:] = (
             reward_pose
-            + reward_pose * (reward_up + reward_spin) 
+            + reward_pose * (reward_up + reward_spin)
             + reward_effort
             + reward_action_smoothness
         )
@@ -387,7 +386,7 @@ class PlatformTrack(IsaacEnv):
         t = self.progress_buf[env_ids].unsqueeze(1) + step_size * torch.arange(steps, device=self.device)
         t = scale_time(self.traj_w[env_ids].unsqueeze(1) * t * self.dt)
         traj_rot = self.traj_rot[env_ids].unsqueeze(1).expand(-1, t.shape[1], 4)
-        
+
         target_pos = vmap(lemniscate)(self.traj_t0 + t, self.traj_c[env_ids])
         target_pos = vmap(torch_utils.quat_rotate)(traj_rot, target_pos) * self.traj_scale[env_ids].unsqueeze(1)
 

@@ -2,6 +2,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="omni_drones",
+    version="0.1.0",
     author="btx0424@SUSTech",
     keywords=["robotics", "rl"],
     packages=find_packages("."),
@@ -9,14 +10,12 @@ setup(
         "hydra-core",
         "omegaconf",
         "wandb",
-        "moviepy",
         "imageio",
         "plotly",
         "einops",
-        "av", # for moviepy
         "pandas",
-        # install by cloning from github
-        # "tensordict" 
-        # "torchrl",
+        "moviepy",
+        "av",
+        "torchrl==0.3.1", # for torch==2.2.2
     ],
 )

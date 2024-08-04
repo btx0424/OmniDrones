@@ -6,7 +6,7 @@ GPU Driver-related Issues
 
 .. seealso::
 
-    It is recommanded to `manually install the latest GPU driver <https://docs.omniverse.nvidia.com/dev-guide/latest/linux-troubleshooting.html#q1-how-to-install-a-driver>`__.
+    It is recommended to `manually install the latest GPU driver <https://docs.omniverse.nvidia.com/dev-guide/latest/linux-troubleshooting.html#q1-how-to-install-a-driver>`__.
 
 
 Conventions
@@ -27,15 +27,15 @@ the inverse of the rotation:
 
     view = ... # ArticulationView or RigidPrimView
 
-    pos_w, rot = view.get_world_pose(clone=True) 
+    pos_w, rot = view.get_world_pose(clone=True)
     linvel_w, angvel_w = view.get_velocities(clone=True).split([3, 3], dim=-1)
     angvel_b = quat_rotate_inverse(rot, angvel_w)
 
 
-Debug Visulization
-------------------
+Debug Visualization
+-------------------
 
-.. seealso:: 
+.. seealso::
 
     `Debug Draw Helper <https://docs.omniverse.nvidia.com/isaacsim/latest/ext_omni_isaac_debug_drawing.html>`__
 
@@ -44,11 +44,11 @@ Detecting Contact
 -----------------
 
 To enable contact detection on a rigid body, one can create a :py:class:`RigidPrimView` and
-initialize it with `track_contact_forces=True`. After simulation starts, contact forces 
+initialize it with `track_contact_forces=True`. After simulation starts, contact forces
 can be retrieved with :py:meth:`RigidPrimView.get_net_contact_forces`. See below for an example.
 
 .. code:: python
-    
+
     # at initialization
     obstacles = RigidPrimView(
         "/World/envs/env_*/obstacle_*",
@@ -63,9 +63,9 @@ can be retrieved with :py:meth:`RigidPrimView.get_net_contact_forces`. See below
     collision_force = obstacles.get_net_contact_forces() # [*view_shape, 3]
     collision = collision_force.any(dim=-1, keepdim=True)
 
-.. warning:: 
+.. warning::
 
-    Until Isaac Sim 2022.2.1, contact detection can leads to CUDA errors when the number of 
+    Until Isaac Sim 2022.2.1, contact detection can leads to CUDA errors when the number of
     environments and thus the number of rigid bodies is large. This is potentially related to
     buffer allocation at lower levels.
 

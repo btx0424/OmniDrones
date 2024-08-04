@@ -1,13 +1,12 @@
-PayloadFlyThrough
-=================
-
+# PayloadFlyThrough
 
 A challenging control task where the agent must fly the UAV with a payload through some obstacles.
-The vertical seperation between the obstacles is less than the connection length of the payload,
+The vertical separation between the obstacles is less than the connection length of the payload,
 such that the agent have to discover a way to swing the payload through the obstacles.
 
 ## Observation
-- `drone_payload_rpos` (3): The payload's postion relative to the drone.
+
+- `drone_payload_rpos` (3): The payload's position relative to the drone.
 - `payload_vels` (6): The linear and angular velocities of the payload.
 - `target_payload_rpos` (3): The target payload position relative to the payload.
 - `root_state` (16 + num_rotors): The basic information of the drone (except its position),
@@ -18,6 +17,7 @@ heading and up vectors, and the current throttle.
 vector encoding the current progress of the episode.
 
 ## Reward
+
 - `pos`: Reward for maintaining the final position of the payload around the target position.
 - `up`: Reward for maintaining an upright orientation.
 - `effort`: Reward computed from the effort of the drone to optimize the
@@ -40,13 +40,11 @@ is reached, or (optional) when the drone collides with any obstacle.
 
 ## Config
 
-| Parameter               | Type                | Default       | Description |
-|-------------------------|---------------------|---------------|-------------|
-| `drone_model`           | str                 | "hummingbird" | Specifies the model of the drone being used in the environment. |
-| `reset_on_collision`    | bool                | False         | Indicates if the episode should reset when the drone collides with an obstacle. |
-| `bar_length`            | float               | 1.0           | Length of the pendulum's bar. |
-| `reward_distance_scale` | float               | 1.2           | Scales the reward based on the distance between the payload and its target. |
+| Parameter               | Type                | Default       | Description                                                                                                                                                                                                                             |
+| ----------------------- | ------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `drone_model`           | str                 | "hummingbird" | Specifies the model of the drone being used in the environment.                                                                                                                                                                         |
+| `reset_on_collision`    | bool                | False         | Indicates if the episode should reset when the drone collides with an obstacle.                                                                                                                                                         |
+| `bar_length`            | float               | 1.0           | Length of the pendulum's bar.                                                                                                                                                                                                           |
+| `reward_distance_scale` | float               | 1.2           | Scales the reward based on the distance between the payload and its target.                                                                                                                                                             |
 | `time_encoding`         | bool                | True          | Indicates whether to include time encoding in the observation space. If set to True, a 4-dimensional vector encoding the current progress of the episode is included in the observation. If set to False, this feature is not included. |
-| `obstacle_spacing`      | tuple[float, float] | [0.85, 0.85]  | Specifies the minimum and maximum distance between two horizontal bars (obstacles) in the environment. |
-
-
+| `obstacle_spacing`      | tuple[float, float] | [0.85, 0.85]  | Specifies the minimum and maximum distance between two horizontal bars (obstacles) in the environment.                                                                                                                                  |

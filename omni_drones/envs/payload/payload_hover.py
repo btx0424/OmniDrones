@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -48,13 +48,13 @@ class PayloadHover(IsaacEnv):
     The goal for the agent is to hover the payload at a target position.
 
     ## Observation
-    - `drone_payload_rpos` (3): The position of the drone relative to the payload's position. 
+    - `drone_payload_rpos` (3): The position of the drone relative to the payload's position.
     - `ref_payload_rpos` (3): The reference positions of the
       payload at multiple future time steps. This helps the agent anticipate the desired payload
       trajectory.
-    - `root_state` (16 + `num_rotors`): The basic information of the drone (except its position), 
-      containing its rotation (in quaternion), velocities (linear and angular), 
-      heading and up vectors, and the current throttle. 
+    - `root_state` (16 + `num_rotors`): The basic information of the drone (except its position),
+      containing its rotation (in quaternion), velocities (linear and angular),
+      heading and up vectors, and the current throttle.
     - `payload_vels` (6): The linear and angular velocities of the payload.
     - `time_encoding` (optional): The time encoding, which is a 4-dimensional
       vector encoding the current progress of the episode.
@@ -68,7 +68,7 @@ class PayloadHover(IsaacEnv):
       energy consumption.
     - `spin`: Reward computed from the spin of the drone to discourage spinning.
     - `action_smoothness`: Reward that encourages smoother drone actions, computed based on the throttle difference of the drone.
-    
+
     The total reward is computed as follows:
     ```{math}
         r = r_\text{pos} + r_\text{pos} * (r_\text{up} + r_\text{spin}) + r_\text{effort} + r_\text{action_smoothness}
@@ -76,14 +76,14 @@ class PayloadHover(IsaacEnv):
 
 
     ## Episode End
-    The episode ends when the drone gets too close to the ground, or when 
+    The episode ends when the drone gets too close to the ground, or when
     the payload gets too close to the ground, or when the maximum episode length
     is reached.
 
     ## Config
 
     | Parameter               | Type  | Default       | Description |
-    |-------------------------|-------|---------------|-------------|
+    | ----------------------- | ----- | ------------- | ----------- |
     | `drone_model`           | str   | "hummingbird" | Specifies the model of the drone being used in the environment. |
     | `bar_length`            | float | 1.0           | Length of the pendulum's bar. |
     | `reward_distance_scale` | float | 1.6           | Scales the reward based on `target_payload_rpos`. |
@@ -107,7 +107,7 @@ class PayloadHover(IsaacEnv):
 
         self.init_joint_pos = self.drone.get_joint_positions(True)
         self.init_joint_vels = torch.zeros_like(self.drone.get_joint_velocities())
-        
+
         self.payload = RigidPrimView(
             f"/World/envs/env_*/{self.drone.name}_*/payload",
             reset_xform_properties=False,
@@ -130,7 +130,7 @@ class PayloadHover(IsaacEnv):
         )
         push_interval = self.cfg.task.push_interval
         self.push_prob = (1 - torch.exp(-self.dt/torch.tensor(push_interval))).to(self.device)
-        
+
         payload_mass_scale = self.cfg.task.payload_mass_scale
         self.payload_mass_dist = D.Uniform(
             torch.as_tensor(payload_mass_scale[0] * self.drone.MASS_0[0], device=self.device),
@@ -204,7 +204,7 @@ class PayloadHover(IsaacEnv):
         self.observation_spec["stats"] = stats_spec
         self.info = info_spec.zero()
         self.stats = stats_spec.zero()
-    
+
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
 
@@ -212,7 +212,7 @@ class PayloadHover(IsaacEnv):
         rpy = self.init_rpy_dist.sample(env_ids.shape)
         rot = euler_to_quaternion(rpy)
         vel = torch.zeros(len(env_ids), 1, 6, device=self.device)
-        
+
         self.drone.set_world_poses(
             pos + self.envs_positions[env_ids], rot, env_ids
         )
@@ -232,7 +232,7 @@ class PayloadHover(IsaacEnv):
         actions = tensordict[("agents", "action")]
         self.effort = self.drone.apply_action(actions)
         self._push_payload()
-    
+
     def _push_payload(self):
         env_mask = (torch.rand(self.num_envs, device=self.device) < self.push_prob).float()
         forces = self.push_force_dist.sample((self.num_envs,))
@@ -248,7 +248,7 @@ class PayloadHover(IsaacEnv):
         self.info["drone_state"][:] = self.root_state[..., :13]
         self.payload_pos = self.get_env_poses(self.payload.get_world_poses())[0]
         self.payload_vels = self.payload.get_velocities()
-        
+
         self.drone_payload_rpos = self.drone.pos - self.payload_pos.unsqueeze(1)
         self.target_payload_rpos = (self.target_pos - self.payload_pos.unsqueeze(1))
 
@@ -267,7 +267,7 @@ class PayloadHover(IsaacEnv):
         self.stats["pos_error"].lerp_(self.target_distance, (1-self.alpha))
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
         self.smoothness = (
-            self.drone.get_linear_smoothness() 
+            self.drone.get_linear_smoothness()
             + self.drone.get_angular_smoothness()
         )
         self.stats["motion_smoothness"].lerp_(self.smoothness, (1-self.alpha))
@@ -283,7 +283,7 @@ class PayloadHover(IsaacEnv):
     def _compute_reward_and_done(self):
         # pos reward
         reward_pose = torch.exp(-self.reward_distance_scale * self.target_distance)
-        
+
         # uprightness
         tiltage = torch.abs(1 - self.drone.up[..., 2])
         reward_up = 0.5 / (1.0 + torch.square(tiltage))
@@ -297,8 +297,8 @@ class PayloadHover(IsaacEnv):
         reward_spin = 0.5 / (1.0 + torch.square(spin))
 
         reward = (
-            reward_pose 
-            + reward_pose * (reward_up + reward_spin) 
+            reward_pose
+            + reward_pose * (reward_up + reward_spin)
             + reward_effort
             + reward_action_smoothness
         )
@@ -307,7 +307,7 @@ class PayloadHover(IsaacEnv):
             (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
             | (self.drone.pos[..., 2] < 0.2)
             | (self.payload_pos[..., 2] < 0.2).unsqueeze(-1)
-        ) 
+        )
 
         self.stats["return"] += reward.unsqueeze(-1)
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)

@@ -1,6 +1,4 @@
-PlatformHover
-=============
-
+# PlatformHover
 
 A cooperative control task where a group of `k` UAVs are connected together by a
 rigid frame to form an overactuated platform. Each individual UAV, attached
@@ -9,6 +7,7 @@ The goal for the agents is to make the platform hover at a reference pose
 (position and attitude).
 
 ## Observation
+
 The observation is a `CompositeSpec` containing the following items:
 
 - `obs_self` (1, \*): The state of each UAV observed by itself, containing its kinematic
@@ -40,11 +39,9 @@ r = r_\text{pose} + r_\text{pose} * (r_\text{up} + r_\text{spin}) + r_\text{effo
 ## Config
 
 | Parameter               | Type  | Default       | Description |
-|-------------------------|-------|---------------|-------------|
+| ----------------------- | ----- | ------------- | ----------- |
 | `drone_model`           | str   | "hummingbird" |             |
 | `num_drones`            | int   | 4             |             |
 | `arm_length`            | float | 0.85          |             |
 | `reward_distance_scale` | float | 1.2           |             |
 | `time_encoding`         | bool  | True          |             |
-
-

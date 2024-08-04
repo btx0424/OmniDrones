@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -83,7 +83,7 @@ class PlatformFlyThrough(IsaacEnv):
         self.obstacles.initialize()
 
         self.platform.initialize()
-        
+
         self.init_vels = torch.zeros_like(self.platform.get_velocities())
         self.init_joint_pos = self.platform.get_joint_positions(clone=True)
         self.init_joint_vel = torch.zeros_like(self.platform.get_joint_velocities())
@@ -118,7 +118,7 @@ class PlatformFlyThrough(IsaacEnv):
             torch.tensor([-.4, -.4, 0.], device=self.device) * torch.pi,
             torch.tensor([0.4, 0.4, 2], device=self.device) * torch.pi
         )
-        
+
         self.target_pos = torch.tensor([2.0, 0., 2.25], device=self.device)
         self.target_heading =  torch.zeros(self.num_envs, 3, device=self.device)
         self.target_up = torch.zeros(self.num_envs, 3, device=self.device)
@@ -136,7 +136,7 @@ class PlatformFlyThrough(IsaacEnv):
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
         cfg = drone_model.cfg_cls()
         self.drone: MultirotorBase = drone_model(cfg=cfg)
-        
+
         platform_cfg = PlatformCfg(
             num_drones=self.cfg.task.num_drones,
             arm_length=self.cfg.task.arm_length,
@@ -218,7 +218,7 @@ class PlatformFlyThrough(IsaacEnv):
         state["state_drones"] = obs["state_self"].squeeze(2)    # [num_envs, drone.n, drone_state_dim]
         state["state_frame"] = platform_state                # [num_envs, 1, platform_state_dim]
         state["obstacles"] = obstacle_platform_rpos    # [num_envs, 3, 2]
-        
+
         pos_error = torch.norm(self.target_platform_rpos, dim=-1)
         self.stats["pos_error"].mul_(self.alpha).add_((1-self.alpha) * pos_error)
         return TensorDict(
@@ -232,13 +232,13 @@ class PlatformFlyThrough(IsaacEnv):
 
     def _compute_reward_and_done(self):
         distance = torch.norm(self.target_platform_rpos, dim=-1)
-        
+
         reward = torch.zeros(self.num_envs, self.drone.n, 1, device=self.device)
         reward_pose = 1 / (1 + torch.square(distance * self.reward_distance_scale))
-        
+
         spinnage = self.platform_vels[:, -3:].abs().sum(-1)
         reward_spin = 1. / (1 + torch.square(spinnage))
-        
+
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort).mean(-1, keepdim=True)
 
         # collision = (
@@ -252,10 +252,10 @@ class PlatformFlyThrough(IsaacEnv):
 
         reward[:] = (
             (
-                reward_pose 
-                + reward_pose * (reward_spin) 
+                reward_pose
+                + reward_pose * (reward_spin)
                 + reward_effort
-            ) 
+            )
         ).unsqueeze(1)
 
         done_misbehave = (

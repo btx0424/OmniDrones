@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -181,7 +181,7 @@ def ravel_composite(
     spec: CompositeSpec, key: str, start_dim: int=-2, end_dim: int=-1
 ):
     r"""
-    
+
     Examples:
     >>> obs_spec = CompositeSpec({
     ...     "obs_self": UnboundedContinuousTensorSpec((1, 19)),
@@ -217,20 +217,20 @@ class VelController(Transform):
         super().__init__([], in_keys_inv=[("info", "drone_state")])
         self.controller = controller
         self.action_key = action_key
-    
+
     def transform_input_spec(self, input_spec: TensorSpec) -> TensorSpec:
         action_spec = input_spec[("full_action_spec", *self.action_key)]
         spec = UnboundedContinuousTensorSpec(action_spec.shape[:-1]+(4,), device=action_spec.device)
         input_spec[("full_action_spec", *self.action_key)] = spec
         return input_spec
-    
+
     def _inv_call(self, tensordict: TensorDictBase) -> TensorDictBase:
         drone_state = tensordict[("info", "drone_state")][..., :13]
         action = tensordict[self.action_key]
         target_vel, target_yaw = action.split([3, 1], -1)
         cmds = self.controller(
-            drone_state, 
-            target_vel=target_vel, 
+            drone_state,
+            target_vel=target_vel,
             target_yaw=target_yaw*torch.pi
         )
         torch.nan_to_num_(cmds, 0.)
@@ -248,21 +248,21 @@ class RateController(Transform):
         self.controller = controller
         self.action_key = action_key
         self.max_thrust = self.controller.max_thrusts.sum(-1)
-    
+
     def transform_input_spec(self, input_spec: TensorSpec) -> TensorSpec:
         action_spec = input_spec[("full_action_spec", *self.action_key)]
         spec = UnboundedContinuousTensorSpec(action_spec.shape[:-1]+(4,), device=action_spec.device)
         input_spec[("full_action_spec", *self.action_key)] = spec
         return input_spec
-    
+
     def _inv_call(self, tensordict: TensorDictBase) -> TensorDictBase:
         drone_state = tensordict[("info", "drone_state")][..., :13]
         action = tensordict[self.action_key]
         target_rate, target_thrust = action.split([3, 1], -1)
         target_thrust = ((target_thrust + 1) / 2).clip(0.) * self.max_thrust
         cmds = self.controller(
-            drone_state, 
-            target_rate=target_rate * torch.pi, 
+            drone_state,
+            target_rate=target_rate * torch.pi,
             target_thrust=target_thrust
         )
         torch.nan_to_num_(cmds, 0.)
@@ -280,13 +280,13 @@ class AttitudeController(Transform):
         self.controller = controller
         self.action_key = action_key
         self.max_thrust = self.controller.max_thrusts.sum(-1)
-    
+
     def transform_input_spec(self, input_spec: TensorSpec) -> TensorSpec:
         action_spec = input_spec[("full_action_spec", *self.action_key)]
         spec = UnboundedContinuousTensorSpec(action_spec.shape[:-1]+(4,), device=action_spec.device)
         input_spec[("full_action_spec", *self.action_key)] = spec
         return input_spec
-    
+
     def _inv_call(self, tensordict: TensorDictBase) -> TensorDictBase:
         drone_state = tensordict[("info", "drone_state")][..., :13]
         action = tensordict[self.action_key]
@@ -319,7 +319,7 @@ class History(Transform):
             raise ValueError
         super().__init__(in_keys=in_keys, out_keys=out_keys)
         self.steps = steps
-    
+
     def transform_observation_spec(self, observation_spec: TensorSpec) -> TensorSpec:
         for in_key, out_key in zip(self.in_keys, self.out_keys):
             is_tuple = isinstance(in_key, tuple)

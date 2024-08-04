@@ -16,7 +16,7 @@ from torchrl.data import CompositeSpec, TensorSpec
 from torchrl.envs.utils import set_exploration_type, ExplorationType
 from omni_drones.utils.torchrl import SyncDataCollector
 from omni_drones.utils.torchrl.transforms import (
-    FromMultiDiscreteAction, 
+    FromMultiDiscreteAction,
     FromDiscreteAction,
     ravel_composite,
     VelController,
@@ -56,14 +56,14 @@ class PPOPolicy(TensorDictModuleBase):
         fake_input = observation_spec.zero()
 
         cnn = nn.Sequential(
-            nn.LazyConv2d(out_channels=4, kernel_size=[5, 3], padding=[2, 1]), nn.ELU(), 
+            nn.LazyConv2d(out_channels=4, kernel_size=[5, 3], padding=[2, 1]), nn.ELU(),
             nn.LazyConv2d(out_channels=16, kernel_size=[5, 3], stride=[2, 1], padding=[2, 1]), nn.ELU(),
             nn.LazyConv2d(out_channels=16, kernel_size=[5, 3], stride=[2, 2], padding=[2, 1]), nn.ELU(),
             Rearrange("n c w h -> n (c w h)"),
             nn.LazyLinear(128), nn.LayerNorm(128)
         )
         mlp = make_mlp([256, 256])
-        
+
         self.encoder = TensorDictSequential(
             TensorDictModule(cnn, [("agents", "observation", "lidar")], ["_cnn_feature"]),
             CatTensors(["_cnn_feature", ("agents", "observation", "state")], "_feature", del_keys=False),
@@ -90,10 +90,10 @@ class PPOPolicy(TensorDictModuleBase):
             if isinstance(module, nn.Linear):
                 nn.init.orthogonal_(module.weight, 0.01)
                 nn.init.constant_(module.bias, 0.)
-            
+
         self.actor.apply(init_)
         self.critic.apply(init_)
-        
+
         self.encoder_opt = torch.optim.Adam(self.encoder.parameters(), lr=5e-4)
         self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=5e-4)
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=5e-4)
@@ -105,7 +105,7 @@ class PPOPolicy(TensorDictModuleBase):
         self.critic(tensordict)
         tensordict.exclude("loc", "scale", "_feature", inplace=True)
         return tensordict
-    
+
     def train_op(self, tensordict: TensorDict):
         next_tensordict = tensordict["next"]
         with torch.no_grad():
@@ -133,7 +133,7 @@ class PPOPolicy(TensorDictModuleBase):
             batch = make_batch(tensordict, self.cfg.num_minibatches)
             for minibatch in batch:
                 infos.append(self._update(minibatch))
-        
+
         infos: TensorDict = torch.stack(infos).to_tensordict()
         infos = infos.apply(torch.mean, batch_size=[])
         return {k: v.item() for k, v in infos.items()}
@@ -248,15 +248,15 @@ def main(cfg):
             transforms.append(transform)
         elif not action_transform.lower() == "none":
             raise NotImplementedError(f"Unknown action transform: {action_transform}")
-    
+
     env = TransformedEnv(base_env, Compose(*transforms)).train()
     env.set_seed(cfg.seed)
 
     policy = PPOPolicy(
-        cfg.algo, 
-        env.observation_spec, 
-        env.action_spec, 
-        env.reward_spec, 
+        cfg.algo,
+        env.observation_spec,
+        env.action_spec,
+        env.reward_spec,
         device=base_env.device
     )
 
@@ -267,7 +267,7 @@ def main(cfg):
     save_interval = cfg.get("save_interval", -1)
 
     stats_keys = [
-        k for k in base_env.observation_spec.keys(True, True) 
+        k for k in base_env.observation_spec.keys(True, True)
         if isinstance(k, tuple) and k[0]=="stats"
     ]
     episode_stats = EpisodeStats(stats_keys)
@@ -282,7 +282,7 @@ def main(cfg):
 
     @torch.no_grad()
     def evaluate(
-        seed: int=0, 
+        seed: int=0,
         exploration_type: ExplorationType=ExplorationType.MODE
     ):
 
@@ -292,7 +292,7 @@ def main(cfg):
         env.set_seed(seed)
 
         render_callback = RenderCallback(interval=2)
-        
+
         with set_exploration_type(exploration_type):
             trajs = env.rollout(
                 max_steps=base_env.max_episode_length,
@@ -318,17 +318,17 @@ def main(cfg):
         }
 
         info = {
-            "eval/stats." + k: torch.mean(v.float()).item() 
+            "eval/stats." + k: torch.mean(v.float()).item()
             for k, v in traj_stats.items()
         }
 
         # log video
         info["recording"] = wandb.Video(
-            render_callback.get_video_array(axes="t c h w"), 
-            fps=0.5 / (cfg.sim.dt * cfg.sim.substeps), 
+            render_callback.get_video_array(axes="t c h w"),
+            fps=0.5 / (cfg.sim.dt * cfg.sim.substeps),
             format="mp4"
         )
-        
+
         # log distributions
         # df = pd.DataFrame(traj_stats)
         # table = wandb.Table(dataframe=df)
@@ -342,10 +342,10 @@ def main(cfg):
     for i, data in enumerate(pbar):
         info = {"env_frames": collector._frames, "rollout_fps": collector._fps}
         episode_stats.add(data.to_tensordict())
-        
+
         if len(episode_stats) >= base_env.num_envs:
             stats = {
-                "train/" + (".".join(k) if isinstance(k, tuple) else k): torch.mean(v.float()).item() 
+                "train/" + (".".join(k) if isinstance(k, tuple) else k): torch.mean(v.float()).item()
                 for k, v in episode_stats.pop().items(True, True)
             }
             info.update(stats)
@@ -372,8 +372,8 @@ def main(cfg):
         pbar.set_postfix({"rollout_fps": collector._fps, "frames": collector._frames})
 
         if max_iters > 0 and i >= max_iters - 1:
-            break 
-    
+            break
+
     logging.info(f"Final Eval at {collector._frames} steps.")
     info = {"env_frames": collector._frames}
     info.update(evaluate())
@@ -385,10 +385,10 @@ def main(cfg):
         logging.info(f"Saved checkpoint to {str(ckpt_path)}")
     except AttributeError:
         logging.warning(f"Policy {policy} does not implement `.state_dict()`")
-        
+
 
     wandb.finish()
-    
+
     simulation_app.close()
 
 

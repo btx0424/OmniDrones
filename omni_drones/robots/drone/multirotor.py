@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -57,9 +57,9 @@ class MultirotorBase(RobotBase):
     cfg_cls = MultirotorCfg
 
     def __init__(
-        self, 
-        name: str = None, 
-        cfg: MultirotorCfg=None, 
+        self,
+        name: str = None,
+        cfg: MultirotorCfg=None,
         is_articulation: bool = True
     ) -> None:
         super().__init__(name, cfg, is_articulation)
@@ -80,7 +80,7 @@ class MultirotorBase(RobotBase):
             "tau_down": UnboundedContinuousTensorSpec(self.num_rotors),
             "drag_coef": UnboundedContinuousTensorSpec(1),
         }).to(self.device)
-        
+
         if self.cfg.force_sensor:
             self.use_force_sensor = True
             state_dim = 19 + self.num_rotors + 6
@@ -91,7 +91,7 @@ class MultirotorBase(RobotBase):
         self.randomization = defaultdict(dict)
 
     def initialize(
-        self, 
+        self,
         prim_paths_expr: str = None,
         track_contact_forces: bool = False
     ):
@@ -107,7 +107,7 @@ class MultirotorBase(RobotBase):
             print(self._view.dof_names)
             print(self._view._dof_indices)
             rotor_joint_indices = [
-                i for i, dof_name in enumerate(self._view._dof_names) 
+                i for i, dof_name in enumerate(self._view._dof_names)
                 if dof_name.startswith("rotor")
             ]
             if len(rotor_joint_indices):
@@ -180,7 +180,7 @@ class MultirotorBase(RobotBase):
         )
         self.THRUST2WEIGHT_0 = self.KF_0 / (self.MASS_0 * 9.81) # TODO: get the real g
         self.FORCE2MOMENT_0 = torch.broadcast_to(self.KF_0 / self.KM_0, self.THRUST2WEIGHT_0.shape)
-        
+
         logging.info(str(self))
 
         self.drag_coef = torch.zeros(*self.shape, 1, device=self.device) * self.params["drag_coef"]
@@ -189,7 +189,7 @@ class MultirotorBase(RobotBase):
     def setup_randomization(self, cfg):
         if not self.initialized:
             raise RuntimeError
-        
+
         for phase in ("train", "eval"):
             if phase not in cfg: continue
             mass_scale = cfg[phase].get("mass_scale", None)
@@ -277,12 +277,12 @@ class MultirotorBase(RobotBase):
         self.forces[:] += (self.drag_coef * self.masses) * self.vel[..., :3]
 
         self.rotors_view.apply_forces_and_torques_at_pos(
-            self.thrusts.reshape(-1, 3), 
+            self.thrusts.reshape(-1, 3),
             is_global=False
         )
         self.base_link.apply_forces_and_torques_at_pos(
-            self.forces.reshape(-1, 3), 
-            self.torques.reshape(-1, 3), 
+            self.forces.reshape(-1, 3),
+            self.torques.reshape(-1, 3),
             is_global=True
         )
         self.throttle_difference[:] = torch.norm(self.throttle - last_throttle, dim=-1)
@@ -292,7 +292,7 @@ class MultirotorBase(RobotBase):
         self.pos[:], self.rot[:] = self.get_world_poses(True)
         if env_frame and hasattr(self, "_envs_positions"):
             self.pos.sub_(self._envs_positions)
-        
+
         vel_w = self.get_velocities(True)
         vel_b = torch.cat([
             quat_rotate_inverse(self.rot, vel_w[..., :3]),
@@ -300,7 +300,7 @@ class MultirotorBase(RobotBase):
         ], dim=-1)
         self.vel_w[:] = vel_w
         self.vel_b[:] = vel_b
-        
+
         # acc = self.acc.lerp((vel - self.vel) / self.dt, self.alpha)
         # self.acc[:] = acc
         self.heading[:] = quat_axis(self.rot, axis=0)
@@ -362,7 +362,7 @@ class MultirotorBase(RobotBase):
             self.intrinsics["com"][env_ids] = coms.reshape(*shape, 1, 3)
         if "thrust2weight" in distributions:
             thrust2weight = distributions["thrust2weight"].sample(shape)
-            KF = thrust2weight * self.masses[env_ids] * 9.81 
+            KF = thrust2weight * self.masses[env_ids] * 9.81
             self.KF[env_ids] = KF
             self.intrinsics["KF"][env_ids] = KF / self.KF_0
         if "force2moment" in distributions:
@@ -382,22 +382,22 @@ class MultirotorBase(RobotBase):
             tau_down = distributions["tau_down"].sample(shape+self.rotors_view.shape[1:])
             self.tau_down[env_ids] = tau_down
             self.intrinsics["tau_down"][env_ids] = tau_down
-    
+
     def get_thrust_to_weight_ratio(self):
         return self.KF.sum(-1, keepdim=True) / (self.masses * 9.81)
 
     def get_linear_smoothness(self):
         return - (
-            torch.norm(self.acc[..., :3], dim=-1) 
+            torch.norm(self.acc[..., :3], dim=-1)
             + torch.norm(self.jerk[..., :3], dim=-1)
         )
-    
+
     def get_angular_smoothness(self):
         return - (
             torch.sum(self.acc[..., 3:].abs(), dim=-1)
             + torch.sum(self.jerk[..., 3:].abs(), dim=-1)
         )
-    
+
     def __str__(self):
         default_params = "\n".join([
             "Default parameters:",
@@ -410,15 +410,15 @@ class MultirotorBase(RobotBase):
 
     @staticmethod
     def downwash(
-        p0: torch.Tensor, 
+        p0: torch.Tensor,
         p1: torch.Tensor,
         p1_t: torch.Tensor,
         kr: float=2,
         kz: float=1,
     ):
         """
-        A highly simplified downwash effect model. 
-        
+        A highly simplified downwash effect model.
+
         References:
         https://arxiv.org/pdf/2207.09645.pdf
         https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=8798116

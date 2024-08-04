@@ -17,7 +17,7 @@ from torchrl.data import CompositeSpec
 from torchrl.envs.utils import set_exploration_type, ExplorationType
 from omni_drones.utils.torchrl import SyncDataCollector
 from omni_drones.utils.torchrl.transforms import (
-    FromMultiDiscreteAction, 
+    FromMultiDiscreteAction,
     FromDiscreteAction,
     ravel_composite,
     VelController,
@@ -95,16 +95,16 @@ def main(cfg):
             transforms.append(transform)
         elif not action_transform.lower() == "none":
             raise NotImplementedError(f"Unknown action transform: {action_transform}")
-    
+
     env = TransformedEnv(base_env, Compose(*transforms)).train()
     env.set_seed(cfg.seed)
 
     try:
         policy = ALGOS[cfg.algo.name.lower()](
-            cfg.algo, 
-            env.observation_spec, 
-            env.action_spec, 
-            env.reward_spec, 
+            cfg.algo,
+            env.observation_spec,
+            env.action_spec,
+            env.reward_spec,
             device=base_env.device
         )
     except KeyError:
@@ -117,7 +117,7 @@ def main(cfg):
     save_interval = cfg.get("save_interval", -1)
 
     stats_keys = [
-        k for k in base_env.observation_spec.keys(True, True) 
+        k for k in base_env.observation_spec.keys(True, True)
         if isinstance(k, tuple) and k[0]=="stats"
     ]
     episode_stats = EpisodeStats(stats_keys)
@@ -132,7 +132,7 @@ def main(cfg):
 
     @torch.no_grad()
     def evaluate(
-        seed: int=0, 
+        seed: int=0,
         exploration_type: ExplorationType=ExplorationType.MODE
     ):
 
@@ -142,7 +142,7 @@ def main(cfg):
         env.set_seed(seed)
 
         render_callback = RenderCallback(interval=2)
-        
+
         with set_exploration_type(exploration_type):
             trajs = env.rollout(
                 max_steps=base_env.max_episode_length,
@@ -168,17 +168,17 @@ def main(cfg):
         }
 
         info = {
-            "eval/stats." + k: torch.mean(v.float()).item() 
+            "eval/stats." + k: torch.mean(v.float()).item()
             for k, v in traj_stats.items()
         }
 
         # log video
         info["recording"] = wandb.Video(
-            render_callback.get_video_array(axes="t c h w"), 
-            fps=0.5 / (cfg.sim.dt * cfg.sim.substeps), 
+            render_callback.get_video_array(axes="t c h w"),
+            fps=0.5 / (cfg.sim.dt * cfg.sim.substeps),
             format="mp4"
         )
-        
+
         # log distributions
         # df = pd.DataFrame(traj_stats)
         # table = wandb.Table(dataframe=df)
@@ -192,10 +192,10 @@ def main(cfg):
     for i, data in enumerate(pbar):
         info = {"env_frames": collector._frames, "rollout_fps": collector._fps}
         episode_stats.add(data.to_tensordict())
-        
+
         if len(episode_stats) >= base_env.num_envs:
             stats = {
-                "train/" + (".".join(k) if isinstance(k, tuple) else k): torch.mean(v.float()).item() 
+                "train/" + (".".join(k) if isinstance(k, tuple) else k): torch.mean(v.float()).item()
                 for k, v in episode_stats.pop().items(True, True)
             }
             info.update(stats)
@@ -222,8 +222,8 @@ def main(cfg):
         pbar.set_postfix({"rollout_fps": collector._fps, "frames": collector._frames})
 
         if max_iters > 0 and i >= max_iters - 1:
-            break 
-    
+            break
+
     logging.info(f"Final Eval at {collector._frames} steps.")
     info = {"env_frames": collector._frames}
     info.update(evaluate())
@@ -235,10 +235,10 @@ def main(cfg):
         logging.info(f"Saved checkpoint to {str(ckpt_path)}")
     except AttributeError:
         logging.warning(f"Policy {policy} does not implement `.state_dict()`")
-        
+
 
     wandb.finish()
-    
+
     simulation_app.close()
 
 

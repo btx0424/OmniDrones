@@ -7,7 +7,6 @@ defaults:
   - /base/sim_base@_here_
   # - /base/randomization_base@_here_
 
-
 drone_model: Hummingbird
 force_sensor: false
 time_encoding: true

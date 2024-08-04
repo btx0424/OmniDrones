@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -42,7 +42,7 @@ class HAPPOPolicy(MAPPOPolicy):
         dist_entropy = actor_output[f"{self.agent_spec.name}.action_entropy"]
 
         assert advantages.shape == log_probs_new.shape == dist_entropy.shape
-        
+
         ratio = torch.exp(log_probs_new - log_probs_old)
         surr1 = ratio * advantages
         surr2 = (
@@ -67,7 +67,7 @@ class HAPPOPolicy(MAPPOPolicy):
             "ESS": ess.item()
         }, [])
         return info, factor * ratio.detach()
-    
+
     def train_op(self, tensordict: TensorDict):
         tensordict = tensordict.select(*self.train_in_keys, strict=False)
         next_tensordict = tensordict["next"][:, -1]
@@ -131,7 +131,7 @@ class HAPPOPolicy(MAPPOPolicy):
                     **torch.stack(agent_info).apply(torch.mean, batch_size=[]),
                     **self.update_critic(critic_batch)
                 }, []))
-        
+
         train_info = {k: v.mean().item() for k, v in torch.stack(train_info).items()}
         train_info["advantages_mean"] = advantages_mean
         train_info["advantages_std"] = advantages_std
@@ -140,5 +140,5 @@ class HAPPOPolicy(MAPPOPolicy):
         )
         if hasattr(self, "value_normalizer"):
             train_info["value_running_mean"] = self.value_normalizer.running_mean.mean()
-        
+
         return {f"{self.agent_spec.name}/{k}": v for k, v in train_info.items()}

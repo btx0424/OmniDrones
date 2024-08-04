@@ -13,7 +13,7 @@ if __name__ == "__main__":
         "PayloadTrack", "PayloadFlyThrough"
     ]
     multi_tasks = [
-        # "Formation",
+        "Formation",
         "PlatformHover",
         "PlatformTrack",
         "TransportHover",
@@ -26,14 +26,14 @@ if __name__ == "__main__":
                 line.strip() + "\n"
                 for line in IsaacEnv.REGISTRY[task].__doc__.splitlines(True)
             ]
-            f.write(f"{task}\n" + "=" * len(task) + "\n\n")
-            f.writelines(lines)
-    
+            f.write(f"# {task}\n")
+            f.writelines(lines[:-1])
+
     for task in multi_tasks:
         with open(f"source/tasks/multi/{task}.md", "w") as f:
             lines = [
                 line.strip() + "\n"
                 for line in IsaacEnv.REGISTRY[task].__doc__.splitlines(True)
             ]
-            f.write(f"{task}\n" + "=" * len(task) + "\n\n")
-            f.writelines(lines)
+            f.write(f"# {task}\n")
+            f.writelines(lines[:-1])

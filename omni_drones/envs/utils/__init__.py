@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -54,7 +54,7 @@ def create_obstacle(
 
 DEFAULT_JOINT_ATTRIBUTES = {
     "limit:rotX:physics:low": -120,
-    "limit:rotX:physics:high": 120, 
+    "limit:rotX:physics:high": 120,
     "limit:rotY:physics:low": -120,
     "limit:rotY:physics:high": 120,
     "drive:rotX:physics:damping": 2e-6,
@@ -72,14 +72,14 @@ def create_bar(
 
     bar = prim_utils.create_prim(prim_path)
     seg_0 = prim_utils.create_prim(
-        f"{prim_path}/seg_0", 
+        f"{prim_path}/seg_0",
         "Capsule",
         translation=(0., 0., -length/2),
         attributes={"radius": 0.01, "height": length}
     )
     seg_1 = prim_utils.create_prim(
-        f"{prim_path}/seg_1", 
-        "Capsule", 
+        f"{prim_path}/seg_1",
+        "Capsule",
         translation=(0., 0., -length/2),
         attributes={"radius": 0.01, "height": length}
     )
@@ -88,17 +88,17 @@ def create_bar(
         UsdPhysics.CollisionAPI.Apply(seg)
         massAPI = UsdPhysics.MassAPI.Apply(seg)
         massAPI.CreateMassAttr().Set(0.001)
-        
+
     stage = prim_utils.get_current_stage()
     joint = script_utils.createJoint(stage, "Prismatic", seg_0, seg_1)
     UsdPhysics.DriveAPI.Apply(joint, "linear")
-    
+
     joint.GetAttribute("physics:axis").Set("Z")
     joint.GetAttribute("physics:upperLimit").Set(1.)
     joint.GetAttribute("physics:lowerLimit").Set(-1.)
     joint.GetAttribute("drive:linear:physics:damping").Set(10.0)
     joint.GetAttribute("drive:linear:physics:stiffness").Set(1000.0)
-    
+
     def setup_joint(joint, attributes):
         drives = set([key.split(":")[1] for key in attributes.keys() if key.startswith("drive")])
         for drive in drives:
@@ -120,7 +120,7 @@ def create_bar(
         #     time_code=Usd.TimeCode.Default(),
         #     destructive=False
         # ).do()
-    
+
     if to_prim is not None:
         if isinstance(to_prim, str):
             to_prim = prim_utils.get_prim_at_path(to_prim)
@@ -135,9 +135,9 @@ def create_bar(
         #     time_code=Usd.TimeCode.Default(),
         #     destructive=False
         # ).do()
-    
+
     return bar
-        
+
 
 def lemniscate(t, c):
     sin_t = torch.sin(t)
@@ -157,6 +157,6 @@ def scale_time(t, a: float=1.0):
 class TimeEncoding:
     def __init__(self, max_t):
         ...
-    
+
     def encode(self, t):
         ...

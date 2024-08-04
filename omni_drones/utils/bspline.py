@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -26,7 +26,7 @@ import numpy as np
 from typing import Optional
 
 from scipy.interpolate import (
-    splev as _splev_scipy_impl, 
+    splev as _splev_scipy_impl,
     splint as _splint_scipy_impl,
 )
 
@@ -118,11 +118,11 @@ def _splev_torch_impl(x: torch.Tensor, t: torch.Tensor, c: torch.Tensor, k: int)
         alpha = ((x - t0) / (t1 - t0)).unsqueeze(-1)
         d[:, j] = (1-alpha)*d[:, j-1] + alpha*d[:, j]
     return d[:, k]
-    
+
 def init_traj(
-    start_pos: torch.Tensor, 
-    end_pos: torch.Tensor, 
-    start_vel: Optional[torch.Tensor]=None, 
+    start_pos: torch.Tensor,
+    end_pos: torch.Tensor,
+    start_vel: Optional[torch.Tensor]=None,
     start_acc: Optional[torch.Tensor]=None,
     end_vel: Optional[torch.Tensor]=None,
     env_acc: Optional[torch.Tensor]=None,
@@ -134,7 +134,7 @@ def init_traj(
     pos: (*batch, dim)
     linvel: (*batch, dim)
     target_pos: (*batch, dim)
-    
+
     n_ctps: number of control points
     k: degree of b-spline
     """
@@ -149,9 +149,9 @@ def init_traj(
         end_vel = torch.zeros_like(start_vel)
     if env_acc is None:
         env_acc = torch.zeros_like(start_acc)
-    
+
     assert start_pos.shape == end_pos.shape
-    
+
     ctps_0 = start_pos
     ctps_1 = start_pos + start_vel / k
     ctps_2 = start_pos + start_vel + start_acc / k
@@ -161,8 +161,8 @@ def init_traj(
     ctps_n_2 = end_pos - end_vel - env_acc / k
 
     ctps_inter = (
-        ctps_2.unsqueeze(-2) 
-        + (ctps_n_2 - ctps_2).unsqueeze(-2) 
+        ctps_2.unsqueeze(-2)
+        + (ctps_n_2 - ctps_2).unsqueeze(-2)
         * torch.linspace(0, 1, n_ctps-4, device=device).unsqueeze(-1)
     )
     ctps = torch.cat([
@@ -173,15 +173,15 @@ def init_traj(
         ctps_n.unsqueeze(-2),
     ], dim=-2)
     knots = torch.cat([
-        torch.zeros(k, device=device), 
-        torch.arange(n_ctps+1-k, device=device), 
+        torch.zeros(k, device=device),
+        torch.arange(n_ctps+1-k, device=device),
         torch.full((k,), n_ctps-k, device=device),
     ])
     return ctps, knots
 
 def get_ctps(
-    c: torch.Tensor, 
-    x: torch.Tensor, 
+    c: torch.Tensor,
+    x: torch.Tensor,
     start:int=3,
     end:int=-3,
 ):
@@ -203,8 +203,8 @@ def get_ctps(
 
 def get_knots(n_ctps: int, k: int, device="cpu"):
     knots = torch.cat([
-        torch.zeros(k, device=device), 
-        torch.arange(n_ctps+1-k, device=device), 
+        torch.zeros(k, device=device),
+        torch.arange(n_ctps+1-k, device=device),
         torch.full((k,), n_ctps-k, device=device),
     ])
     return knots

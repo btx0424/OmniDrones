@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -308,7 +308,7 @@ class PartialAttentionEncoder(nn.Module):
     def _ff_block(self, x: Tensor):
         x = self.linear2(self.activation(self.linear1(x)))
         return x
-    
+
 
 ################################## Vision Encoders ##################################
 def get_output_shape(net, input_size):
@@ -338,7 +338,7 @@ class MixedEncoder(nn.Module):
         self.mlp = nn.Sequential(
             nn.LayerNorm(input_dim),
             MLP(
-                num_units=[input_dim] + cfg.hidden_units, 
+                num_units=[input_dim] + cfg.hidden_units,
                 normalization=nn.LayerNorm if cfg.get("layer_norm", False) else None
             ),
         )
@@ -347,13 +347,13 @@ class MixedEncoder(nn.Module):
 
     def forward(self, x: TensorDict):
         feats = [
-            self.vision_encoder(x[obs_name]) for obs_name in x.keys() 
+            self.vision_encoder(x[obs_name]) for obs_name in x.keys()
             if obs_name in self.vision_obs_names
         ]
         if self.state_encoder is not None:
             # TODO: attn_encoder with TensorDict input
             feats += [
-                self.state_encoder(x[obs_name]) for obs_name in x.keys() 
+                self.state_encoder(x[obs_name]) for obs_name in x.keys()
                 if obs_name not in self.vision_obs_names
             ]
         if self.combine_mode == "concat":
@@ -405,7 +405,7 @@ class MobileNetV3Small(nn.Module):
         x = self._backbone_fn(x)
         x = x.flatten(1)
         return x
-    
+
 
 @register(VISION_ENCODER_MAP)
 class MobilNetV3Large(MobileNetV3Small):
@@ -423,4 +423,3 @@ class MobilNetV3Large(MobileNetV3Small):
             full_backbone.avgpool
         )
         self._backbone_transform = _transform()
-        

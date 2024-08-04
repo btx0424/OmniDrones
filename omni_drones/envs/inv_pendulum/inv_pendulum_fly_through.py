@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -25,8 +25,8 @@ import torch
 import torch.distributions as D
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import (
-    UnboundedContinuousTensorSpec, 
-    CompositeSpec, 
+    UnboundedContinuousTensorSpec,
+    CompositeSpec,
     DiscreteTensorSpec
 )
 
@@ -44,16 +44,17 @@ from ..utils import create_obstacle
 
 class InvPendulumFlyThrough(IsaacEnv):
     r"""
-    An intermidiate control task where a classic inverted pendulum is based on the UAV.
-    We refer the the ball at the end of pendulum as *payload*. The goal for the agent 
-    is to pass between two horizontal bars and keep balance while maintaining its position 
-    around a target position. If the distance between the two horizontal bars is less than 
+    An intermediate control task where a classic inverted pendulum is based on the UAV.
+    We refer the the ball at the end of pendulum as *payload*. The goal for the agent
+    is to pass between two horizontal bars and keep balance while maintaining its position
+    around a target position. If the distance between the two horizontal bars is less than
     the length of the rod, the agent need learn to swing the inverted pendulum to pass through.
 
     ## Observation
+
     - `drone_payload_rpos` (3): The position of the drone relative to the payload's position.
-    - `root_state` (19 + num_rotors): The basic information of the drone, 
-      containing its rotation (in quaternion), velocities (linear and angular), 
+    - `root_state` (19 + num_rotors): The basic information of the drone,
+      containing its rotation (in quaternion), velocities (linear and angular),
       heading and up vectors, and the current throttle.
     - `target_payload_rpos` (3): The position of the reference relative to the payload's position.
     - `payload_vel` (6): The linear and angular velocities of the payload.
@@ -62,7 +63,8 @@ class InvPendulumFlyThrough(IsaacEnv):
       vector encoding the current progress of the episode.
 
     ## Reward
-    - `pos`: Reward for maintaining the final position of the payload around the target position. 
+
+    - `pos`: Reward for maintaining the final position of the payload around the target position.
     - `bar_up`: Reward for keeping the bar up.
     - `effort`: Reward computed from the effort of the drone to optimize the
       energy consumption.
@@ -70,31 +72,29 @@ class InvPendulumFlyThrough(IsaacEnv):
     - `swing`: Reward computed from the swing of the payload to discourage swinging.
     - `collision`: Reward for avoiding collisions with horizontal bars.
 
-    The total reward is computed as follows: 
+    The total reward is computed as follows:
 
-    ```{math}  
+    ```{math}
         r = [r_\text{pos} + r_\text{pos} * (r_\text{bar_up} + r_\text{spin} + r_\text{swing}) + r_\text{effort}] * (1 - r_\text{collision})
     ```
-        
+
     ## Episode End
 
     The episode ends when the bar falls beyond a certain angle, or when the
-    drone gets too close to the ground, or when the drone goes too far away horizontally, 
-    or when the payload goes too far away vertically, or when the maximum episode length 
+    drone gets too close to the ground, or when the drone goes too far away horizontally,
+    or when the payload goes too far away vertically, or when the maximum episode length
     is reached, or (optional) when the drone collides with any obstacle.
-    
 
     ## Config
 
-    | Parameter               | Type                | Default       | Description |
-    |-------------------------|---------------------|---------------|-------------|
-    | `drone_model`           | str                 | "hummingbird" | Specifies the model of the drone being used in the environment. |
-    | `reset_on_collision`    | bool                | False         | Indicates if the episode should reset when the drone collides with an obstacle. |
-    | `bar_length`            | float               | 0.85          | Length of the pendulum's bar. |
-    | `reward_distance_scale` | float               | 1.2           | Scales the reward based on the distance between the payload and its target. |
+    | Parameter               | Type                | Default       | Description                                                                                                                                                                                                                             |
+    | ----------------------- | ------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | `drone_model`           | str                 | "hummingbird" | Specifies the model of the drone being used in the environment.                                                                                                                                                                         |
+    | `reset_on_collision`    | bool                | False         | Indicates if the episode should reset when the drone collides with an obstacle.                                                                                                                                                         |
+    | `bar_length`            | float               | 0.85          | Length of the pendulum's bar.                                                                                                                                                                                                           |
+    | `reward_distance_scale` | float               | 1.2           | Scales the reward based on the distance between the payload and its target.                                                                                                                                                             |
     | `time_encoding`         | bool                | True          | Indicates whether to include time encoding in the observation space. If set to True, a 4-dimensional vector encoding the current progress of the episode is included in the observation. If set to False, this feature is not included. |
-    | `obstacle_spacing`      | tuple[float, float] | [0.9, 1.2]    | Specifies the minimum and maximum distance between two horizontal bars (obstacles) in the environment. |
-
+    | `obstacle_spacing`      | tuple[float, float] | [0.9, 1.2]    | Specifies the minimum and maximum distance between two horizontal bars (obstacles) in the environment.                                                                                                                                  |
     """
     def __init__(self, cfg, headless):
         self.reward_effort_weight = cfg.task.reward_effort_weight
@@ -175,13 +175,13 @@ class InvPendulumFlyThrough(IsaacEnv):
         )
 
         create_obstacle(
-            "/World/envs/env_0/obstacle_0", 
+            "/World/envs/env_0/obstacle_0",
             prim_type="Capsule",
             translation=(0., 0., 1.2),
             attributes={"axis": "Y", "radius": 0.04, "height": 5}
         )
         create_obstacle(
-            "/World/envs/env_0/obstacle_1", 
+            "/World/envs/env_0/obstacle_1",
             prim_type="Capsule",
             translation=(0., 0., 2.2),
             attributes={"axis": "Y", "radius": 0.04, "height": 5}
@@ -189,7 +189,7 @@ class InvPendulumFlyThrough(IsaacEnv):
 
         self.drone.spawn(translations=[(0.0, 0.0, 2.)])
         create_pendulum(
-            f"/World/envs/env_0/{self.drone.name}_0", 
+            f"/World/envs/env_0/{self.drone.name}_0",
             self.cfg.task.bar_length,
             payload_radius=0.04
         )
@@ -210,7 +210,7 @@ class InvPendulumFlyThrough(IsaacEnv):
         if self.time_encoding:
             self.time_encoding_dim = 4
             observation_dim += self.time_encoding_dim
-        
+
         self.observation_spec = CompositeSpec({
             "agents": CompositeSpec({
                 "observation": UnboundedContinuousTensorSpec((1, observation_dim)) ,
@@ -250,7 +250,7 @@ class InvPendulumFlyThrough(IsaacEnv):
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
-        
+
         drone_pos = self.init_pos_dist.sample((*env_ids.shape, 1))
         drone_rpy = self.init_rpy_dist.sample((*env_ids.shape, 1))
         drone_rot = euler_to_quaternion(drone_rpy)
@@ -309,7 +309,7 @@ class InvPendulumFlyThrough(IsaacEnv):
             t = (self.progress_buf / self.max_episode_length).unsqueeze(-1)
             obs.append(t.expand(-1, self.time_encoding_dim).unsqueeze(1))
         obs = torch.cat(obs, dim=-1)
-        
+
         self.pos_error = torch.norm(self.target_payload_rpos, dim=-1)
         self.stats["pos_error"].lerp_(self.pos_error, (1-self.alpha))
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
@@ -318,17 +318,17 @@ class InvPendulumFlyThrough(IsaacEnv):
             central_env_pos = self.envs_positions[self.central_env_idx]
             drone_pos = (self.drone.pos[self.central_env_idx, 0]+central_env_pos).tolist()
             payload_pos = (self.payload_pos[self.central_env_idx]+central_env_pos).tolist()
-            
+
             if len(self.payload_traj_vis)>1:
                 point_list_0 = [self.payload_traj_vis[-1], self.drone_traj_vis[-1]]
                 point_list_1 = [payload_pos, drone_pos]
                 colors = [(1., .1, .1, 1.), (.1, 1., .1, 1.)]
                 sizes = [1.5, 1.5]
                 self.draw.draw_lines(point_list_0, point_list_1, colors, sizes)
-            
+
             self.drone_traj_vis.append(drone_pos)
             self.payload_traj_vis.append(payload_pos)
-        
+
         return TensorDict({
             "agents": {
                 "observation": obs,
@@ -338,7 +338,7 @@ class InvPendulumFlyThrough(IsaacEnv):
 
     def _compute_reward_and_done(self):
         pos, rot, vels = self.drone_state[..., :13].split([3, 4, 6], dim=-1)
-        
+
         # reward_pos = 1.0 / (1.0 + torch.square(self.reward_distance_scale * distance))
         reward_pos = 1 / (1 + self.reward_distance_scale * self.pos_error)
 
@@ -366,15 +366,15 @@ class InvPendulumFlyThrough(IsaacEnv):
         assert bar_reward_up.shape == reward_spin.shape == reward_swing.shape
         reward = (
             reward_pos
-            + reward_pos * (bar_reward_up + reward_spin + reward_swing) 
+            + reward_pos * (bar_reward_up + reward_spin + reward_swing)
             # + success.float()
             + reward_effort
         ) * (1 - collision_reward)
-        
+
         misbehave = (
-            (pos[..., 2] < 0.2) 
+            (pos[..., 2] < 0.2)
             | (pos[..., 1].abs() > 2.)
-            | (bar_reward_up < 0.1) 
+            | (bar_reward_up < 0.1)
             | (self.payload_pos[:, 2] > 3.).unsqueeze(-1)
         )
         hasnan = torch.isnan(self.drone_state).any(-1)
@@ -388,7 +388,7 @@ class InvPendulumFlyThrough(IsaacEnv):
         self.stats["success"].bitwise_or_(success)
         self.stats["return"].add_(reward)
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(-1)
-        
+
         return TensorDict(
             {
                 "agents": {

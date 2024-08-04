@@ -74,7 +74,7 @@ autodoc_mock_imports = [
     "omni.replicator",
     "omni.isaac.core",
     "omni.isaac.core.utils.torch",
-    "omni.isaac.kit",
+    "isaacsim",
     "omni.isaac.cloner",
     "gym",
     "tqdm",

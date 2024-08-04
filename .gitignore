@@ -148,3 +148,6 @@ plot/
 test*.ipynb
 examples/*.mp4
 *.sh
+
+# sphinx docs output
+docs/html

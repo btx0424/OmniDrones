@@ -9,11 +9,10 @@ metric:
   goal: maximize
 
 parameters:
-
   algo:
     values:
-    - mappo
-  
+      - mappo
+
   algo.actor.hidden_units:
     value: [256, 128, 128]
 
@@ -23,17 +22,17 @@ parameters:
   # algo.critic_input:
   #   value: state
 
-  task: 
-    values: 
-    - Hover
-    - InvertedPendulum
-    - PlatformHover
-    - TransportHover
+  task:
+    values:
+      - Hover
+      - InvertedPendulum
+      - PlatformHover
+      - TransportHover
 
   task.env.num_envs:
     values: [128, 256, 512, 1024, 2048, 4096, 8192]
 
-  max_iters: 
+  max_iters:
     value: 100
 
   headless:
@@ -41,7 +40,7 @@ parameters:
 
   task.drone_model:
     values: [Hummingbird]
-  
+
   algo.train_every:
     value: 128
 

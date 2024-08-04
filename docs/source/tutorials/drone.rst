@@ -4,18 +4,18 @@ UAV Models and Usage
 
 .. seealso::
 
-    We strongly recommend going through the tutorials provided by 
-    `Isaac Sim <https://docs.omniverse.nvidia.com/isaacsim/latest/tutorial_intro_interface.html>`_ and 
-    `Isaac Orbit <https://isaac-orbit.github.io/orbit/source/tutorials/00_empty.html>`_.
+    We strongly recommend going through the tutorials provided by
+    `Isaac Sim <https://docs.omniverse.nvidia.com/isaacsim/latest/tutorial_intro_interface.html>`_ and
+    `Isaac Lab <https://isaac-sim.github.io/IsaacLab/source/tutorials/00_sim/create_empty.html>`_.
 
 
 Using the UAV Models
 --------------------
 
 All UAV models, e.g., :py:class:`Hummingbird` and :py:class:`Firefly` are subclassed from :py:class:`MultirotorBase`.
-An instance of :py:class:`MultirotorBase` does not correspond to a specifc UAV, but acts like a `view` 
+An instance of :py:class:`MultirotorBase` does not correspond to a specific UAV, but acts like a `view`
 (think of `torch.Tensor.view`) that holds the states of a group of UAVs of that type in `torch.Tensor` for reading
-and writing. It implements the multirotr dynamics and provides interfaces for common interactions such as getting the 
+and writing. It implements the multirotor dynamics and provides interfaces for common interactions such as getting the
 kinematic information and applying rotor commands.
 
 The following example demonstrates:
@@ -49,12 +49,12 @@ Since :py:class:`MultirotorBase` implements the commonly use multirotor dynamics
 which effectively comes to 1. providing a description file in `.usd` format, and 2. specifying its parameters.
 
 Adding an UAV model with more complex dynamics may require extending the corresponding methods.
-For example, the omnidirectional UAV :py:class:`Omav` has 6 tilt units. So we extend :py:meth:`Omav.apply_action` 
-to control the tilt units via velocity targets, and :py:meth:`Omav._reset_idx` to reset the tilting angle. 
+For example, the omnidirectional UAV :py:class:`Omav` has 6 tilt units. So we extend :py:meth:`Omav.apply_action`
+to control the tilt units via velocity targets, and :py:meth:`Omav._reset_idx` to reset the tilting angle.
 
 .. literalinclude:: ../../../omni_drones/robots/drone/omav.py
     :language: python
-    :linenos: 
+    :linenos:
     :lines: 24-
     :emphasize-lines: 36-39,45-52
 
@@ -62,7 +62,7 @@ to control the tilt units via velocity targets, and :py:meth:`Omav._reset_idx` t
 Customized Dynamics
 -------------------
 
-.. note:: 
+.. note::
 
     To be refactored.
 

@@ -214,7 +214,7 @@ class PPORNNPolicy(TensorDictModuleBase):
             def make_encoder():
                 return TensorDictSequential(
                     TensorDictModule(
-                        nn.Sequential(nn.LayerNorm(intrinsics_dim), make_mlp([64, 64])), 
+                        nn.Sequential(nn.LayerNorm(intrinsics_dim), make_mlp([64, 64])),
                         [("agents", "intrinsics")], ["context"]
                     ),
                     CatTensors(["feature", "context"], "feature", del_keys=False),

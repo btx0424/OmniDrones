@@ -1,6 +1,4 @@
-PlatformTrack
-=============
-
+# PlatformTrack
 
 A cooperative control task where a group of `k` UAVs are connected together by a rigid frame
 to form an overactuated platform. Each individual UAV, attached by a 2-DoF passive gimbal
@@ -12,10 +10,10 @@ while orienting the platform towards a given direction.
 
 The observation is a `CompositeSpec` containing:
 
-- `obs_self`` (1, \*): The state of each UAV observed by itself, containing its kinematic
+- `obs_self` (1, \*): The state of each UAV observed by itself, containing its kinematic
 information with the position being relative to the frame center, and an one-hot
 identity indicating the UAV's index.
-- `obs_others`` (k-1, \*): The observed states of other agents.
+- `obs_others` (k-1, \*): The observed states of other agents.
 - `obs_frame`:
 - `state_frame`: (1, \*): The state of the frame.
 - `rpos` (3 * `future_traj_steps`): The relative position of the platform to the
@@ -42,7 +40,7 @@ r = r_\text{pose} + r_\text{pose} * (r_\text{up} + r_\text{spin}) + r_\text{effo
 ## Config
 
 | Parameter               | Type  | Default       | Description |
-|-------------------------|-------|---------------|-------------|
+| ----------------------- | ----- | ------------- | ----------- |
 | `drone_model`           | str   | "hummingbird" |             |
 | `num_drones`            | int   | 4             |             |
 | `arm_length`            | float | 0.85          |             |
@@ -50,5 +48,3 @@ r = r_\text{pose} + r_\text{pose} * (r_\text{up} + r_\text{spin}) + r_\text{effo
 | `future_traj_steps`     | int   | 4             |             |
 | `reward_distance_scale` | float | 1.2           |             |
 | `time_encoding`         | bool  | True          |             |
-
-

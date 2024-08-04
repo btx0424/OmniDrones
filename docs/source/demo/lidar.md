@@ -8,11 +8,11 @@ The agent utilizes Lidar sensors to perceive its surroundings and make informed 
 
 To simulate the Lidar sensors, we use ray-cast utilities from [Nvidia Warp](https://github.com/NVIDIA/warp).
 
-For a more detailed understanding of the implementation, please refer to the source code located at `OmniDrones/scripts/train_lidar.py`.  
+For a more detailed understanding of the implementation, please refer to the source code located at `OmniDrones/scripts/train_lidar.py`.
 
 ## Visualization
 
-We visualize all the parallel environments. Note that drones from different (logical) environments are physically independent and do not collide withh or observe each other. The blue lines indicates the Lidar scan. The Lidar scan is visualized as blue lines in the parallel environments.
+We visualize all the parallel environments. Note that drones from different (logical) environments are physically independent and do not collide with or observe each other. The blue lines indicates the Lidar scan. The Lidar scan is visualized as blue lines in the parallel environments.
 
 <div>
     <video width="320" height="240" controls>

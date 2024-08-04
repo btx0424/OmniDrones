@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -59,7 +59,7 @@ class TD3Policy(object):
         self.gradient_steps = int(cfg.gradient_steps)
         self.batch_size = int(cfg.batch_size)
         self.buffer_size = int(cfg.buffer_size)
-        
+
         self.target_noise = self.cfg.target_noise
         self.policy_noise = self.cfg.policy_noise
         self.noise_clip = self.cfg.noise_clip
@@ -69,19 +69,19 @@ class TD3Policy(object):
         self.reward_name = ("agents", "reward")
 
         self.action_dim = self.agent_spec.action_spec.shape[-1]
-        self.make_model()        
+        self.make_model()
 
         self.replay_buffer = TensorDictReplayBuffer(
             batch_size=self.batch_size,
             storage=LazyTensorStorage(max_size=self.buffer_size, device=self.device),
             sampler=RandomSampler(),
         )
-    
+
     def make_model(self):
 
         self.policy_in_keys = [self.obs_name]
         self.policy_out_keys = [self.act_name, f"{self.agent_spec.name}.logp"]
-        
+
         encoder = make_encoder(self.cfg.actor, self.agent_spec.observation_spec)
         self.actor = TensorDictModule(
             nn.Sequential(
@@ -98,14 +98,14 @@ class TD3Policy(object):
         self.value_out_keys = [f"{self.agent_spec.name}.q"]
 
         self.critic = Critic(
-            self.cfg.critic, 
+            self.cfg.critic,
             1,
             self.agent_spec.observation_spec,
             self.agent_spec.action_spec
         ).to(self.device)
-        
+
         self.critic_target = copy.deepcopy(self.critic)
-        self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=self.cfg.critic.lr)       
+        self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=self.cfg.critic.lr)
         self.critic_loss_fn = {"mse":F.mse_loss, "smooth_l1": F.smooth_l1_loss}[self.cfg.critic_loss]
 
     def __call__(self, tensordict: TensorDict, deterministic: bool=False) -> TensorDict:
@@ -128,7 +128,7 @@ class TD3Policy(object):
         if len(self.replay_buffer) < self.cfg.buffer_size:
             print(f"filling buffer: {len(self.replay_buffer)}/{self.cfg.buffer_size}")
             return {}
-        
+
         infos_critic = []
         infos_actor = []
 
@@ -193,15 +193,15 @@ class TD3Policy(object):
                         "actor_loss": actor_loss,
                         "actor_grad_norm": actor_grad_norm,
                     }, []))
-                
+
                 with torch.no_grad():
                     soft_update(self.actor_target, self.actor, self.cfg.tau)
                     soft_update(self.critic_target, self.critic, self.cfg.tau)
-        
+
         infos = {**torch.stack(infos_actor), **torch.stack(infos_critic)}
         infos = {k: torch.mean(v).item() for k, v in infos.items()}
         return infos
-    
+
     def state_dict(self):
         state_dict = {
             "actor": self.actor.state_dict(),
@@ -217,11 +217,11 @@ from .common import make_encoder
 
 
 class Critic(nn.Module):
-    def __init__(self, 
+    def __init__(self,
         cfg,
         num_agents: int,
         state_spec: TensorSpec,
-        action_spec: BoundedTensorSpec, 
+        action_spec: BoundedTensorSpec,
         num_critics: int = 2,
     ) -> None:
         super().__init__()
@@ -240,16 +240,16 @@ class Critic(nn.Module):
             action_dim = self.act_space.shape[-1]
             state_dim = self.state_space.shape[-1]
             num_units = [
-                action_dim * self.num_agents + state_dim, 
+                action_dim * self.num_agents + state_dim,
                 *self.cfg["hidden_units"]
             ]
             base = MLP(num_units)
         else:
             raise NotImplementedError
-        
+
         v_out = nn.Linear(base.output_shape.numel(), 1)
         return nn.Sequential(base, v_out)
-        
+
     def forward(self, state: torch.Tensor, actions: torch.Tensor):
         """
         Args:

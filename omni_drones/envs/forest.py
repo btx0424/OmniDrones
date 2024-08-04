@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -34,35 +34,35 @@ from omni_drones.utils.torch import euler_to_quaternion, quat_axis
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec, DiscreteTensorSpec
 
-import omni.isaac.orbit.sim as sim_utils
-from omni.isaac.orbit.assets import AssetBaseCfg
-from omni.isaac.orbit.sensors import RayCaster, RayCasterCfg, patterns
-from omni.isaac.orbit.terrains import (
-    TerrainImporterCfg, 
-    TerrainImporter, 
+import omni.isaac.lab.sim as sim_utils
+from omni.isaac.lab.assets import AssetBaseCfg
+from omni.isaac.lab.sensors import RayCaster, RayCasterCfg, patterns
+from omni.isaac.lab.terrains import (
+    TerrainImporterCfg,
+    TerrainImporter,
     TerrainGeneratorCfg,
     HfDiscreteObstaclesTerrainCfg,
 )
-from omni.isaac.orbit.utils.assets import NVIDIA_NUCLEUS_DIR
+from omni.isaac.lab.utils.assets import NVIDIA_NUCLEUS_DIR
 from omni.isaac.core.utils.viewports import set_camera_view
 
 
 class Forest(IsaacEnv):
     r"""
-    This is a single-agent task where the agent is required to navigate a randomly 
-    generated cluttered environment. The agent needs to fly at a commanded speed 
+    This is a single-agent task where the agent is required to navigate a randomly
+    generated cluttered environment. The agent needs to fly at a commanded speed
     along the positive direction while avoiding collisions with obstacles.
 
-    The agent utilizes Lidar sensors to perceive its surroundings. The Lidar has 
-    a horizontal field of view (FOV) of 360 degrees and a the vertical view can be 
+    The agent utilizes Lidar sensors to perceive its surroundings. The Lidar has
+    a horizontal field of view (FOV) of 360 degrees and a the vertical view can be
     specified.
 
     ## Observation
 
     The observation is given by a `CompositeSpec` containing the following values:
 
-    - `"state"` (16 + `num_rotors`): The basic information of the drone 
-      (except its position), containing its rotation (in quaternion), velocities 
+    - `"state"` (16 + `num_rotors`): The basic information of the drone
+      (except its position), containing its rotation (in quaternion), velocities
       (linear and angular), heading and up vectors, and the current throttle.
     - `"lidar"` (1, w, h) : The lidar scan of the drone. The size is decided by the
       field of view and resolution.
@@ -74,7 +74,7 @@ class Forest(IsaacEnv):
     - `survive`: Reward of a constant value to encourage collision avoidance.
     - `effort`: Reward computed from the effort of the drone to optimize the
       energy consumption.
-    - `action_smoothness`: Reward that encourages smoother drone actions, 
+    - `action_smoothness`: Reward that encourages smoother drone actions,
       computed based on the throttle difference of the drone.
 
     The total reward is computed as follows:
@@ -82,29 +82,26 @@ class Forest(IsaacEnv):
     ```{math}
         r = r_\text{vel} + r_\text{up} + r_\text{survive} + r_\text{effort} + r_\text{action_smoothness}
     ```
-        
+
     ## Episode End
 
-    The episode ends when the drone mishebaves, e.g., when the drone collides 
-    with the ground or obstacles, or when the drone flies out of the boundar:
+    The episode ends when the drone misbehaves, e.g., when the drone collides
+    with the ground or obstacles, or when the drone flies out of the boundary:
 
     ```{math}
         d_\text{ground} < 0.2 \text{ or } d_\text{ground} > 4.0 \text{ or } v_\text{drone} > 2.5
     ```
-    
-    or when the episode reaches the maximum length.
 
+    or when the episode reaches the maximum length.
 
     ## Config
 
-    | Parameter               | Type  | Default   | Description |
-    |-------------------------|-------|-----------|-------------|
-    | `drone_model`           | str   | "firefly" | Specifies the model of the drone being used in the environment. |
-    | `lidar_range`           | float | 4.0       | Specifies the maximum range of the lidar. |
-    | `lidar_vfov`            | float | [-10, 20] | Specifies the vertical field of view of the lidar. |
-    | `time_encoding`         | bool  | True      | Indicates whether to include time encoding in the observation space. If set to True, a 4-dimensional vector encoding the current progress of the episode is included in the observation. If set to False, this feature is not included. |
-
-
+    | Parameter       | Type  | Default   | Description                                                                                                                                                                                                                             |
+    | --------------- | ----- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | `drone_model`   | str   | "firefly" | Specifies the model of the drone being used in the environment.                                                                                                                                                                         |
+    | `lidar_range`   | float | 4.0       | Specifies the maximum range of the lidar.                                                                                                                                                                                               |
+    | `lidar_vfov`    | float | [-10, 20] | Specifies the vertical field of view of the lidar.                                                                                                                                                                                      |
+    | `time_encoding` | bool  | True      | Indicates whether to include time encoding in the observation space. If set to True, a 4-dimensional vector encoding the current progress of the episode is included in the observation. If set to False, this feature is not included. |
     """
     def __init__(self, cfg, headless):
         self.reward_effort_weight = cfg.task.reward_effort_weight
@@ -113,9 +110,9 @@ class Forest(IsaacEnv):
         self.has_payload = "payload" in self.randomization.keys()
 
         super().__init__(cfg, headless)
-        
+
         self.lidar_vfov = (
-            max(-89., cfg.task.lidar_vfov[0]), 
+            max(-89., cfg.task.lidar_vfov[0]),
             min(89., cfg.task.lidar_vfov[1])
         )
         self.lidar_range = cfg.task.lidar_range
@@ -136,7 +133,7 @@ class Forest(IsaacEnv):
         self.drone.initialize()
         if "drone" in self.randomization:
             self.drone.setup_randomization(self.randomization["drone"])
-        
+
         self.init_poses = self.drone.get_world_poses(clone=True)
         self.init_vels = torch.zeros_like(self.drone.get_velocities())
 
@@ -175,7 +172,7 @@ class Forest(IsaacEnv):
         rot = euler_to_quaternion(torch.tensor([0., 0.1, 0.1]))
         light.spawn.func(light.prim_path, light.spawn, light.init_state.pos, rot)
         sky_light.spawn.func(sky_light.prim_path, sky_light.spawn)
-        
+
         terrain_cfg = TerrainImporterCfg(
             num_envs=self.num_envs,
             prim_path="/World/ground",
@@ -270,7 +267,7 @@ class Forest(IsaacEnv):
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids, self.training)
-        
+
         pos = torch.zeros(len(env_ids), 1, 3, device=self.device)
         pos[:, 0, 0] = (env_ids / self.num_envs - 0.5) * 32.
         pos[:, 0, 1] = -24.
@@ -290,14 +287,14 @@ class Forest(IsaacEnv):
         self.effort = self.drone.apply_action(actions.unsqueeze(1))
 
     def _post_sim_step(self, tensordict: TensorDictBase):
-        self.lidar.update(self.dt) 
-        
+        self.lidar.update(self.dt)
+
     def _compute_state_and_obs(self):
         self.root_state = self.drone.get_state(env_frame=False)
         self.info["drone_state"][:] = self.root_state[..., :13]
         # relative position and heading
         self.rpos = self.target_pos - self.root_state[..., :3]
-        
+
         self.lidar_scan = self.lidar_range - (
             (self.lidar.data.ray_hits_w - self.lidar.data.pos_w.unsqueeze(1))
             .norm(dim=-1)
@@ -317,7 +314,7 @@ class Forest(IsaacEnv):
             x = self.lidar.data.pos_w[0]
             set_camera_view(
                 eye=x.cpu() + torch.as_tensor(self.cfg.viewer.eye),
-                target=x.cpu() + torch.as_tensor(self.cfg.viewer.lookat)                        
+                target=x.cpu() + torch.as_tensor(self.cfg.viewer.lookat)
             )
             v = (self.lidar.data.ray_hits_w[0] - x).reshape(*self.lidar_resolution, 3)
             self.debug_draw.vector(x.expand_as(v[:, 0]), v[:, 0])
@@ -328,7 +325,7 @@ class Forest(IsaacEnv):
                 {
                     "observation": obs,
                     "intrinsics": self.drone.intrinsics
-                }, 
+                },
                 [self.num_envs]
             ),
             "stats": self.stats.clone(),
@@ -342,17 +339,17 @@ class Forest(IsaacEnv):
 
         reward_safety = torch.log(self.lidar_range-self.lidar_scan).mean(dim=(2, 3))
         reward_vel = (self.drone.vel_w[..., :3] * vel_direction).sum(-1).clip(max=2.0)
-        
+
         reward_up = torch.square((self.drone.up[..., 2] + 1) / 2)
 
         # effort
         reward_effort = self.reward_effort_weight * torch.exp(-self.effort)
 
         reward = reward_vel + reward_up + 1. + reward_safety * 0.2
-        
+
 
         terminated = (
-            (self.drone.pos[..., 2] < 0.2) 
+            (self.drone.pos[..., 2] < 0.2)
             | (self.drone.pos[..., 2] > 4.)
             | (self.drone.vel_w[..., :3].norm(dim=-1) > 2.5)
             | (einops.reduce(self.lidar_scan, "n 1 w h -> n 1", "max") >  (self.lidar_range - 0.3))

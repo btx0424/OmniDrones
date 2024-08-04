@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -53,32 +53,32 @@ cs.store(name="DragonHover", node=DragonHoverCfg, group="task")
 class DragonHover(IsaacEnv):
     r"""
     A basic control task. The goal for the agent is to maintain a stable
-    position and heading in mid-air without drifting. 
+    position and heading in mid-air without drifting.
 
     ## Observation
     The observation space consists of the following part:
 
     - `rpos` (3): The position relative to the target hovering position.
-    - `root_state` (16 + num_rotors): The basic information of the drone (except its position), 
-      containing its rotation (in quaternion), velocities (linear and angular), 
+    - `root_state` (16 + num_rotors): The basic information of the drone (except its position),
+      containing its rotation (in quaternion), velocities (linear and angular),
       heading and up vectors, and the current throttle.
     - `rheading` (3): The difference between the reference heading and the current heading.
     - *time_encoding*:
 
     ## Reward
-    - pos: 
+    - pos:
     - heading_alignment:
     - up:
     - spin:
 
-    The total reward is 
+    The total reward is
 
-    .. math:: 
-    
+    .. math::
+
         r = r_\text{pos} + r_\text{pos} * (r_\text{up} + r_\text{heading})
 
     ## Episode End
-    - Termination: 
+    - Termination:
 
     ## Config
 
@@ -96,7 +96,7 @@ class DragonHover(IsaacEnv):
         self.drone.initialize()
         if "drone" in self.randomization:
             self.drone.setup_randomization(self.randomization["drone"])
-        
+
         self.init_joint_pos = self.drone.get_joint_positions()
         self.init_vels = torch.zeros_like(self.drone.get_velocities())
 
@@ -187,7 +187,7 @@ class DragonHover(IsaacEnv):
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids, self.training)
-        
+
         pos = self.init_pos_dist.sample((*env_ids.shape, 1))
         rpy = self.init_rpy_dist.sample((*env_ids.shape, 1))
         rot = euler_to_quaternion(rpy)
@@ -195,7 +195,7 @@ class DragonHover(IsaacEnv):
             pos + self.envs_positions[env_ids].unsqueeze(1), rot, env_ids
         )
         self.drone.set_velocities(self.init_vels[env_ids], env_ids)
-        
+
         joint_pos = self.init_joint_pos[env_ids]
         self.drone.set_joint_positions(joint_pos, env_ids)
         self.drone.set_joint_position_targets(joint_pos, env_ids)
@@ -217,7 +217,7 @@ class DragonHover(IsaacEnv):
         # relative position and heading
         self.rpos = self.target_pos - self.drone.pos[..., 0, :]
         self.rheading = self.target_heading - self.drone.heading[..., 0, :]
-        
+
         obs = [self.rpos, self.root_state, self.rheading,]
         if self.time_encoding:
             t = (self.progress_buf / self.max_episode_length).unsqueeze(-1)
@@ -237,7 +237,7 @@ class DragonHover(IsaacEnv):
         # pose reward
         pos_error = torch.norm(self.rpos, dim=-1)
         heading_alignment = torch.sum(self.drone.heading[..., 0, :] * self.target_heading, dim=-1)
-        
+
         distance = torch.norm(torch.cat([self.rpos, self.rheading], dim=-1), dim=-1)
 
         # reward_pose = 1.0 / (1.0 + torch.square(self.reward_distance_scale * distance))
@@ -250,13 +250,13 @@ class DragonHover(IsaacEnv):
         reward_joint_vel = 0.5 * torch.exp(-self.drone.get_joint_velocities().abs()).mean(-1)
 
         reward = (
-            # 1. 
+            # 1.
             + reward_pose
             + reward_joint_vel
-            # + reward_effort 
+            # + reward_effort
             + reward_action_smoothness
         )
-        
+
         done_misbehave = (self.drone.pos[..., 2] < 0.2).any(-1) | (distance > 4)
 
         done = (

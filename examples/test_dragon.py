@@ -77,10 +77,10 @@ def main(cfg):
     #     drone._reset_idx(torch.tensor([0]))
     #     drone.set_world_poses(init_pos, init_rot)
     #     drone.set_velocities(init_vels)
-    #     # flush the buffer so that the next getter invocation 
+    #     # flush the buffer so that the next getter invocation
     #     # returns up-to-date values
-    #     sim._physics_sim_view.flush() 
-    
+    #     sim._physics_sim_view.flush()
+
     # reset()
     # drone_state = drone.get_state()[..., :13].squeeze(0)
 

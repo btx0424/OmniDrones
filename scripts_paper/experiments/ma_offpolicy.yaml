@@ -9,10 +9,9 @@ metric:
   goal: maximize
 
 parameters:
-
   algo:
     value: matd3
-  
+
   algo.target_noise:
     value: 0.
 
@@ -25,24 +24,24 @@ parameters:
   algo.critic.hidden_units:
     value: [256, 128, 128]
 
-  task: 
-    values: 
-    # - TransportHover
-    # - TransportTrack
-    # - PlatformHover
-    # - PlatformTrack
-    # - TransportFlyThrough
-    - Formation
+  task:
+    values:
+      # - TransportHover
+      # - TransportTrack
+      # - PlatformHover
+      # - PlatformTrack
+      # - TransportFlyThrough
+      - Formation
 
   # task.env.num_envs:
   #   value: 1024
 
-  total_frames: 
+  total_frames:
     value: 155_500_000
 
   headless:
     value: true
-  
+
   seed:
     values: [0, 42, 81]
 

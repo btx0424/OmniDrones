@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -80,7 +80,7 @@ class Actor(nn.Module):
         super().__init__()
         self.actor_mean = nn.LazyLinear(action_dim)
         self.actor_std = nn.Parameter(torch.zeros(action_dim))
-    
+
     def forward(self, features: torch.Tensor):
         loc = self.actor_mean(features)
         scale = torch.exp(self.actor_std).expand_as(loc)
@@ -98,7 +98,7 @@ class TConv(nn.Module):
         )
         self.mlp = make_mlp([256, 256])
         self.out = nn.LazyLinear(out_dim)
-    
+
     def forward(self, features: torch.Tensor):
         batch_shape = features.shape[:-2]
         features = features.flatten(0, -3) # [*, D, T]
@@ -115,7 +115,7 @@ class FiLM(nn.Module):
         self.f = nn.LazyLinear(feature_dim * 2)
         self.act = nn.ELU()
         self.ln = nn.LayerNorm(feature_dim)
-    
+
     def forward(self, feature, context):
         w, b = self.f(context).chunk(2, dim=-1)
         feature = self.act(w * feature + b) + feature
@@ -123,11 +123,11 @@ class FiLM(nn.Module):
 
 
 class PPOAdaptivePolicy(TensorDictModuleBase):
-    
+
     def __init__(self,
-        cfg: PPOConfig, 
-        observation_spec: CompositeSpec, 
-        action_spec: CompositeSpec, 
+        cfg: PPOConfig,
+        observation_spec: CompositeSpec,
+        action_spec: CompositeSpec,
         reward_spec: TensorSpec,
         device
     ):
@@ -144,7 +144,7 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
         if not isinstance(self.adaptation_key, str):
             self.adaptation_key = tuple(self.adaptation_key)
         self.gae = GAE(0.99, 0.95)
-        
+
         self.n_agents, self.action_dim = action_spec.shape[-2:]
 
         intrinsics_dim = observation_spec[("agents", "intrinsics")].shape[-1]
@@ -152,7 +152,7 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
         fake_input = observation_spec.zero()
 
         self.encoder = TensorDictModule(
-            nn.Sequential(nn.LayerNorm(intrinsics_dim), make_mlp([64, 64])), 
+            nn.Sequential(nn.LayerNorm(intrinsics_dim), make_mlp([64, 64])),
             [("agents", "intrinsics")], ["context"]
         ).to(self.device)
 
@@ -165,7 +165,7 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
             TensorDictModule(make_mlp([128, 128]), [("agents", "observation")], ["_feature"]),
             condition(),
             TensorDictModule(
-                nn.Sequential(make_mlp([256, 256]), Actor(self.action_dim)), 
+                nn.Sequential(make_mlp([256, 256]), Actor(self.action_dim)),
                 ["_feature"], ["loc", "scale"]
             )
         )
@@ -181,13 +181,13 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
             TensorDictModule(make_mlp([128, 128]), [("agents", "observation")], ["_feature"]),
             condition(),
             TensorDictModule(
-                nn.Sequential(make_mlp([256, 256]), nn.LazyLinear(1)), 
+                nn.Sequential(make_mlp([256, 256]), nn.LazyLinear(1)),
                 ["_feature"], ["state_value"]
             )
         ).to(self.device)
-        
+
         self.value_norm = ValueNorm1(reward_spec.shape[-2:]).to(self.device)
-        
+
         self.encoder(fake_input)
         self.actor(fake_input)
         self.critic(fake_input)
@@ -200,25 +200,25 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
                 if isinstance(module, nn.Linear):
                     nn.init.orthogonal_(module.weight, 0.01)
                     nn.init.constant_(module.bias, 0.)
-            
+
             self.actor.apply(init_)
             self.critic.apply(init_)
             self.encoder.apply(init_)
 
         self.adaptation_module = TensorDictModule(
-            TConv(fake_input[self.adaptation_key].shape[-1]), 
+            TConv(fake_input[self.adaptation_key].shape[-1]),
             [("agents", "observation_h")], [self.adaptation_key]
         ).to(self.device)
         self.adaptation_module(fake_input)
         self.adaptation_loss = MSE(
-            self.adaptation_module, 
-            self.adaptation_key, 
+            self.adaptation_module,
+            self.adaptation_key,
         ).to(self.device)
 
         self.encoder_opt = torch.optim.Adam(self.encoder.parameters(), lr=5e-4)
         self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=5e-4)
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=5e-4)
-    
+
     def forward(self, tensordict: TensorDict):
         self._get_context(tensordict)
         self.actor(tensordict)
@@ -238,7 +238,7 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
         else:
             raise RuntimeError()
         return info
-    
+
     def _get_context(self, tensordict: TensorDictBase):
         assert tensordict.get("context", None) is None
         if self.phase == "encoder":
@@ -280,7 +280,7 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
             batch = make_batch(tensordict, self.cfg.num_minibatches)
             for minibatch in batch:
                 infos.append(self._update(minibatch))
-        
+
         infos: TensorDict = torch.stack(infos).to_tensordict()
         infos = infos.apply(torch.mean, batch_size=[])
         return {k: v.item() for k, v in infos.items()}
@@ -328,13 +328,13 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
             "critic_grad_norm": critic_grad_norm,
             "explained_var": explained_var
         }, [])
-    
+
     def _train_adaptation(self, tensordict: TensorDict):
         with torch.no_grad():
             tensordict = self.encoder(tensordict)
-        
+
         info = self.adaptation_loss.update(tensordict)
-        
+
         return {f"adaptation/{k}": v for k, v in info.items()}
 
 
@@ -344,7 +344,7 @@ class MSE(nn.Module):
         self.adaptation_module = adaptation_module
         self.key = key
         self.opt = torch.optim.Adam(self.adaptation_module.parameters())
-    
+
     def forward(self, tensordict):
         target = tensordict.get(self.key)
         pred = self.adaptation_module(tensordict).get(self.key)

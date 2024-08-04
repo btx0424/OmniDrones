@@ -9,28 +9,27 @@ metric:
   goal: maximize
 
 parameters:
-
   algo:
     values:
-    - mappo
-    
-  task: 
-    values: 
-    - Hover
-    - Track
-    - InvPendulumHover
-    - InvPendulumTrack
-    - InvPendulumFlyThrough
-    - PayloadHover
-    - PayloadTrack
-    - PayloadFlyThrough
+      - mappo
 
-  total_frames: 
+  task:
+    values:
+      - Hover
+      - Track
+      - InvPendulumHover
+      - InvPendulumTrack
+      - InvPendulumFlyThrough
+      - PayloadHover
+      - PayloadTrack
+      - PayloadFlyThrough
+
+  total_frames:
     value: 125_500_000
 
   headless:
     value: true
-  
+
   seed:
     values: [0, 42, 81] #, 57]
 

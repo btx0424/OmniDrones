@@ -9,19 +9,18 @@ metric:
   goal: maximize
 
 parameters:
-
   # single-agent
-  task: 
-    values: 
-    - InvPendulumHover
-    - InvPendulumTrack
-    - PayloadTrack
-  total_frames: 
+  task:
+    values:
+      - InvPendulumHover
+      - InvPendulumTrack
+      - PayloadTrack
+  total_frames:
     value: 125_000_000
 
   headless:
     value: true
-  
+
   seed:
     values: [0, 42, 81] #57, 127]
 

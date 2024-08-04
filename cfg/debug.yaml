@@ -11,17 +11,17 @@ wandb:
   entity: marl-drones
   project: gpu-onpolicy
   mode: online # set to 'disabled' when debugging locally
-  run_id: 
+  run_id:
   run_path:
   monitor_gym: True
   log_code: True
-  tags: 
+  tags:
 
 sim:
   device: cpu
   use_flatcache: false
   use_gpu_pipeline: false
-  
+
   use_gpu: false
 
 defaults:

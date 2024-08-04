@@ -22,7 +22,7 @@ Development Roadmap
 
     We agreed with https://github.com/Mayankm96 that a consolidated effort could be more benifitial
     than scattered codebases. Therefore, we plan to merge some of `OmniDrones`
-    into https://github.com/NVIDIA-Omniverse/orbit in the near future.
+    into https://github.com/isaac-sim/IsaacLab in the near future.
 
 
 **December 2023**
@@ -44,8 +44,7 @@ Development Roadmap
 
 **February 2024 Onwards**
 * |uncheck| Better support for tuning and training with controllers.
-* |uncheck| Merge the drone model and simulation-related parts into Orbit.
+* |uncheck| Merge the drone model and simulation-related parts into Isaac Lab.
 * |uncheck| Extension workflow.
 
 
- 

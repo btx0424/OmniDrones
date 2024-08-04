@@ -6,16 +6,16 @@
 Welcome to OmniDrones's documentation!
 ======================================
 
-**OmniDrones** is an open-source platform designed for reinforcement learning research on multi-rotor drone systems. 
-Built on `Nvidia Isaac Sim <https://docs.omniverse.nvidia.com/app_isaacsim/app_isaacsim/overview.html>`__, 
-**OmniDrones** features highly efficient and flxeible simulation that can be adopted for various research purposes. 
+**OmniDrones** is an open-source platform designed for reinforcement learning research on multi-rotor drone systems.
+Built on `Nvidia Isaac Sim <https://docs.omniverse.nvidia.com/app_isaacsim/app_isaacsim/overview.html>`__,
+**OmniDrones** features highly efficient and flxeible simulation that can be adopted for various research purposes.
 
 .. image:: _static/visualization.jpg
    :align: center
 
-The platform, as released with `our paper <https://arxiv.org/abs/2309.12825>`__, currently focus on end-to-end 
-learning of agile controllers for drones. It offers a suite of benchmark tasks and algorithm baselines to provide 
-preliminary results for subsequent works. 
+The platform, as released with `our paper <https://arxiv.org/abs/2309.12825>`__, currently focus on end-to-end
+learning of agile controllers for drones. It offers a suite of benchmark tasks and algorithm baselines to provide
+preliminary results for subsequent works.
 
 An overview of the platform is shown below:
 
@@ -27,7 +27,7 @@ If you use **OmniDrones** in your research, please cite the paper with the follo
 .. code-block:: bibtex
 
    @misc{xu2023omnidrones,
-      title={OmniDrones: An Efficient and Flexible Platform for Reinforcement Learning in Drone Control}, 
+      title={OmniDrones: An Efficient and Flexible Platform for Reinforcement Learning in Drone Control},
       author={Botian Xu and Feng Gao and Chao Yu and Ruize Zhang and Yi Wu and Yu Wang},
       year={2023},
       eprint={2309.12825},
@@ -54,7 +54,7 @@ If you use **OmniDrones** in your research, please cite the paper with the follo
 .. toctree::
    :caption: Tutorials
    :maxdepth: 2
-   
+
    tutorials/drone
    tutorials/environment
    tutorials/controller
@@ -62,7 +62,7 @@ If you use **OmniDrones** in your research, please cite the paper with the follo
 .. toctree::
    :caption: Tasks
    :maxdepth: 2
-   
+
    tasks/single
    tasks/multi
 

@@ -55,7 +55,7 @@ def create_ground_plane(
     else:
         # get path to the nucleus server
         # assets_root_path = nucleus_utils.get_assets_root_path()
-        assets_root_path = "http://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/2023.1.0"
+        assets_root_path = "http://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/4.0"
         print("Assets root path: ", assets_root_path)
         if assets_root_path is None:
             carb.log_error("Unable to access the Isaac Sim assets folder on Nucleus server.")
@@ -105,7 +105,7 @@ def create_ground_plane(
         # check isaacsim version to determine the attribute name
         attributes = {"intensity": 600.0}
         isaacsim_version = get_version()
-        if int(isaacsim_version[2]) > 2022:
+        if int(isaacsim_version[2]) != 2022:
             attributes = {f"inputs:{k}": v for k, v in attributes.items()}
         # create light prim
         prim_utils.create_prim(f"{prim_path}/AmbientLight", "DistantLight", attributes=attributes)

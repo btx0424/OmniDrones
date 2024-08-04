@@ -3,7 +3,7 @@ Single-Agent Tasks
 
 .. note::
 
-  We are in the process of refactoring the tasks to make it more modular 
+  We are in the process of refactoring the tasks to make it more modular
   and easier to use while adding more tasks. The difference in visual
   appearance of the tasks is due version differences in Isaac Sim. They
   have no effect on the logic of the tasks.
@@ -33,7 +33,7 @@ Single-Agent Tasks
       .. image:: ../_static/tasks/InvPendulumHover.gif
         :align: center
         :scale: 50%
-    
+
     .. grid-item-card::  :ref:`tasks/single/InvPendulumTrack:InvPendulumTrack`
       :text-align: center
 
@@ -56,7 +56,7 @@ Single-Agent Tasks
       .. image:: ../_static/tasks/PayloadTrack.gif
         :align: center
         :scale: 50%
-    
+
     .. grid-item-card::  :ref:`tasks/single/PayloadFlyThrough:PayloadFlyThrough`
       :text-align: center
 
@@ -65,23 +65,23 @@ Single-Agent Tasks
         :scale: 50%
 
 .. grid:: 2
-  
+
       .. grid-item-card::  :ref:`tasks/single/Forest:Forest`
         :text-align: center
 
         .. raw:: html
-          
+
           <center>
             <video width="320" height="240" controls>
               <source src="../_static/demo/thin_obstacles.mp4" type="video/mp4">
             </video>
           </center>
-      
+
       .. grid-item-card:: :ref:`tasks/single/Pinball:Pinball`
         :text-align: center
 
         .. raw:: html
-          
+
           <center>
             <video width="320" height="240" controls>
               <source src="../_static/tasks/Pinball.mp4" type="video/mp4">

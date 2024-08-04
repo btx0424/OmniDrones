@@ -9,10 +9,11 @@ Set the following environment variables to your ``~/.bashrc`` or ``~/.zshrc`` fi
 .. code-block:: bash
 
     # Isaac Sim root directory
-    export ISAACSIM_PATH="${HOME}/.local/share/ov/pkg/isaac_sim-*"
+    export ISAACSIM_PATH="${HOME}/.local/share/ov/pkg/isaac-sim-*"
     # for example
-    # export ISAACSIM_PATH="${HOME}/.local/share/ov/pkg/isaac_sim-2023.1.0-hotfix"
-    # export ISAACSIM_PATH="${HOME}/.local/share/ov/pkg/isaac_sim-2023.1.1"
+    # export ISAACSIM_PATH="${HOME}/.local/share/ov/pkg/isaac-sim-2023.1.0-hotfix"
+    # export ISAACSIM_PATH="${HOME}/.local/share/ov/pkg/isaac-sim-2023.1.1"
+    # export ISAACSIM_PATH="${HOME}/.local/share/ov/pkg/isaac-sim-4.0.0"
 
 where ``*`` corresponds to the Isaac Sim version. Remember to run `source ~/.bashrc` before you proceed.
 
@@ -24,7 +25,7 @@ Although Isaac Sim comes with a built-in Python environment, we recommend using 
 
 .. code-block:: bash
 
-    conda create -n sim python=3.10 # for isaac_sim-2022.*, use python=3.7
+    conda create -n sim python=3.10 # for isaac-sim-2022.*, use python=3.7
     conda activate sim
 
     # make sure the conda environment is activated by checking $CONDA_PREFIX
@@ -34,20 +35,31 @@ Although Isaac Sim comes with a built-in Python environment, we recommend using 
     conda activate sim
 
     # verification
-    python -c "from omni.isaac.kit import SimulationApp"
+    python -c "from isaacsim import SimulationApp" # for isaac-sim-2022.*, isaac-sim-2023.*, use omni.isaac.kit instead of isaacsim
     # which torch is being used
     python -c "import torch; print(torch.__path__)"
 
+The next step is to install `Isaac Lab <https://github.com/isaac-sim/IsaacLab>`_ .
 
-The next step is to install `TensorDict <https://github.com/pytorch/tensordict>`__ and `TorchRL <https://github.com/pytorch/rl>`__.
+.. code-block:: bash
 
-.. note::
+    sudo apt install cmake build-essential
 
-    Since TensorDict and TorchRL are still under active development are subject to
-    changes frequently, we recommend installing them by cloning the repositories
-    and installing them in editable mode (via ``python setup.py develop``). Installing
-    via `pip` would likely cause compatibility issues.
+    # Cloning Isaac Lab
+    git clone git@github.com:isaac-sim/IsaacLab.git
 
+    # If you already set ISAACSIM_PATH, you don't need to create symbolic link.
+    # ln -s ${HOME}/.local/share/ov/pkg/isaac-sim-4.0.0 _isaac_sim
+
+    # usd-core==23.11 is for nvidia-srl-usd 0.14.0, nvidia-srl-usd-to-urdf 0.6.0 requires usd-core <24.00, >=21.11
+    # tqdm is for nvidia-srl-usd 0.14.0 requires tqdm <5.0.0, >=4.63.0
+    # xxhash is for 50x faster cache checks
+    conda activate sim
+    pip install usd-core==23.11 tqdm xxhash
+
+    # Install Isaac Lab
+    # at IsaacLab/
+    ./isaaclab.sh --install
 
 Finally, install **OmniDrones** in editable mode (which automatically installs other
 required dependencies):
@@ -67,6 +79,14 @@ To verify the installation, run
 In general, YOUR_WANDB_ENTITY is your wandb ID.
 If you don't want to add arguments every time, edit ``scripts/train.yaml``
 
+If you encounter the following error,
+try `TypeError: ArticulationView.get_world_poses() got an unexpected keyword argument 'usd' <troubleshooting.html#typeerror-articulationview-get-world-poses-got-an-unexpected-keyword-argument-usd>`_ .
+
+.. code-block:: bash
+
+    File "/${HOME}/.local/share/ov/pkg/isaac-sim-4.0.0/exts/omni.isaac.core/omni/isaac/core/prims/xform_prim_view.py", line 192, in __init__
+        default_positions, default_orientations = self.get_world_poses(usd=usd)
+    TypeError: ArticulationView.get_world_poses() got an unexpected keyword argument 'usd'
 
 Developer Guide: Working with VSCode
 ------------------------------------

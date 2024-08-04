@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -48,7 +48,7 @@ from omni.isaac.debug_draw import _debug_draw
 class DebugDraw:
     def __init__(self):
         self._draw = _debug_draw.acquire_debug_draw_interface()
-    
+
     def clear(self):
         self._draw.clear_lines()
 
@@ -61,7 +61,7 @@ class DebugDraw:
         sizes = [size] * len(point_list_0)
         colors = [color] * len(point_list_0)
         self._draw.draw_lines(point_list_0, point_list_1, colors, sizes)
-        
+
     def vector(self, x: torch.Tensor, v: torch.Tensor, size=2.0, color=(0., 1., 1., 1.)):
         x = x.cpu().reshape(-1, 3)
         v = v.cpu().reshape(-1, 3)
@@ -72,7 +72,7 @@ class DebugDraw:
         sizes = [size] * len(point_list_0)
         colors = [color] * len(point_list_0)
         self._draw.draw_lines(point_list_0, point_list_1, colors, sizes)
-    
+
 
 class IsaacEnv(EnvBase):
 
@@ -153,10 +153,10 @@ class IsaacEnv(EnvBase):
         self.central_env_idx = self.envs_positions.norm(dim=-1).argmin()
         central_env_pos = self.envs_positions[self.central_env_idx].cpu().numpy()
         set_camera_view(
-            eye=central_env_pos + np.asarray(self.cfg.viewer.eye), 
+            eye=central_env_pos + np.asarray(self.cfg.viewer.eye),
             target=central_env_pos + np.asarray(self.cfg.viewer.lookat)
         )
-        
+
         RobotBase._envs_positions = self.envs_positions.unsqueeze(1)
 
         # filter collisions within each environment instance
@@ -180,7 +180,7 @@ class IsaacEnv(EnvBase):
         self._set_specs()
         import pprint
         pprint.pprint(self.fake_tensordict().shapes)
-        
+
 
     @classmethod
     def __init_subclass__(cls, **kwargs):
@@ -196,7 +196,7 @@ class IsaacEnv(EnvBase):
         if not hasattr(self, "_agent_spec"):
             self._agent_spec = {}
         return _AgentSpecView(self)
-    
+
     @agent_spec.setter
     def agent_spec(self, value):
         raise AttributeError(
@@ -346,7 +346,7 @@ class IsaacEnv(EnvBase):
             return pos + self.envs_positions.unsqueeze(1), rot
         else:
             return pos + self.envs_positions, rot
-    
+
     def enable_render(self, enable: Union[bool, Callable]=True):
         if isinstance(enable, bool):
             self._should_render = lambda substep: enable
@@ -354,7 +354,7 @@ class IsaacEnv(EnvBase):
             self._should_render = enable
         else:
             raise TypeError("enable_render must be a bool or callable.")
-    
+
     def render(self, mode: str="human"):
         if mode == "human":
             return None
@@ -375,7 +375,7 @@ class IsaacEnv(EnvBase):
             raise NotImplementedError(
                 f"Render mode '{mode}' is not supported. Please use: {self.metadata['render.modes']}."
             )
-    
+
     def _create_viewport_render_product(self):
         """Create a render product of the viewport for rendering."""
         # set camera view for "/OmniverseKit_Persp" camera

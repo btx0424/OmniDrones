@@ -9,12 +9,11 @@ metric:
   goal: maximize
 
 parameters:
-
   algo:
     values:
-    - mappo
-    - happo
-  
+      - mappo
+      - happo
+
   algo.actor.hidden_units:
     value: [256, 128, 128]
 
@@ -25,22 +24,22 @@ parameters:
     # value: state
     value: obs
 
-  task: 
-    values: 
-    # - TransportHover # easy
-    # - TransportTrack
-    # - PlatformHover # easy
-    # - PlatformTrack
-    # - TransportFlyThrough # hard
-    - Formation
+  task:
+    values:
+      # - TransportHover # easy
+      # - TransportTrack
+      # - PlatformHover # easy
+      # - PlatformTrack
+      # - TransportFlyThrough # hard
+      - Formation
     # - PlatformFlyThrough # medium
 
-  total_frames: 
+  total_frames:
     value: 155_000_000
 
   headless:
     value: true
-  
+
   seed:
     values: [0, 42, 81]
 
@@ -56,7 +55,7 @@ parameters:
 
   # algo.num_minibatches:
   #   values: [16, 32]
-  
+
   algo.train_every:
     value: 128
 
@@ -64,7 +63,7 @@ parameters:
   #   distribution: log_uniform_values
   #   max: 0.01
   #   min: 0.0001
-  
+
   # algo.critic.lr:
   #   distribution: log_uniform_values
   #   max: 0.01

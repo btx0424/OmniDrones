@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -56,14 +56,14 @@ def create_frame(
 
     stage = stage_utils.get_current_stage()
     prim_xform = prim_utils.create_prim(prim_path, translation=(0., 0., 0.))
-    
+
     arms = []
     if to_prim_paths is None:
         to_prim_paths = [None for _ in range(len(arm_angles))]
 
     if not len(arm_angles) == len(arm_lengths) == len(to_prim_paths):
         raise ValueError
-    
+
     for i, (arm_angle, arm_length, to_prim_path) in enumerate(
         zip(arm_angles, arm_lengths, to_prim_paths)
     ):
@@ -144,8 +144,8 @@ class OveractuatedPlatform(RobotBase):
         self.alpha = 0.9
 
     def spawn(
-        self, 
-        translations=..., 
+        self,
+        translations=...,
         prim_paths: Sequence[str] = None,
         enable_collision: bool = False,
     ):
@@ -156,10 +156,10 @@ class OveractuatedPlatform(RobotBase):
 
         if prim_paths is None:
             prim_paths = [f"/World/envs/env_0/{self.name}_{i}" for i in range(n)]
-        
+
         prims = []
         for i, (prim_path, translation) in enumerate(zip(prim_paths, translations)):
-            
+
             if prim_utils.is_prim_path_valid(prim_path):
                 raise RuntimeError(f"Duplicate prim at {prim_path}.")
 
@@ -169,8 +169,8 @@ class OveractuatedPlatform(RobotBase):
             )
 
             drone_translations = torch.stack([
-                torch.cos(self.arm_angles), 
-                torch.sin(self.arm_angles), 
+                torch.cos(self.arm_angles),
+                torch.sin(self.arm_angles),
                 torch.zeros_like(self.arm_angles)
             ], dim=-1) * self.arm_lengths.unsqueeze(1)
 
@@ -183,7 +183,7 @@ class OveractuatedPlatform(RobotBase):
                 translations=drone_translations,
                 orientations=drone_rotations if self.rotate_drones else None,
                 prim_paths=[
-                    f"/World/envs/env_0/{self.name}_{i}/{self.drone.name}_{j}" 
+                    f"/World/envs/env_0/{self.name}_{i}/{self.drone.name}_{j}"
                     for j in range(drone_translations.shape[0])
                 ],
             )
@@ -245,7 +245,7 @@ class OveractuatedPlatform(RobotBase):
 
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
         self.drone.apply_action(actions)
-    
+
     def get_state(self, env=True):
         self.pos[:], self.rot[:] = self.get_world_poses(True)
         if env:
@@ -267,7 +267,7 @@ class OveractuatedPlatform(RobotBase):
             torch.norm(self.acc[..., :3], dim=-1)
             + torch.norm(self.jerk[..., :3], dim=-1)
         )
-    
+
     def get_angular_smoothness(self):
         return - (
             torch.sum(self.acc[..., 3:].abs(), dim=-1)
@@ -285,7 +285,7 @@ class OveractuatedPlatform(RobotBase):
         return env_ids
 
     def _create_frame(
-        self, 
+        self,
         prim_path: str,
         to_prims: Sequence[str]=None,
         enable_collision: bool=False

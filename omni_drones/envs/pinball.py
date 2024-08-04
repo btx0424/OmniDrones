@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -34,29 +34,31 @@ from omni_drones.robots.drone import MultirotorBase
 from omni_drones.views import RigidPrimView
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import (
-    UnboundedContinuousTensorSpec, 
-    CompositeSpec, 
+    UnboundedContinuousTensorSpec,
+    CompositeSpec,
     DiscreteTensorSpec
 )
 from pxr import UsdShade, PhysxSchema
 
-from omni.isaac.orbit.sensors import ContactSensorCfg, ContactSensor
+from omni.isaac.lab.sensors import ContactSensorCfg, ContactSensor
 
 class Pinball(IsaacEnv):
     """
-    This is an advanced control task where the drone is tasked with 
-    catching and hitting a ball. The goal is to prevent the ball 
+    This is an advanced control task where the drone is tasked with
+    catching and hitting a ball. The goal is to prevent the ball
     from falling to the ground, requiring precise control and timing.
 
     ## Observation
+
     The observation space consists of the following parts:
 
     - `rpos` (3): The position of the ball relative to the drone.
-    - `root_state` (19 + num_rotors): The basic information of the drone 
+    - `root_state` (19 + num_rotors): The basic information of the drone
       containing its rotation (in quaternion), velocities (linear and angular),
       heading and up vectors, and the current throttle.
-    
+
     ## Reward
+
     - `drone_pos`: to keep the drone around the origin.
     - `ball_height`: encourage striking the ball high enough.
     - `score`: sparse reward individual strikes.
@@ -64,13 +66,13 @@ class Pinball(IsaacEnv):
     The total reward is the sum of the above terms.
 
     ## Episode End
+
     An episode is truncated when it reaches the maximum length or terminates
     when any of the following conditions is met:
 
     - the drone's z position is below 0.2.
     - the drone deviates to far from the origin.
     - the ball's z position is below 0.2 or above 4.5.
-
     """
     def __init__(self, cfg, headless):
         super().__init__(cfg, headless)
@@ -82,7 +84,7 @@ class Pinball(IsaacEnv):
         if randomization is not None:
             if "drone" in self.cfg.task.randomization:
                 self.drone.setup_randomization(self.cfg.task.randomization["drone"])
-        
+
         self.ball = RigidPrimView(
             "/World/envs/env_*/ball",
             reset_xform_properties=False,
@@ -103,7 +105,7 @@ class Pinball(IsaacEnv):
         self.ball_mass_dist = D.Uniform(
             torch.tensor([0.01], device=self.device),
             torch.tensor([0.05], device=self.device)
-        ) 
+        )
 
         self.init_drone_pos_dist = D.Uniform(
             torch.tensor([-1., -1., 1.25], device=self.device),
@@ -147,7 +149,7 @@ class Pinball(IsaacEnv):
             collision_prim = drone_prim.GetPrimAtPath("base_link/collisions")
             binding_api = UsdShade.MaterialBindingAPI(collision_prim)
             binding_api.Bind(material, UsdShade.Tokens.weakerThanDescendants, "physics")
-        
+
         return ["/World/defaultGroundPlane"]
 
     def _set_specs(self):
@@ -202,7 +204,7 @@ class Pinball(IsaacEnv):
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids, self.training)
-        
+
         drone_pos = self.init_drone_pos_dist.sample((*env_ids.shape, 1))
         drone_rpy = self.init_drone_rpy_dist.sample((*env_ids.shape, 1))
         drone_rot = euler_to_quaternion(drone_rpy)
@@ -236,7 +238,7 @@ class Pinball(IsaacEnv):
 
         # relative position and heading
         self.rpos =  self.ball_pos - self.drone.pos
-        
+
         obs = [self.root_state, self.rpos, self.ball_vel[..., :3]]
         if self.time_encoding:
             t = (self.progress_buf / self.max_episode_length).unsqueeze(-1)
@@ -256,7 +258,7 @@ class Pinball(IsaacEnv):
         # score = self.ball.get_net_contact_forces().any(-1).float()
         # self.drone.base_link.get_net_contact_forces().any(-1).float()
         score = self.contact_sensor.data.net_forces_w.any(-1).float()
-        
+
         reward_pos = 1 / (1 + torch.norm(self.rpos[..., :2], dim=-1))
         reward_height = (self.ball_pos[..., 2] - self.drone.pos[..., 2].clip(1.0)).clip(0., 2.)
         reward_score = score * 3.
@@ -264,12 +266,12 @@ class Pinball(IsaacEnv):
         reward = reward_pos + 0.8 * reward_height + reward_score
 
         terminated = (
-            (self.drone.pos[..., 2] < 0.3) 
+            (self.drone.pos[..., 2] < 0.3)
             | (self.ball_pos[..., 2] < 0.2)
             | (self.ball_pos[..., 2] > 4.5)
             | (self.ball_pos[..., :2].abs() > 2.5).any(-1)
         )
-        
+
         truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
         self.stats["score"].add_(score)

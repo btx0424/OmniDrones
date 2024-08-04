@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -65,7 +65,7 @@ class RobotBase(abc.ABC):
         RobotBase._robots[name] = self
         if cfg is None:
             cfg = self.cfg_cls()
-        
+
         self.name = name
         self.is_articulation = is_articulation
         self.rigid_props: RigidBodyPropertiesCfg = cfg.rigid_props
@@ -92,8 +92,8 @@ class RobotBase(abc.ABC):
         RobotBase.REGISTRY[cls.__name__.lower()] = cls
 
     def spawn(
-        self, 
-        translations=[(0.0, 0.0, 0.5)], 
+        self,
+        translations=[(0.0, 0.0, 0.5)],
         orientations=None,
         prim_paths: Sequence[str] = None
     ):
@@ -101,7 +101,7 @@ class RobotBase(abc.ABC):
             raise RuntimeError(
                 "Cannot spawn robots after simulation_context.reset() is called."
             )
-        
+
         translations = torch.atleast_2d(
             torch.as_tensor(translations, device=self.device)
         )
@@ -179,7 +179,7 @@ class RobotBase(abc.ABC):
             self.articulation = self
         else:
             self._view = RigidPrimView(
-                self.prim_paths_expr, 
+                self.prim_paths_expr,
                 reset_xform_properties=False,
                 shape=(-1, self.n),
                 # track_contact_forces=True
@@ -191,7 +191,7 @@ class RobotBase(abc.ABC):
         # set the default state
         self._view.post_reset()
         self.shape = torch.arange(self._view.count).reshape(-1, self.n).shape
-        
+
         self.prim_paths = self._view.prim_paths
         self.initialized = True
 
@@ -244,7 +244,7 @@ class RobotBase(abc.ABC):
             forces = forces[..., self.articulation_indices, :]
             forces = forces.reshape(*self.shape, 1, 6)
         return forces
-    
+
     def get_state(self):
         raise NotImplementedError
 

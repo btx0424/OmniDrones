@@ -6,7 +6,7 @@ defaults:
   - /base/sim_base@_here_
   # - /base/randomization_base@_here_
 
-env: 
+env:
   num_envs: 1024
   max_episode_length: 600
 

@@ -23,9 +23,9 @@ wandb:
   entity: marl-drones
   project: omnidrones
   mode: online # set to 'disabled' when debugging locally
-  run_id: 
+  run_id:
   monitor_gym: True
-  tags: 
+  tags:
 
 defaults:
   - task: Hover

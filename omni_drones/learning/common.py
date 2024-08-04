@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -42,20 +42,20 @@ from functorch import vmap
 class MyBuffer:
 
     def __init__(
-        self, 
-        max_size: int=1000, 
+        self,
+        max_size: int=1000,
         device: torch.device=None
     ):
         self.storage = LazyTensorStorage(max_size=max_size, device=device)
         self._cursor = 0
-    
+
     def extend(self, data: TensorDict):
         t = data.shape[-1]
         cursor = (self._cursor + torch.arange(t)) % self.storage.max_size
         index = self.storage.set(cursor, data.permute(1, 0))
         self._cursor = cursor[-1].item() + 1
         return index
-    
+
     def sample(self, batch_size, seq_len: int=80):
         if seq_len > self.storage._len:
             raise ValueError(
@@ -91,7 +91,7 @@ def make_encoder(cfg, input_spec: TensorSpec) -> nn.Module:
         encoder = nn.Sequential(
             nn.LayerNorm(input_dim),
             MLP(
-                num_units=[input_dim] + cfg.hidden_units, 
+                num_units=[input_dim] + cfg.hidden_units,
                 normalization=nn.LayerNorm if cfg.get("layer_norm", False) else None
             ),
         )
@@ -110,7 +110,7 @@ def make_encoder(cfg, input_spec: TensorSpec) -> nn.Module:
                 vision_spec_dict[spec_name] = input_spec[spec_name]
             else:
                 raise ValueError
-            
+
         # create state encoder
         if len(state_spec_dict) > 0:
             encoder_cls = ENCODERS_MAP[cfg.attn_encoder]
@@ -138,7 +138,7 @@ def make_encoder(cfg, input_spec: TensorSpec) -> nn.Module:
             raise NotImplementedError("Multiple visual inputs are not supported for now (cuz this author is lazy)")
     else:
         raise NotImplementedError(input_spec)
-        
+
     return encoder
 
 @torch.no_grad()

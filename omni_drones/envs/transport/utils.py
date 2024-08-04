@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -68,8 +68,8 @@ class TransportationGroup(RobotBase):
         self.alpha = 0.9
 
     def spawn(
-        self, 
-        translations=..., 
+        self,
+        translations=...,
         prim_paths: Sequence[str] = None,
         enable_collision: bool = False,
     ):
@@ -107,7 +107,7 @@ class TransportationGroup(RobotBase):
             UsdPhysics.MassAPI.Apply(payload)
             payload.GetAttribute("physics:mass").Set(2.0)
             payload.GetAttribute("physics:collisionEnabled").Set(enable_collision)
-            
+
             kit_utils.set_rigid_body_properties(
                 payload.GetPath(),
                 angular_damping=0.1,
@@ -177,7 +177,7 @@ class TransportationGroup(RobotBase):
         self.drone.initialize(f"{self.prim_paths_expr}/{self.drone.name.lower()}_*")
         self.drone.articulation = self
         self.drone.articulation_indices = torch.arange(self.drone.n, device=self.device)
-        
+
         self.payload_view = RigidPrimView(
             f"{self.prim_paths_expr}/payload",
             reset_xform_properties=False,
@@ -212,19 +212,19 @@ class TransportationGroup(RobotBase):
         state = [self.pos, self.rot, self.vel, self.heading, self.up]
         state = torch.cat(state, dim=-1)
         return state
-    
+
     def get_linear_smoothness(self):
         return - (
             torch.norm(self.acc[..., :3], dim=-1)
             + torch.norm(self.jerk[..., :3], dim=-1)
         )
-    
+
     def get_angular_smoothness(self):
         return - (
             torch.sum(self.acc[..., 3:].abs(), dim=-1)
             + torch.sum(self.jerk[..., 3:].abs(), dim=-1)
         )
-    
+
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
         self.vel[env_ids] = 0.

@@ -1,17 +1,17 @@
 # MIT License
-# 
+#
 # Copyright (c) 2023 Botian Xu, Tsinghua University
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -40,15 +40,15 @@ from ..utils import lemniscate, scale_time
 
 class Track(IsaacEnv):
     r"""
-    A basic control task. The goal for the agent is to track a reference 
+    A basic control task. The goal for the agent is to track a reference
     lemniscate trajectory in the 3D space.
 
     ## Observation
-    
-    - `rpos` (3 * `future_traj_steps`): The relative position of the drone to the 
+
+    - `rpos` (3 * `future_traj_steps`): The relative position of the drone to the
       reference positions in the future `future_traj_steps` time steps.
-    - `root_state` (16 + `num_rotors`): The basic information of the drone (except its position), 
-      containing its rotation (in quaternion), velocities (linear and angular), 
+    - `root_state` (16 + `num_rotors`): The basic information of the drone (except its position),
+      containing its rotation (in quaternion), velocities (linear and angular),
       heading and up vectors, and the current throttle.
     - `time_encoding` (optional): The time encoding, which is a 4-dimensional
       vector encoding the current progress of the episode.
@@ -65,6 +65,7 @@ class Track(IsaacEnv):
     - `action_smoothness`: Reward that encourages smoother drone actions, computed based on the throttle difference of the drone.
 
     The total reward is computed as follows:
+
     ```{math}
         r = r_\text{pos} + r_\text{pos} * (r_\text{up} + r_\text{heading}) + r_\text{effort} + r_\text{action_smoothness}
     ```
@@ -72,20 +73,18 @@ class Track(IsaacEnv):
     ## Episode End
 
     The episode ends when the tracking error is larger than `reset_thres`, or
-    when the drone is too close to the ground, or when the episode reaches 
+    when the drone is too close to the ground, or when the episode reaches
     the maximum length.
 
     ## Config
 
-    | Parameter               | Type  | Default       | Description |
-    |-------------------------|-------|---------------|-------------|
-    | `drone_model`           | str   | "hummingbird" | Specifies the model of the drone being used in the environment. |
-    | `reset_thres`           | float | 0.5           | Threshold for the distance between the drone and its target, upon exceeding which the episode will be reset. |
-    | `future_traj_steps`     | int   | 4             | Number of future trajectory steps the drone needs to predict. |
-    | `reward_distance_scale` | float | 1.2           | Scales the reward based on the distance between the drone and its target. |
+    | Parameter               | Type  | Default       | Description                                                                                                                                                                                                                             |
+    | ----------------------- | ----- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | `drone_model`           | str   | "hummingbird" | Specifies the model of the drone being used in the environment.                                                                                                                                                                         |
+    | `reset_thres`           | float | 0.5           | Threshold for the distance between the drone and its target, upon exceeding which the episode will be reset.                                                                                                                            |
+    | `future_traj_steps`     | int   | 4             | Number of future trajectory steps the drone needs to predict.                                                                                                                                                                           |
+    | `reward_distance_scale` | float | 1.2           | Scales the reward based on the distance between the drone and its target.                                                                                                                                                               |
     | `time_encoding`         | bool  | True          | Indicates whether to include time encoding in the observation space. If set to True, a 4-dimensional vector encoding the current progress of the episode is included in the observation. If set to False, this feature is not included. |
-
-
     """
     def __init__(self, cfg, headless):
         self.reset_thres = cfg.task.reset_thres
@@ -119,7 +118,7 @@ class Track(IsaacEnv):
                 self.wind_intensity_high = 2
             self.wind_w = torch.zeros(self.num_envs, 3, 8, device=self.device)
             self.wind_i = torch.zeros(self.num_envs, 1, device=self.device)
-        
+
         self.init_rpy_dist = D.Uniform(
             torch.tensor([-.2, -.2, 0.], device=self.device) * torch.pi,
             torch.tensor([0.2, 0.2, 2.], device=self.device) * torch.pi
@@ -167,7 +166,7 @@ class Track(IsaacEnv):
         )
         self.drone.spawn(translations=[(0.0, 0.0, 1.5)])
         return ["/World/defaultGroundPlane"]
-    
+
     def _set_specs(self):
         drone_state_dim = self.drone.state_spec.shape[-1]
         obs_dim = drone_state_dim + 3 * (self.future_traj_steps-1)
@@ -176,7 +175,7 @@ class Track(IsaacEnv):
             obs_dim += self.time_encoding_dim
         if self.intrinsics:
             obs_dim += sum(spec.shape[-1] for name, spec in self.drone.info_spec.items())
-        
+
         self.observation_spec = CompositeSpec({
             "agents": {
                 "observation": UnboundedContinuousTensorSpec((1, obs_dim))
@@ -249,7 +248,7 @@ class Track(IsaacEnv):
             colors = [(1.0, 1.0, 1.0, 1.0) for _ in range(len(point_list_0))]
             sizes = [1 for _ in range(len(point_list_0))]
             self.draw.draw_lines(point_list_0, point_list_1, colors, sizes)
-            
+
         if self.wind:
             self.wind_i[env_ids] = torch.rand(*env_ids.shape, 1, device=self.device) * (self.wind_intensity_high-self.wind_intensity_low) + self.wind_intensity_low
             self.wind_w[env_ids] = torch.randn(*env_ids.shape, 3, 8, device=self.device)
@@ -268,9 +267,9 @@ class Track(IsaacEnv):
     def _compute_state_and_obs(self):
         self.root_state = self.drone.get_state()
         self.info["drone_state"][:] = self.root_state[..., :13]
-        
+
         self.target_pos[:] = self._compute_traj(self.future_traj_steps, step_size=5)
-        
+
         self.rpos = self.target_pos - self.root_state[..., :3]
         obs = [
             self.rpos.flatten(1).unsqueeze(1),
@@ -290,7 +289,7 @@ class Track(IsaacEnv):
             "agents": {
                 "observation": obs,
             },
-            "stats": self.stats.clone(),  
+            "stats": self.stats.clone(),
             "info": self.info.clone()
         }, self.batch_size)
 
@@ -299,9 +298,9 @@ class Track(IsaacEnv):
         distance = torch.norm(self.rpos[:, [0]], dim=-1)
         self.stats["tracking_error"].add_(-distance)
         self.stats["tracking_error_ema"].lerp_(distance, (1-self.alpha))
-        
+
         reward_pose = torch.exp(-self.reward_distance_scale * distance)
-        
+
         # uprightness
         tiltage = torch.abs(1 - self.drone.up[..., 2])
         reward_up = 0.5 / (1.0 + torch.square(tiltage))
@@ -315,8 +314,8 @@ class Track(IsaacEnv):
         reward_spin = 0.5 / (1.0 + torch.square(spin))
 
         reward = (
-            reward_pose 
-            + reward_pose * (reward_up + reward_spin) 
+            reward_pose
+            + reward_pose * (reward_up + reward_spin)
             + reward_effort
             + reward_action_smoothness
         )
@@ -325,7 +324,7 @@ class Track(IsaacEnv):
             (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
             | (self.drone.pos[..., 2] < 0.1)
             | (distance > self.reset_thres)
-        ) 
+        )
 
         ep_len = self.progress_buf.unsqueeze(-1)
         self.stats["tracking_error"].div_(
@@ -343,14 +342,14 @@ class Track(IsaacEnv):
             },
             self.batch_size,
         )
-    
+
     def _compute_traj(self, steps: int, env_ids=None, step_size: float=1.):
         if env_ids is None:
             env_ids = ...
         t = self.progress_buf[env_ids].unsqueeze(1) + step_size * torch.arange(steps, device=self.device)
         t = self.traj_t0 + scale_time(self.traj_w[env_ids].unsqueeze(1) * t * self.dt)
         traj_rot = self.traj_rot[env_ids].unsqueeze(1).expand(-1, t.shape[1], 4)
-        
+
         target_pos = vmap(lemniscate)(t, self.traj_c[env_ids])
         target_pos = vmap(torch_utils.quat_rotate)(traj_rot, target_pos) * self.traj_scale[env_ids].unsqueeze(1)
 

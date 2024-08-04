@@ -73,8 +73,8 @@ def main(cfg):
     target_pos[:, 1] = translations[:, 1]
     target_pos[:, 2] = translations[:, 2]
     action = drone.action_spec.zero((n,))
-    
-    
+
+
     frames = []
     from tqdm import tqdm
     t = tqdm(range(cfg.steps))

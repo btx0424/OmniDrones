@@ -9,11 +9,10 @@ metric:
   goal: maximize
 
 parameters:
-
-  task: 
+  task:
     value: Platform
 
-  total_frames: 
+  total_frames:
     value: 500_000_000
 
   task.drone_model:
@@ -21,17 +20,17 @@ parameters:
 
   headless:
     value: true
-  
+
   algo.num_minibatches:
     distribution: log_uniform_values
     min: 2
     max: 64
-  
+
   algo.train_every:
     distribution: log_uniform_values
     min: 8
     max: 64
-  
+
   algo.ppo_epochs:
     values: [2, 4, 8]
 
@@ -39,12 +38,12 @@ parameters:
     distribution: log_uniform_values
     max: 0.01
     min: 0.0001
-  
+
   algo.critic.lr:
     distribution: log_uniform_values
     max: 0.01
     min: 0.0001
-  
+
   algo.entropy_coef:
     distribution: log_uniform_values
     max: 0.01

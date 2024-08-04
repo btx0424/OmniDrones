@@ -67,6 +67,14 @@ If the CUDA error below is occurred, check whether the CUDA version is 11.8. If 
 [Error] [omni.physx.tensors.plugin] CUDA error: an illegal memory access was encountered: ../../../extensions/runtime/source/omni.physx.tensors/plugins/gpu/CudaKernels.cu: 999
 ```
 
+## Conda-related Issues
+
+### CondaVerificationError
+
+```console
+conda clean --all
+```
+
 ## Isaac Sim-related Issues
 
 ### TypeError: ArticulationView.get_world_poses() got an unexpected keyword argument 'usd'

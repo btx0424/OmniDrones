@@ -6,7 +6,7 @@ defaults:
   - /base/sim_base@_here_
 
 env:
-  num_envs: 2048
+  num_envs: 32
 
 sim:
   gpu_max_rigid_contact_count: 524288

@@ -47,6 +47,7 @@ If you use **OmniDrones** in your research, please cite the paper with the follo
    :caption: Demos
    :maxdepth: 2
 
+   demo/tasks
    demo/downwash
    demo/crazyflie
    demo/lidar

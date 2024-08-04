@@ -28,7 +28,7 @@ Multi-Agent Tasks
     .. .. image:: ../_static/tasks/PlatformFlyThrough.gif
     ..     :scale: 50%
 
-.. grid:: 2
+.. grid:: 3
 
   .. grid-item-card:: :ref:`tasks/multi/TransportHover:TransportHover`
     :text-align: center
@@ -41,6 +41,12 @@ Multi-Agent Tasks
 
     .. image:: ../_static/tasks/TransportTrack.gif
         :scale: 50%
+
+  .. grid-item-card:: :ref:`tasks/multi/TransportFlyThrough:TransportFlyThrough`
+    :text-align: center
+
+    .. .. image:: ../_static/tasks/TransportFlyThrough.gif
+    ..     :scale: 50%
 
 .. grid:: 1
 
@@ -72,4 +78,5 @@ Quick Start
     multi/PlatformFlyThrough
     multi/TransportHover
     multi/TransportTrack
+    multi/TransportFlyThrough
     multi/Formation

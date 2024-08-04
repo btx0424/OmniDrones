@@ -6,8 +6,8 @@ defaults:
   - /base/sim_base@_here_
 
 env:
+  num_envs: 128
   max_episode_length: 800
-  num_envs: 1024
 
 # ../viewer:
 #   eye: [0., 8., 6.]

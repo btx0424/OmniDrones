@@ -200,7 +200,7 @@ def main(cfg):
 
     transforms = [InitTracker()]
 
-    # a CompositeSpec is by deafault processed by a entity-based encoder
+    # a CompositeSpec is by default processed by a entity-based encoder
     # ravel it to use a MLP encoder instead
     if cfg.task.get("ravel_obs", False):
         transform = ravel_composite(base_env.observation_spec, ("agents", "observation"))
@@ -381,10 +381,20 @@ def main(cfg):
     try:
         ckpt_path = os.path.join(run.dir, "checkpoint_final.pt")
         torch.save(policy.state_dict(), ckpt_path)
+
+        model_artifact = wandb.Artifact(
+            f"{cfg.task.name}-{cfg.algo.name.lower()}",
+            type="model",
+            description=f"{cfg.task.name}-{cfg.algo.name.lower()}",
+            metadata=dict(cfg))
+
+        model_artifact.add_file(ckpt_path)
+        wandb.save(ckpt_path)
+        run.log_artifact(model_artifact)
+
         logging.info(f"Saved checkpoint to {str(ckpt_path)}")
     except AttributeError:
         logging.warning(f"Policy {policy} does not implement `.state_dict()`")
-
 
     wandb.finish()
 

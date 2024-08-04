@@ -1,0 +1,16 @@
+headless: false
+
+max_iters: 10
+num_envs: 16
+max_episode_length: 1000
+
+viewer:
+  resolution: [960, 720]
+  eye: [8, 0., 6.]
+  lookat: [0., 0., 1.]
+
+wandb:
+  entity: finani
+  project: omnidrones-public
+  artifact_name: Track-ppo
+  artifact_version: rtx4090-20m-n128

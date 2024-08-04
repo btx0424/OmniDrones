@@ -109,3 +109,36 @@ and edit ``.vscode/settings.json`` as:
         // ...
         "python.envFile": "${workspaceFolder}/.vscode/.python.env",
     }
+
+Developer Guide: Python Environments
+------------------------------------
+
+.. list-table:: Python Environments
+    :widths: 25 25 25 25 25
+    :header-rows: 1
+
+    * -
+      - Isaac Sim 2022.*
+      - Isaac Sim 2023.*
+      - Isaac Sim 4.*
+      - Isaac Lab 1.*
+    * - python
+      - 3.7
+      - 3.10
+      - 3.10
+      - 3.10
+    * - pytorch
+      - 1.10.0+cu113
+      - 2.0.1+cu118
+      - 2.2.2+cu118
+      - 2.2.2+cu118
+    * - rl
+      -
+      - 0.1.1
+      - 0.3.1
+      - 0.3.1
+    * - tensordict
+      -
+      - 0.1.1
+      - 0.3.2
+      - 0.3.2

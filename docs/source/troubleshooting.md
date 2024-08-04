@@ -82,8 +82,8 @@ conda clean --all
 If you encounter the unexpected keyword error in Isaac Sim 4.*, remove **usd=usd** from **xform_prim_view.py**.
 
 ```console
-# open /${HOME}/.local/share/ov/pkg/isaac-sim-4.0.0/exts/omni.isaac.core/omni/isaac/core/prims/xform_prim_view.py
-# go to line 184
+# open /${HOME}/.local/share/ov/pkg/isaac-sim-4.1.0/exts/omni.isaac.core/omni/isaac/core/prims/xform_prim_view.py
+# go to line 189 (for 4.1.0), 184 (for 4.0.0)
 
 # L184
 # default_positions, default_orientations = self.get_world_poses(usd=usd)

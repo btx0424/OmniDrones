@@ -21,8 +21,6 @@
 # SOFTWARE.
 
 
-from functorch import vmap
-
 import omni.isaac.core.utils.torch as torch_utils
 import omni.isaac.core.utils.prims as prim_utils
 import omni.isaac.core.objects as objects

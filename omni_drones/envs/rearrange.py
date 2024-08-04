@@ -21,13 +21,12 @@
 # SOFTWARE.
 
 
-from functorch import vmap
-
 import omni.isaac.core.utils.torch as torch_utils
 import omni_drones.utils.kit as kit_utils
 import omni_drones.utils.scene as scene_utils
 import torch
 import torch.distributions as D
+from torch.func import vmap
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv, List, Optional
 from omni_drones.utils.torch import cpos, off_diag, others, euler_to_quaternion

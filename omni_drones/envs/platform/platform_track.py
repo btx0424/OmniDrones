@@ -21,11 +21,10 @@
 # SOFTWARE.
 
 
-from functorch import vmap
 import torch
 import torch.distributions as D
+from torch.func import vmap
 
-import omni.isaac.core.utils.torch as torch_utils
 import omni.isaac.core.utils.prims as prim_utils
 import omni.isaac.core.objects as objects
 from omni.isaac.debug_draw import _debug_draw
@@ -40,7 +39,7 @@ from omni_drones.views import RigidPrimView
 from omni_drones.utils.torch import cpos, off_diag, others, normalize
 from omni_drones.robots.drone import MultirotorBase
 from omni_drones.utils.scene import design_scene
-from omni_drones.utils.torch import euler_to_quaternion
+from omni_drones.utils.torch import euler_to_quaternion, quat_rotate
 
 from .utils import OveractuatedPlatform, PlatformCfg
 from ..utils import lemniscate, scale_time
@@ -388,7 +387,7 @@ class PlatformTrack(IsaacEnv):
         traj_rot = self.traj_rot[env_ids].unsqueeze(1).expand(-1, t.shape[1], 4)
 
         target_pos = vmap(lemniscate)(self.traj_t0 + t, self.traj_c[env_ids])
-        target_pos = vmap(torch_utils.quat_rotate)(traj_rot, target_pos) * self.traj_scale[env_ids].unsqueeze(1)
+        target_pos = vmap(quat_rotate)(traj_rot, target_pos) * self.traj_scale[env_ids].unsqueeze(1)
 
         return self.origin + target_pos
 

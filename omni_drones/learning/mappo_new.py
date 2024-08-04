@@ -29,6 +29,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import einops
 
+from torch.func import vmap
 from tensordict import TensorDict
 from tensordict.nn import (
     EnsembleModule as _EnsembleModule,
@@ -107,7 +108,7 @@ class EnsembleModule(_EnsembleModule):
 
         params_td = make_functional(module).expand(num_copies).to_tensordict()
         self.module = module
-        self.vmapped_forward = torch.vmap(self.module, (1, 0), 1)
+        self.vmapped_forward = vmap(self.module, (1, 0), 1)
         self.reset_parameters_recursive(params_td)
         self.params_td = TensorDictParams(params_td)
 

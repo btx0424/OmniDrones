@@ -23,6 +23,7 @@
 
 import torch
 import torch.distributions as D
+from torch.func import vmap
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import (
     CompositeSpec,
@@ -265,8 +266,8 @@ class TransportFlyThrough(IsaacEnv):
         self.payload_heading: torch.Tensor = quat_axis(self.payload_rot, axis=0)
         self.payload_up: torch.Tensor = quat_axis(self.payload_rot, axis=2)
 
-        self.drone_rpos = torch.vmap(cpos)(drone_pos, drone_pos)
-        self.drone_rpos = torch.vmap(off_diag)(self.drone_rpos)
+        self.drone_rpos = vmap(cpos)(drone_pos, drone_pos)
+        self.drone_rpos = vmap(off_diag)(self.drone_rpos)
         self.drone_pdist = torch.norm(self.drone_rpos, dim=-1, keepdim=True)
         payload_drone_rpos = self.payload_pos.unsqueeze(1) - drone_pos
 
@@ -293,7 +294,7 @@ class TransportFlyThrough(IsaacEnv):
             [-payload_drone_rpos, self.drone_states[..., 3:], identity], dim=-1
         ).unsqueeze(2) # [..., 1, state_dim]
         obs["obs_others"] = torch.cat(
-            [self.drone_rpos, self.drone_pdist, torch.vmap(others)(self.drone_states[..., 3:13])], dim=-1
+            [self.drone_rpos, self.drone_pdist, vmap(others)(self.drone_states[..., 3:13])], dim=-1
         ) # [..., n-1, state_dim + 1]
         obs["obs_payload"] = payload_state.expand(-1, self.drone.n, -1).unsqueeze(2) # [..., 1, 22]
         obs["obs_obstacles"] = obstacle_payload_rpos.unsqueeze(1).expand(-1, self.drone.n, 2, 2)

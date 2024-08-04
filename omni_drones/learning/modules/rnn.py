@@ -25,7 +25,7 @@ import torch
 import torch.nn as nn
 
 """
-These modules are walk-arounds for using functorch.vmap since the batching rules for
+These modules are walk-arounds for using torch.func.vmap since the batching rules for
 GRU and LSTM are not implemented yet (2023/03/13).
 """
 

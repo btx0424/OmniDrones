@@ -99,8 +99,8 @@ class DSLPIDController(nn.Module):
             [torch.cos(target_yaw), torch.sin(target_yaw), torch.zeros_like(target_yaw)]
         )
         target_z_ax = normalize(target_thrust)
-        target_y_ax = normalize(torch.cross(target_z_ax, target_x_c))
-        target_x_ax = torch.cross(target_y_ax, target_z_ax)
+        target_y_ax = normalize(torch.linalg.cross(target_z_ax, target_x_c))
+        target_x_ax = torch.linalg.cross(target_y_ax, target_z_ax)
         target_rot = torch.stack([target_x_ax, target_y_ax, target_z_ax], dim=-1)
         rot_matrix_error = target_rot.T @ rot - rot.T @ target_rot
         rot_error = torch.stack(

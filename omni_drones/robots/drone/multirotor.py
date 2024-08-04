@@ -27,7 +27,7 @@ from typing import Type, Dict
 import torch
 import torch.distributions as D
 import yaml
-from functorch import vmap
+from torch.func import vmap
 from tensordict.nn import make_functional
 from torchrl.data import BoundedTensorSpec, CompositeSpec, UnboundedContinuousTensorSpec
 from tensordict import TensorDict

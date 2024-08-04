@@ -29,7 +29,7 @@ import omni.physx.scripts.utils as script_utils
 import torch
 
 from pxr import Gf, PhysxSchema, Usd, UsdGeom, UsdPhysics
-from scipy.spatial.transform.rotation import Rotation
+from scipy.spatial.transform import Rotation
 
 import omni_drones.utils.kit as kit_utils
 

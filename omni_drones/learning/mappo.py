@@ -27,6 +27,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.func import vmap
 from tensordict import TensorDict
 from tensordict.utils import expand_right
 from tensordict.nn import make_functional, TensorDictModule, TensorDictParams
@@ -168,7 +169,7 @@ class MAPPOPolicy(object):
                 in_keys=self.critic_in_keys,
                 out_keys=self.critic_out_keys,
             ).to(self.device)
-            self.value_func = torch.vmap(self.critic, in_dims=1, out_dims=1)
+            self.value_func = vmap(self.critic, in_dims=1, out_dims=1)
 
         self.critic_opt = torch.optim.Adam(
             self.critic.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay
@@ -202,7 +203,7 @@ class MAPPOPolicy(object):
     def __call__(self, tensordict: TensorDict, deterministic: bool = False):
         actor_input = tensordict.select(*self.actor_in_keys, strict=False)
         actor_input.batch_size = [*actor_input.batch_size, self.agent_spec.n]
-        actor_output = torch.vmap(self.actor, in_dims=(1, 0), out_dims=1, randomness="different")(
+        actor_output = vmap(self.actor, in_dims=(1, 0), out_dims=1, randomness="different")(
             actor_input, self.actor_params, deterministic=deterministic
         )
 
@@ -216,7 +217,7 @@ class MAPPOPolicy(object):
         actor_input.batch_size = [*actor_input.batch_size, self.agent_spec.n]
 
         log_probs_old = batch[self.act_logps_name]
-        actor_output = torch.vmap(self.actor, in_dims=(1, 0), out_dims=1)(
+        actor_output = vmap(self.actor, in_dims=(1, 0), out_dims=1)(
             actor_input, self.actor_params, eval_action=True
         )
 

@@ -24,10 +24,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.func import vmap
 from tensordict import TensorDict
 from tensordict.utils import expand_right
 from tensordict.nn import TensorDictModule, TensorDictSequential
-from functorch import vmap
 from torchrl.data import (
     DiscreteTensorSpec,
 )

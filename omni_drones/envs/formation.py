@@ -25,6 +25,7 @@ import omni_drones.utils.kit as kit_utils
 import omni_drones.utils.scene as scene_utils
 import torch
 import torch.distributions as D
+from torch.func import vmap
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv, List, Optional
 from omni_drones.utils.torch import cpos, off_diag, others, make_cells, euler_to_quaternion
@@ -199,7 +200,7 @@ class Formation(IsaacEnv):
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
 
-        pos = torch.vmap(sample_from_grid, randomness="different")(
+        pos = vmap(sample_from_grid, randomness="different")(
             self.cells.expand(len(env_ids), *self.cells.shape), n=self.drone.n
         ) + self.envs_positions[env_ids].unsqueeze(1)
         rpy = self.init_rpy_dist.sample((*env_ids.shape, self.drone.n))
@@ -208,7 +209,7 @@ class Formation(IsaacEnv):
         self.drone.set_world_poses(pos, rot, env_ids)
         self.drone.set_velocities(vel, env_ids)
 
-        self.last_cost_h[env_ids] = torch.vmap(cost_formation_hausdorff)(
+        self.last_cost_h[env_ids] = vmap(cost_formation_hausdorff)(
             pos, desired_p=self.formation
         )
         # self.last_cost_l[env_ids] = vmap(cost_formation_laplacian)(
@@ -236,14 +237,14 @@ class Formation(IsaacEnv):
             obs_self.append(t.expand(-1, self.drone.n, self.time_encoding_dim))
         obs_self = torch.cat(obs_self, dim=-1)
 
-        relative_pos = torch.vmap(cpos)(pos, pos)
-        self.drone_pdist = torch.vmap(off_diag)(torch.norm(relative_pos, dim=-1, keepdim=True))
-        relative_pos = torch.vmap(off_diag)(relative_pos)
+        relative_pos = vmap(cpos)(pos, pos)
+        self.drone_pdist = vmap(off_diag)(torch.norm(relative_pos, dim=-1, keepdim=True))
+        relative_pos = vmap(off_diag)(relative_pos)
 
         obs_others = torch.cat([
             relative_pos,
             self.drone_pdist,
-            torch.vmap(others)(self.root_states[..., 3:13])
+            vmap(others)(self.root_states[..., 3:13])
         ], dim=-1)
 
         obs = TensorDict({
@@ -345,7 +346,7 @@ def laplacian(p: torch.Tensor, normalize=False):
         L = D - A
     return L
 
-@torch.vmap
+@vmap
 def cost_formation_hausdorff(p: torch.Tensor, desired_p: torch.Tensor) -> torch.Tensor:
     p = p - p.mean(-2, keepdim=True)
     desired_p = desired_p - desired_p.mean(-2, keepdim=True)

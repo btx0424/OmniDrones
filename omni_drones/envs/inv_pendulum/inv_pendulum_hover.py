@@ -21,7 +21,6 @@
 # SOFTWARE.
 
 
-import functorch
 import torch
 import torch.distributions as D
 from tensordict.tensordict import TensorDict, TensorDictBase

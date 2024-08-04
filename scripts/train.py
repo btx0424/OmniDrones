@@ -9,6 +9,7 @@ import pandas as pd
 import wandb
 import matplotlib.pyplot as plt
 
+from torch.func import vmap
 from tqdm import tqdm
 from omegaconf import OmegaConf
 
@@ -33,9 +34,7 @@ from setproctitle import setproctitle
 from torchrl.envs.transforms import TransformedEnv, InitTracker, Compose
 
 
-FILE_PATH = os.path.dirname(__file__)
-
-@hydra.main(config_path=FILE_PATH, config_name="train")
+@hydra.main(version_base=None, config_path=".", config_name="train")
 def main(cfg):
     OmegaConf.register_new_resolver("eval", eval)
     OmegaConf.resolve(cfg)
@@ -81,7 +80,7 @@ def main(cfg):
         elif action_transform == "velocity":
             from omni_drones.controllers import LeePositionController
             controller = LeePositionController(9.81, base_env.drone.params).to(base_env.device)
-            transform = VelController(torch.vmap(controller))
+            transform = VelController(vmap(controller))
             transforms.append(transform)
         elif action_transform == "rate":
             from omni_drones.controllers import RateController as _RateController
@@ -91,7 +90,7 @@ def main(cfg):
         elif action_transform == "attitude":
             from omni_drones.controllers import AttitudeController as _AttitudeController
             controller = _AttitudeController(9.81, base_env.drone.params).to(base_env.device)
-            transform = AttitudeController(torch.vmap(torch.vmap(controller)))
+            transform = AttitudeController(vmap(vmap(controller)))
             transforms.append(transform)
         elif not action_transform.lower() == "none":
             raise NotImplementedError(f"Unknown action transform: {action_transform}")

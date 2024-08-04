@@ -58,7 +58,6 @@ autodoc_mock_imports = [
     "torch",
     "torchrl",
     "tensordict",
-    "functorch",
     "numpy",
     "matplotlib",
     "scipy",

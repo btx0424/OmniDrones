@@ -25,7 +25,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.distributions as D
-from functorch import vmap
+from torch.func import vmap
 
 from omni.isaac.core.utils.viewports import set_camera_view
 

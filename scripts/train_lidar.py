@@ -32,6 +32,7 @@ from torchrl.envs.transforms import TransformedEnv, InitTracker, Compose
 import torch.nn as nn
 import torch.nn.functional as F
 import einops
+from torch.func import vmap
 from einops.layers.torch import Rearrange
 from omni_drones.learning.ppo.ppo import PPOConfig, make_mlp, make_batch, Actor, IndependentNormal, GAE, ValueNorm1
 from tensordict import TensorDict
@@ -109,7 +110,7 @@ class PPOPolicy(TensorDictModuleBase):
     def train_op(self, tensordict: TensorDict):
         next_tensordict = tensordict["next"]
         with torch.no_grad():
-            next_tensordict = torch.vmap(self.encoder)(next_tensordict)
+            next_tensordict = vmap(self.encoder)(next_tensordict)
             next_values = self.critic(next_tensordict)["state_value"]
         rewards = tensordict[("next", "agents", "reward")]
         dones = tensordict[("next", "terminated")]
@@ -182,9 +183,7 @@ class PPOPolicy(TensorDictModuleBase):
         }, [])
 
 
-FILE_PATH = os.path.dirname(__file__)
-
-@hydra.main(config_path=FILE_PATH, config_name="train", version_base=None)
+@hydra.main(version_base=None, config_path=".", config_name="train")
 def main(cfg):
     OmegaConf.register_new_resolver("eval", eval)
     OmegaConf.resolve(cfg)
@@ -234,7 +233,7 @@ def main(cfg):
         elif action_transform == "velocity":
             from omni_drones.controllers import LeePositionController
             controller = LeePositionController(9.81, base_env.drone.params).to(base_env.device)
-            transform = VelController(torch.vmap(controller))
+            transform = VelController(vmap(controller))
             transforms.append(transform)
         elif action_transform == "rate":
             from omni_drones.controllers import RateController as _RateController
@@ -244,7 +243,7 @@ def main(cfg):
         elif action_transform == "attitude":
             from omni_drones.controllers import AttitudeController as _AttitudeController
             controller = _AttitudeController(9.81, base_env.drone.params).to(base_env.device)
-            transform = AttitudeController(torch.vmap(torch.vmap(controller)))
+            transform = AttitudeController(vmap(vmap(controller)))
             transforms.append(transform)
         elif not action_transform.lower() == "none":
             raise NotImplementedError(f"Unknown action transform: {action_transform}")

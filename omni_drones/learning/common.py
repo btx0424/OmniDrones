@@ -23,6 +23,7 @@
 
 import torch
 import torch.nn as nn
+from torch.func import vmap
 
 
 def soft_update(target: nn.Module, source: nn.Module, tau):
@@ -37,7 +38,6 @@ def hard_update(target: nn.Module, source: nn.Module):
 
 from torchrl.data.replay_buffers.storages import LazyTensorStorage
 from tensordict import TensorDict
-from functorch import vmap
 
 class MyBuffer:
 

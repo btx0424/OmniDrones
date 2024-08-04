@@ -35,7 +35,7 @@ from omni_drones.views import RigidPrimView
 from omni_drones.utils.torch import euler_to_quaternion
 
 from tensordict.tensordict import TensorDict, TensorDictBase
-from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec
+from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec, DiscreteTensorSpec
 from omni.isaac.debug_draw import _debug_draw
 
 from .utils import attach_payload
@@ -180,6 +180,9 @@ class PayloadHover(IsaacEnv):
                 "reward": UnboundedContinuousTensorSpec((1, 1))
             }
         }).expand(self.num_envs).to(self.device)
+        self.done_spec = CompositeSpec({
+            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool)
+        }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
             "drone", 1,
             observation_key=("agents", "observation"),
@@ -195,9 +198,9 @@ class PayloadHover(IsaacEnv):
             "episode_len": UnboundedContinuousTensorSpec(1),
             "pos_error": UnboundedContinuousTensorSpec(1),
             "action_smoothness": UnboundedContinuousTensorSpec(1),
-            "motion_smoothness": UnboundedContinuousTensorSpec(1)
+            # "motion_smoothness": UnboundedContinuousTensorSpec(1)
         }).expand(self.num_envs).to(self.device)
-        info_spec.update(self.drone.info_spec.to(self.device))
+        # info_spec.update(self.drone.info_spec.to(self.device))
         self.observation_spec["info"] = info_spec
         self.observation_spec["stats"] = stats_spec
         self.info = info_spec.zero()
@@ -224,7 +227,7 @@ class PayloadHover(IsaacEnv):
 
         self.stats[env_ids] = 0.
 
-        self.info.update_at_(self.drone.info[env_ids], env_ids)
+        # self.info.update_at_(self.drone.info[env_ids], env_ids)
 
     def _pre_sim_step(self, tensordict: TensorDictBase):
         actions = tensordict[("agents", "action")]
@@ -264,11 +267,11 @@ class PayloadHover(IsaacEnv):
         self.target_distance = torch.norm(self.target_payload_rpos[:, [0]], dim=-1)
         self.stats["pos_error"].lerp_(self.target_distance, (1-self.alpha))
         self.stats["action_smoothness"].lerp_(-self.drone.throttle_difference, (1-self.alpha))
-        self.smoothness = (
-            self.drone.get_linear_smoothness()
-            + self.drone.get_angular_smoothness()
-        )
-        self.stats["motion_smoothness"].lerp_(self.smoothness, (1-self.alpha))
+        # self.smoothness = (
+        #     self.drone.get_linear_smoothness()
+        #     + self.drone.get_angular_smoothness()
+        # )
+        # self.stats["motion_smoothness"].lerp_(self.smoothness, (1-self.alpha))
 
         return TensorDict({
             "agents": {
@@ -307,7 +310,7 @@ class PayloadHover(IsaacEnv):
             | (self.payload_pos[..., 2] < 0.2).unsqueeze(-1)
         )
 
-        self.stats["return"] += reward.unsqueeze(-1)
+        self.stats["return"].add_(reward)
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(1)
 
         return TensorDict(

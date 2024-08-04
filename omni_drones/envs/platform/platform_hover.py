@@ -151,7 +151,7 @@ class PlatformHover(IsaacEnv):
             enable_collision=True
         )
 
-        # for visulization
+        # for visualization
         target_prim_path = self.platform._create_frame(
             "/World/envs/env_0/target",
             enable_collision=False
@@ -218,15 +218,12 @@ class PlatformHover(IsaacEnv):
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
 
-        platform_pos = self.init_pos_dist.sample(env_ids.shape)
+        platform_pos = self.init_pos_dist.sample(env_ids.shape) + self.envs_positions[env_ids]
         platform_rpy = self.init_rpy_dist.sample(env_ids.shape)
         platform_rot = euler_to_quaternion(platform_rpy)
         platform_heading = torch_utils.quat_axis(platform_rot, 0)
         platform_up = torch_utils.quat_axis(platform_rot,  2)
-        self.platform.set_world_poses(
-            platform_pos + self.envs_positions[env_ids],
-            platform_rot, env_indices=env_ids
-        )
+        self.platform.set_world_poses(platform_pos, platform_rot, env_indices=env_ids)
         self.platform.set_velocities(self.init_vels[env_ids], env_ids)
 
         self.platform.set_joint_positions(self.init_joint_pos[env_ids], env_ids)
@@ -322,7 +319,6 @@ class PlatformHover(IsaacEnv):
 
         distance = torch.norm(self.target_platform_rpose, dim=-1)
 
-        reward = torch.zeros(self.num_envs, self.drone.n, device=self.device)
         # reward_pose = 1 / (1 + torch.square(distance * self.reward_distance_scale))
         reward_pose = torch.exp(- self.reward_distance_scale * distance)
 
@@ -338,6 +334,7 @@ class PlatformHover(IsaacEnv):
         self.last_distance[:] = distance
         assert reward_pose.shape == reward_up.shape == reward_action_smoothness.shape
 
+        reward = torch.zeros(self.num_envs, self.drone.n, device=self.device)
         reward[:] = (
             reward_pose
             + reward_pose * (reward_up + reward_spin)
@@ -345,14 +342,16 @@ class PlatformHover(IsaacEnv):
             + reward_action_smoothness
         )
 
-        done_misbehave = (self.drone_states[..., 2] < 0.2).any(-1, keepdim=True) | (distance > 5.0)
-        done_hasnan = done_hasnan = torch.isnan(self.drone_states).any(-1)
-
-        done = (
-            (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
-            | done_misbehave
-            | done_hasnan.any(-1, keepdim=True)
+        misbehave = (
+            (self.drone_states[..., 2] < 0.2).any(-1, keepdim=True)
+            | (distance > 5.0)
         )
+        hasnan = torch.isnan(self.drone_states).any(-1).any(-1, keepdim=True)
+
+        terminated = misbehave | hasnan
+        truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
+
+        done = terminated | truncated
 
         self.stats["return"].add_(reward)
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(-1)
@@ -368,4 +367,3 @@ class PlatformHover(IsaacEnv):
             },
             self.batch_size,
         )
-

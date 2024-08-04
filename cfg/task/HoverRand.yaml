@@ -20,7 +20,7 @@ randomization:
       t2w_scale: [0.5556, 2.23]
       f2m_scale: [0.625, 2.5]
       drag_coef_scale: [0, 0.62]
-      rotor_offset_scale: [-0.63, 0.63]
+      # rotor_offset_scale: [-0.63, 0.63] # not supported
   payload:
     z: [-0.1, 0.1]
     mass: [0.01, 0.4]

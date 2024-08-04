@@ -8,16 +8,15 @@ if __name__ == "__main__":
     print(IsaacEnv.REGISTRY)
 
     single_tasks = [
-        "Hover", "Track", "Forest", "Pinball",
+        "Hover", "Track", "FlyThrough",
         "InvPendulumHover", "InvPendulumTrack", "InvPendulumFlyThrough",
-        "PayloadTrack", "PayloadFlyThrough"
+        "PayloadTrack", "PayloadFlyThrough",
+        "Forest", "Pinball",
     ]
     multi_tasks = [
         "Formation",
-        "PlatformHover",
-        "PlatformTrack",
-        "TransportHover",
-        "TransportTrack",
+        "PlatformHover", "PlatformTrack", "PlatformFlyThrough",
+        "TransportHover", "TransportTrack",
     ]
 
     for task in single_tasks:

@@ -55,11 +55,11 @@ class PayloadFlyThrough(IsaacEnv):
     ## Observation
 
     - `drone_payload_rpos` (3): The payload's position relative to the drone.
-    - `payload_vels` (6): The linear and angular velocities of the payload.
-    - `target_payload_rpos` (3): The target payload position relative to the payload.
-    - `root_state` (16 + num_rotors): The basic information of the drone (except its position),
+    - `drone_state` (16 + num_rotors): The basic information of the drone (except its position),
       containing its rotation (in quaternion), velocities (linear and angular),
       heading and up vectors, and the current throttle.
+    - `target_payload_rpos` (3): The target payload position relative to the payload.
+    - `payload_vels` (6): The linear and angular velocities of the payload.
     - `obstacle_drone_rpos` (2 * 2 = 4): The position of the two bars relative to the drone's position.
     - `time_encoding` (optional): The time encoding, which is a 4-dimensional
       vector encoding the current progress of the episode.
@@ -162,7 +162,7 @@ class PayloadFlyThrough(IsaacEnv):
 
     def _design_scene(self):
         drone_model = MultirotorBase.REGISTRY[self.cfg.task.drone_model]
-        cfg = drone_model.cfg_cls()
+        cfg = drone_model.cfg_cls(force_sensor=self.cfg.task.force_sensor)
         self.drone: MultirotorBase = drone_model(cfg=cfg)
 
         kit_utils.create_ground_plane(
@@ -326,16 +326,15 @@ class PayloadFlyThrough(IsaacEnv):
 
         return TensorDict({
             "agents": {
-                "observation": obs
+                "observation": obs,
             },
             "stats": self.stats,
-            # "info": self.info
         }, self.batch_size)
 
     def _compute_reward_and_done(self):
 
         reward_pos = 1.0 / (1.0 + torch.square(self.reward_distance_scale * self.payload_pos_error))
-        # pose_reward = torch.exp(-distance * self.reward_distance_scale)
+        # reward_pos = torch.exp(-distance * self.reward_distance_scale)
 
         reward_up = torch.square((self.drone_up[..., 2] + 1) / 2)
 
@@ -375,7 +374,7 @@ class PayloadFlyThrough(IsaacEnv):
         truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
         if self.reset_on_collision:
-            terminated = terminated | collision
+            terminated |= collision
 
         done = terminated | truncated
 

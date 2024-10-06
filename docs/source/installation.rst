@@ -14,6 +14,7 @@ Set the following environment variables to your ``~/.bashrc`` or ``~/.zshrc`` fi
     # export ISAACSIM_PATH="${HOME}/.local/share/ov/pkg/isaac-sim-2023.1.0-hotfix"
     # export ISAACSIM_PATH="${HOME}/.local/share/ov/pkg/isaac-sim-2023.1.1"
     # export ISAACSIM_PATH="${HOME}/.local/share/ov/pkg/isaac-sim-4.0.0"
+    # export ISAACSIM_PATH="${HOME}/.local/share/ov/pkg/isaac-sim-4.1.0"
 
 where ``*`` corresponds to the Isaac Sim version. Remember to run `source ~/.bashrc` before you proceed.
 
@@ -35,7 +36,7 @@ Although Isaac Sim comes with a built-in Python environment, we recommend using 
     conda activate sim
 
     # verification
-    python -c "from isaacsim import SimulationApp" # for isaac-sim-2022.*, isaac-sim-2023.*, use omni.isaac.kit instead of isaacsim
+    python -c "from isaacsim import SimulationApp" # use omni.isaac.kit instead of isaacsim for isaac-sim-2022.*, isaac-sim-2023.*
     # which torch is being used
     python -c "import torch; print(torch.__path__)"
 
@@ -49,13 +50,14 @@ The next step is to install `Isaac Lab <https://github.com/isaac-sim/IsaacLab>`_
     git clone git@github.com:isaac-sim/IsaacLab.git
 
     # If you already set ISAACSIM_PATH, you don't need to create symbolic link.
-    # ln -s ${HOME}/.local/share/ov/pkg/isaac-sim-4.0.0 _isaac_sim
+    # ln -s ${HOME}/.local/share/ov/pkg/isaac-sim-4.1.0 _isaac_sim
 
     # usd-core==23.11 is for nvidia-srl-usd 0.14.0, nvidia-srl-usd-to-urdf 0.6.0 requires usd-core <24.00, >=21.11
+    # lxml==4.9.4 is for nvidia-srl-usd-to-urdf 0.6.0 requires lxml <5.0.0, >=4.9.2
     # tqdm is for nvidia-srl-usd 0.14.0 requires tqdm <5.0.0, >=4.63.0
     # xxhash is for 50x faster cache checks
     conda activate sim
-    pip install usd-core==23.11 tqdm xxhash
+    pip install usd-core==23.11 lxml==4.9.4 tqdm xxhash
 
     # Install Isaac Lab
     # at IsaacLab/
@@ -84,7 +86,7 @@ try `TypeError: ArticulationView.get_world_poses() got an unexpected keyword arg
 
 .. code-block:: bash
 
-    File "/${HOME}/.local/share/ov/pkg/isaac-sim-4.0.0/exts/omni.isaac.core/omni/isaac/core/prims/xform_prim_view.py", line 192, in __init__
+    File "/${HOME}/.local/share/ov/pkg/isaac-sim-4.1.0/exts/omni.isaac.core/omni/isaac/core/prims/xform_prim_view.py", line 189, in __init__
         default_positions, default_orientations = self.get_world_poses(usd=usd)
     TypeError: ArticulationView.get_world_poses() got an unexpected keyword argument 'usd'
 

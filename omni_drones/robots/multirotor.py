@@ -2,10 +2,12 @@ import torch
 import inspect
 import functools
 
-from omni.isaac.orbit.assets import Articulation, ArticulationData, ArticulationCfg
-from omni.isaac.orbit.actuators import ActuatorBaseCfg, ActuatorBase
-from omni.isaac.orbit.utils import configclass
-import omni.isaac.orbit.utils.string as string_utils
+from omni.isaac.lab.assets import Articulation, ArticulationData, ArticulationCfg
+from omni.isaac.lab.actuators import ActuatorBaseCfg, ActuatorBase
+from omni.isaac.lab.utils import configclass
+from omni.isaac.core.utils.types import ArticulationActions
+import omni.isaac.lab.utils.string as string_utils
+
 from omni_drones.utils.torch import quaternion_to_euler, quat_rotate, quat_rotate_inverse
 
 from dataclasses import dataclass, MISSING, field
@@ -13,32 +15,45 @@ from typing import Sequence, Mapping
 
 
 @dataclass
-class MultirotorData(ArticulationData):
+class MultirotorData:
+
+    articulation: ArticulationData
 
     rpy_w: torch.Tensor = None
     heading_w_vec: torch.Tensor = None
 
     throttle: Mapping[str, torch.Tensor] = field(default_factory=dict)
     drag_coef: torch.Tensor = None
-    
-    default_masses: torch.Tensor = None
-    default_masses_total: torch.Tensor = None
-    default_inertia: torch.Tensor = None
 
     applied_thrusts: Mapping[str, torch.Tensor] = field(default_factory=dict)
     applied_moments: Mapping[str, torch.Tensor] = field(default_factory=dict)
     applied_drag_b: torch.Tensor = None
 
 
+class _View:
+    def __init__(self, data, shape):
+        self.data = data
+        self.shape = shape
+
+    def __getattr__(self, key):
+        value = getattr(self.data, key)
+        if isinstance(value, torch.Tensor):
+            return value.view(self.shape + value.shape[1:])
+        else:
+            return value
+
 class Multirotor(Articulation):
 
-    def __init__(self, cfg: ArticulationCfg):
-        super().__init__(cfg)
-        self._data = MultirotorData()
+    @functools.cached_property
+    def data(self) -> ArticulationData:
+        data = _View(self._data, self.shape)
+        return data
     
     @property
-    def data(self):
-        return self._data
+    def multirotor_data(self):
+        if not hasattr(self, "_multirotor_data"):
+            self._multirotor_data = MultirotorData(self)
+        return self._multirotor_data
 
     @property
     def env(self):
@@ -53,17 +68,9 @@ class Multirotor(Articulation):
             self._shape = shape
         return self._shape
 
-    def update(self, dt: float):
-        super().update(dt)
-        self._data.rpy_w[:] = quaternion_to_euler(self._data.root_quat_w)
-        self._data.heading_w_vec[:] = quat_rotate(
-            self._data.root_quat_w, 
-            torch.tensor([1., 0., 0.], device=self.device)
-        )
-
     def reset(self, env_ids: Sequence[int] | None = None):
         super().reset(env_ids)
-        for value in self._data.throttle.values():
+        for value in self.multirotor_data.throttle.values():
             value[env_ids] = 0
     
     def write_data_to_sim(self):
@@ -73,31 +80,15 @@ class Multirotor(Articulation):
         joint commands. Otherwise, the joint commands are directly set into the simulation.
         """
 
-        # apply actuator models first
-        self._apply_actuator_model()
-
-        # write external wrench
-        if self.has_external_wrench:
-            # apply external forces and torques
-            self._body_physx_view.apply_forces_and_torques_at_position(
-                force_data=self._external_force_body_view_b.view(-1, 3),
-                torque_data=self._external_torque_body_view_b.view(-1, 3),
-                position_data=None,
-                indices=self._ALL_BODY_INDICES,
-                is_global=False,
-            )
-    
-    def _apply_actuator_model(self):
-        # process actions per group
         forces_b = torch.zeros_like(self._external_force_b)
         torques_b = torch.zeros_like(self._external_torque_b)
 
         for name, actuator in self.actuators.items():
             if isinstance(actuator, Rotor):
-                thrusts, momentum = actuator.compute()
-                self._data.throttle[name][:] = actuator.throttle
-                self._data.applied_thrusts[name][:] = thrusts
-                self._data.applied_moments[name][:] = momentum
+                thrusts, momentum = actuator.rotor_compute()
+                self.multirotor_data.throttle[name][:] = actuator.throttle
+                self.multirotor_data.applied_thrusts[name][:] = thrusts
+                self.multirotor_data.applied_moments[name][:] = momentum
                 
                 thrusts = thrusts.reshape(self.num_instances, len(actuator.body_ids))
                 momentum = momentum.reshape(self.num_instances, len(actuator.body_ids))
@@ -106,52 +97,94 @@ class Multirotor(Articulation):
                 # torques[..., actuator.body_ids, 2] = momentum
                 # mannually aggregate the torques along the z-axis
                 torques_b[..., self.base_id, 2] += momentum.sum(dim=-1, keepdim=True)
-            else:
-                pass
         
         drag_w = (
-            self._data.drag_coef.unsqueeze(-1)
-            * -self._data.body_lin_vel_w
-            * self._data.default_masses_total.unsqueeze(-1)
+            self.multirotor_data.drag_coef.unsqueeze(-1)
+            * -self.data.body_lin_vel_w
         )
-        self._data.applied_drag_b[:] = quat_rotate_inverse(
-            self._data.body_quat_w, # [*, body, 4]
+        self.multirotor_data.applied_drag_b[:] = quat_rotate_inverse(
+            self.data.body_quat_w, # [*, body, 4]
             drag_w # [*, body, 3]
         )
-        forces_b += (self._data.applied_drag_b)
 
-        self.set_external_force_and_torque(
-            forces=forces_b,
-            torques=torques_b,
-        )
+        if len(self.shape) > 1:
+            forces_b += self.multirotor_data.applied_drag_b.flatten(0, 1)
+        else:
+            forces_b += self.multirotor_data.applied_drag_b
+
+        self.set_external_force_and_torque(forces=forces_b, torques=torques_b)
+        super().write_data_to_sim()
     
     def _process_actuators_cfg(self):
-        for actuator_name, actuator_cfg in list(self.cfg.actuators.items()):
+        print("[INFO] Processing Isaac Articulation Actuators.")
+        # collect and remove RotorCfg from `self.cfg.actuators`
+        # since the super class only processes IsaacSim Articulation actuators
+        actuators = {}
+        for actoror_name, actoror_cfg in list(self.cfg.actuators.items()):
+            if isinstance(actoror_cfg, RotorCfg):
+                actuators[actoror_name] = actoror_cfg
+                del self.cfg.actuators[actoror_name]
+        super()._process_actuators_cfg()
+        print("[INFO]: Processing OmniDrones Actuators.")
+        for actuator_name, actuator_cfg in actuators.items():
             if isinstance(actuator_cfg, RotorCfg):
                 actuator_class = actuator_cfg.class_type
                 actuator: Rotor = actuator_class(cfg=actuator_cfg, articulation=self)
                 self.actuators[actuator_name] = actuator
 
                 # create data for the actuator
-                self._data.throttle[actuator_name] = torch.zeros(actuator.shape, device=self.device)
-                self._data.applied_thrusts[actuator_name] = torch.zeros(actuator.shape, device=self.device)
-                self._data.applied_moments[actuator_name] = torch.zeros(actuator.shape, device=self.device)
+                self.multirotor_data.throttle[actuator_name] = torch.zeros(actuator.shape, device=self.device)
+                self.multirotor_data.applied_thrusts[actuator_name] = torch.zeros(actuator.shape, device=self.device)
+                self.multirotor_data.applied_moments[actuator_name] = torch.zeros(actuator.shape, device=self.device)
                 
-                del self.cfg.actuators[actuator_name]
-            
-        super()._process_actuators_cfg()
-
     def _initialize_impl(self): 
         super()._initialize_impl()
         self.base_id, self.base_name = self.find_bodies("base_link")
-        self._data.rpy_w = torch.zeros(self.shape + (3,), device=self.device).flatten(0, -2)
-        self._data.heading_w_vec = torch.zeros(self.shape + (3,), device=self.device).flatten(0, -2)
+        # self._data.rpy_w = torch.zeros(self.shape + (3,), device=self.device).flatten(0, -2)
+        # self._data.heading_w_vec = torch.zeros(self.shape + (3,), device=self.device).flatten(0, -2)
 
-        self._data.default_masses = self.root_physx_view.get_masses().clone()
-        self._data.default_masses_total = self._data.default_masses.sum(dim=-1, keepdim=True).to(self.device)
-        self._data.default_inertia = self.root_physx_view.get_inertias()[:, self.base_id[0], [0, 4, 8]].clone()
-        self._data.drag_coef = torch.zeros(*self.shape, self.num_bodies, device=self.device)
-        self._data.applied_drag_b = torch.zeros(*self.shape, self.num_bodies, 3, device=self.device)
+        self.multirotor_data.drag_coef = torch.zeros(*self.shape, self.num_bodies, device=self.device)
+        self.multirotor_data.applied_drag_b = torch.zeros(*self.shape, self.num_bodies, 3, device=self.device)
+
+    def _apply_actuator_model(self):
+        """Processes joint commands for the articulation by forwarding them to the actuators.
+
+        The actions are first processed using actuator models. Depending on the robot configuration,
+        the actuator models compute the joint level simulation commands and sets them into the PhysX buffers.
+        """
+        # process actions per group
+        for actuator in self.actuators.values():
+            if isinstance(actuator, Rotor): continue
+            # prepare input for actuator model based on cached data
+            # TODO : A tensor dict would be nice to do the indexing of all tensors together
+            control_action = ArticulationActions(
+                joint_positions=self._data.joint_pos_target[:, actuator.joint_indices],
+                joint_velocities=self._data.joint_vel_target[:, actuator.joint_indices],
+                joint_efforts=self._data.joint_effort_target[:, actuator.joint_indices],
+                joint_indices=actuator.joint_indices,
+            )
+            # compute joint command from the actuator model
+            control_action = actuator.compute(
+                control_action,
+                joint_pos=self._data.joint_pos[:, actuator.joint_indices],
+                joint_vel=self._data.joint_vel[:, actuator.joint_indices],
+            )
+            # update targets (these are set into the simulation)
+            if control_action.joint_positions is not None:
+                self._joint_pos_target_sim[:, actuator.joint_indices] = control_action.joint_positions
+            if control_action.joint_velocities is not None:
+                self._joint_vel_target_sim[:, actuator.joint_indices] = control_action.joint_velocities
+            if control_action.joint_efforts is not None:
+                self._joint_effort_target_sim[:, actuator.joint_indices] = control_action.joint_efforts
+            # update state of the actuator model
+            # -- torques
+            self._data.computed_torque[:, actuator.joint_indices] = actuator.computed_effort
+            self._data.applied_torque[:, actuator.joint_indices] = actuator.applied_effort
+            # -- actuator data
+            self._data.soft_joint_vel_limits[:, actuator.joint_indices] = actuator.velocity_limit
+            # TODO: find a cleaner way to handle gear ratio. Only needed for variable gear ratio actuators.
+            if hasattr(actuator, "gear_ratio"):
+                self._data.gear_ratio[:, actuator.joint_indices] = actuator.gear_ratio
 
     def resolve_ids(self, env_ids: torch.Tensor):
         return self._ALL_INDICES.reshape(self.shape)[env_ids].flatten()
@@ -210,7 +243,10 @@ class Rotor(ActuatorBase):
         self.throttle[env_ids] = 0
         self.throttle_target[env_ids] = 0
 
-    def compute(self):
+    def compute(self, control_action: ArticulationActions, joint_pos: torch.Tensor, joint_vel: torch.Tensor) -> ArticulationActions:
+        return control_action
+
+    def rotor_compute(self):
         tau = torch.where(self.throttle_target > self.throttle, self.tau_up, self.tau_down)
         self.throttle.add_(tau * (self.throttle_target - self.throttle)).clamp_(0, 1)
 

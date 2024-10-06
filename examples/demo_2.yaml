@@ -7,19 +7,15 @@ viewer:
   lookat: [0., 0., 1.]
 
 sim:
-  _target_: omni.isaac.orbit.sim.SimulationCfg
-
+  _target_: omni.isaac.lab.sim.SimulationCfg
   physics_prim_path: /physicsScene
   dt: 0.016
-  substeps: 1
   enable_scene_query_support: true
   use_fabric: true
   disable_contact_processing: true
-  use_gpu_pipeline: true
   device: cuda:0
   physx:
-    _target_: omni.isaac.orbit.sim.PhysxCfg
-    use_gpu: true
+    _target_: omni.isaac.lab.sim.PhysxCfg
     solver_type: 1
     min_position_iteration_count: 1
     max_position_iteration_count: 255

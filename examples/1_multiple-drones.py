@@ -15,10 +15,10 @@ def main(cfg):
     from omni_drones.envs.isaac_env import IsaacEnv
     from omni_drones.robots.assets import Multirotor, HUMMINGBIRD_CFG
 
-    from omni.isaac.orbit.scene import InteractiveSceneCfg
-    from omni.isaac.orbit.assets import AssetBaseCfg
-    from omni.isaac.orbit.terrains import TerrainImporterCfg
-    import omni.isaac.orbit.sim as sim_utils
+    from omni.isaac.lab.scene import InteractiveSceneCfg
+    from omni.isaac.lab.assets import AssetBaseCfg
+    from omni.isaac.lab.terrains import TerrainImporterCfg
+    import omni.isaac.lab.sim as sim_utils
 
     class MyEnv(IsaacEnv):
 
@@ -31,11 +31,7 @@ def main(cfg):
             # let's get the drone entity
             # now it accounts for multiple drones
             self.drone: Multirotor = self.scene["drone"]
-            self.default_init_state = (
-                self.drone.data.default_root_state
-                .unflatten(0, self.drone.shape)
-                .clone()
-            )
+            self.default_init_state = self.drone.data.default_root_state.clone()
 
         def _design_scene(self):
             # the scene is created from a SceneCfg object in a declarative way

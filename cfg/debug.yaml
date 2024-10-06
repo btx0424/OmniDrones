@@ -20,9 +20,7 @@ wandb:
 sim:
   device: cpu
   use_flatcache: false
-  use_gpu_pipeline: false
   
-  use_gpu: false
 
 defaults:
   - env_base

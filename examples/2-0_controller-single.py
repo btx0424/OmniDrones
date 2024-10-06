@@ -16,10 +16,10 @@ def main(cfg):
     from omni_drones.envs.isaac_env import IsaacEnv
     from omni_drones.robots.assets import Multirotor, HUMMINGBIRD_CFG
 
-    from omni.isaac.orbit.scene import InteractiveSceneCfg
-    from omni.isaac.orbit.assets import AssetBaseCfg
-    from omni.isaac.orbit.terrains import TerrainImporterCfg
-    import omni.isaac.orbit.sim as sim_utils
+    from omni.isaac.lab.scene import InteractiveSceneCfg
+    from omni.isaac.lab.assets import AssetBaseCfg
+    from omni.isaac.lab.terrains import TerrainImporterCfg
+    import omni.isaac.lab.sim as sim_utils
 
     class MyEnv(IsaacEnv):
 
@@ -80,7 +80,7 @@ def main(cfg):
             self.drone.write_root_state_to_sim(init_state, env_ids)
     
     env: MyEnv = MyEnv(cfg)
-    env.drone.data.drag_coef[:] = 0.5
+    env.drone.multirotor_data.drag_coef[:] = 0.5
 
     def policy(tensordict: TensorDict):
         root_pos_e = (

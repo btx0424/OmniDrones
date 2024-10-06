@@ -86,15 +86,11 @@ class LeePositionController(ActionFunc):
         self.action_dim = 0
         for i, dim in zip([pos, vel, yaw], [3, 3, 1]):
             self.action_dim += dim * i
-        
-        rotor_pos_b = (
-            self.asset.data.body_pos_w[..., self.rotor.body_ids, :] 
-            - self.asset.data.root_pos_w.unsqueeze(-2)
-        )[0]
 
+        rotor_pos_w = self.asset._data.body_pos_w[0, self.rotor.body_ids, :] 
         rotor_pos_b = quat_rotate_inverse(
-            self.asset.data.root_quat_w[0].unsqueeze(0),
-            rotor_pos_b
+            self.asset._data.root_quat_w[0].unsqueeze(0),
+            rotor_pos_w - self.asset._data.root_pos_w[0].unsqueeze(0)
         )
 
         arm_lengths = rotor_pos_b.norm(dim=-1)
@@ -148,15 +144,15 @@ class LeePositionController(ActionFunc):
 
     def _compute(self, action: torch.Tensor):
         pos_error, target_yaw = action.split([3, 1], dim=-1)
-        vel_error = self.asset.data.root_lin_vel_w - 0.
+        vel_error = self.asset._data.root_lin_vel_w - 0.
 
         acc = (
-            - pos_error * self.pos_gain 
-            + vel_error * self.vel_gain 
+            - pos_error * self.pos_gain
+            + vel_error * self.vel_gain
             - self.gravity
         )
 
-        R = quaternion_to_rotation_matrix(self.asset.data.root_quat_w)
+        R = quaternion_to_rotation_matrix(self.asset._data.root_quat_w)
         
         b1_des = torch.cat([
             torch.cos(target_yaw), 
@@ -180,7 +176,7 @@ class LeePositionController(ActionFunc):
             ang_error_matrix[:, 0, 2], 
             ang_error_matrix[:, 1, 0]
         ],dim=-1)
-        ang_vel = self.asset.data.root_ang_vel_b
+        ang_vel = self.asset._data.root_ang_vel_b
         ang_rate_err = ang_vel
         ang_acc = (
             - ang_error * self.attitute_gain

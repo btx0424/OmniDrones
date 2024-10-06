@@ -22,9 +22,9 @@ class DynamicState(ObservationFunc):
         state = torch.cat([
             self.asset.data.root_pos_w[..., [2]],
             self.asset.data.root_quat_w,
-            self.asset.data.root_vel_b,
+            self.asset.data.root_lin_vel_b,
             self.asset.data.projected_gravity_b,
-            *self.asset.data.throttle.values()
+            *self.asset.multirotor_data.throttle.values()
         ], dim=-1)
         return state.reshape(*self.asset.shape, -1)
 

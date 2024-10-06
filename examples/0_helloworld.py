@@ -15,10 +15,10 @@ def main(cfg):
     from omni_drones.envs.isaac_env import IsaacEnv
     from omni_drones.robots.assets import Multirotor, FIREFLY_CFG
 
-    from omni.isaac.orbit.scene import InteractiveSceneCfg
-    from omni.isaac.orbit.assets import AssetBaseCfg
-    from omni.isaac.orbit.terrains import TerrainImporterCfg
-    import omni.isaac.orbit.sim as sim_utils
+    from omni.isaac.lab.scene import InteractiveSceneCfg
+    from omni.isaac.lab.assets import AssetBaseCfg
+    from omni.isaac.lab.terrains import TerrainImporterCfg
+    import omni.isaac.lab.sim as sim_utils
 
     class MyEnv(IsaacEnv):
 

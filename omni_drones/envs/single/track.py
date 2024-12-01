@@ -125,11 +125,11 @@ class Track(IsaacEnv):
         self.target_heading_vec = torch.zeros(self.num_envs, 3, device=self.device)
 
     def _design_scene(self):
-        from omni.isaac.orbit.scene import InteractiveSceneCfg
-        from omni.isaac.orbit.assets import AssetBaseCfg
-        from omni.isaac.orbit.terrains import TerrainImporterCfg
+        from omni.isaac.lab.scene import InteractiveSceneCfg
+        from omni.isaac.lab.assets import AssetBaseCfg
+        from omni.isaac.lab.terrains import TerrainImporterCfg
 
-        import omni.isaac.orbit.sim as sim_utils
+        import omni.isaac.lab.sim as sim_utils
         
         from omni_drones.robots.assets import HUMMINGBIRD_CFG, FIREFLY_CFG
         

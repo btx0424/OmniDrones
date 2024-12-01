@@ -31,7 +31,7 @@ def main(cfg):
     )
     n = 4
 
-    drone: MultirotorBase = MultirotorBase.REGISTRY[cfg.drone_model]()
+    drone: MultirotorBase = MultirotorBase.REGISTRY["Hummingbird"]()
 
     translations = torch.tensor([
         [0, -1, 1.5],
@@ -77,7 +77,7 @@ def main(cfg):
     
     frames = []
     from tqdm import tqdm
-    t = tqdm(range(cfg.steps))
+    t = tqdm(range(1000))
     for i in t:
         if sim.is_stopped():
             break

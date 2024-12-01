@@ -6,7 +6,7 @@ UAV Models and Usage
 
     We strongly recommend going through the tutorials provided by 
     `Isaac Sim <https://docs.omniverse.nvidia.com/isaacsim/latest/tutorial_intro_interface.html>`_ and 
-    `Isaac Orbit <https://isaac-orbit.github.io/orbit/source/tutorials/00_empty.html>`_.
+    `Isaac lab <https://isaac-lab.github.io/lab/source/tutorials/00_empty.html>`_.
 
 
 Using the UAV Models

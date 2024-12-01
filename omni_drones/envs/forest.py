@@ -34,16 +34,16 @@ from omni_drones.utils.torch import euler_to_quaternion, quat_axis
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec, DiscreteTensorSpec
 
-import omni.isaac.orbit.sim as sim_utils
-from omni.isaac.orbit.assets import AssetBaseCfg
-from omni.isaac.orbit.sensors import RayCaster, RayCasterCfg, patterns
-from omni.isaac.orbit.terrains import (
+import omni.isaac.lab.sim as sim_utils
+from omni.isaac.lab.assets import AssetBaseCfg
+from omni.isaac.lab.sensors import RayCaster, RayCasterCfg, patterns
+from omni.isaac.lab.terrains import (
     TerrainImporterCfg, 
     TerrainImporter, 
     TerrainGeneratorCfg,
     HfDiscreteObstaclesTerrainCfg,
 )
-from omni.isaac.orbit.utils.assets import NVIDIA_NUCLEUS_DIR
+from omni.isaac.lab.utils.assets import NVIDIA_NUCLEUS_DIR
 from omni.isaac.core.utils.viewports import set_camera_view
 
 

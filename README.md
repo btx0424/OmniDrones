@@ -40,4 +40,4 @@ Please cite [this paper](https://arxiv.org/abs/2309.12825) if you use *OmniDrone
 
 ## Ackowledgement
 
-Some of the abstractions and implementation was heavily inspired by [Isaac Orbit](https://github.com/NVIDIA-Omniverse/Orbit).
+Some of the abstractions and implementation was heavily inspired by [Isaac lab](https://github.com/NVIDIA-Omniverse/lab).

@@ -32,16 +32,11 @@ from pxr import Gf, PhysxSchema, Usd, UsdGeom, UsdPhysics
 from scipy.spatial.transform.rotation import Rotation
 
 import omni_drones.utils.kit as kit_utils
-
+from omni.isaac.lab.scene import InteractiveSceneCfg
+from omni.isaac.lab.assets import AssetBaseCfg
+from omni.isaac.lab.terrains import TerrainImporterCfg
 
 def design_scene():
-    kit_utils.create_ground_plane(
-        "/World/defaultGroundPlane",
-        static_friction=0.5,
-        dynamic_friction=0.5,
-        restitution=0.8,
-        improve_patch_friction=True,
-    )
     prim_utils.create_prim(
         "/World/Light/GreySphere",
         "SphereLight",
@@ -53,6 +48,23 @@ def design_scene():
         "SphereLight",
         translation=(-4.5, 3.5, 10.0),
     )
+    terrain = TerrainImporterCfg(
+        prim_path="/World/ground",
+        terrain_type="plane",
+        collision_group=-1,
+        num_envs=1,
+        env_spacing=1.0,
+    )
+    terrain.class_type(terrain)
+    # lights
+    # light = AssetBaseCfg(
+    #     prim_path="/World/light",
+    #     spawn=sim_utils.DistantLightCfg(color=(0.75, 0.75, 0.75), intensity=3000.0),
+    # )
+    # sky_light = AssetBaseCfg(
+    #     prim_path="/World/skyLight",
+    #     spawn=sim_utils.DomeLightCfg(color=(0.13, 0.13, 0.13), intensity=1000.0),
+    # )
 
 
 def create_rope(

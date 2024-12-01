@@ -125,11 +125,11 @@ class PayloadTrack(IsaacEnv):
         self.target_pos = self.waypoints[:, 0]
 
     def _design_scene(self):
-        from omni.isaac.orbit.scene import InteractiveSceneCfg
-        from omni.isaac.orbit.assets import AssetBaseCfg
-        from omni.isaac.orbit.terrains import TerrainImporterCfg
+        from omni.isaac.lab.scene import InteractiveSceneCfg
+        from omni.isaac.lab.assets import AssetBaseCfg
+        from omni.isaac.lab.terrains import TerrainImporterCfg
 
-        import omni.isaac.orbit.sim as sim_utils
+        import omni.isaac.lab.sim as sim_utils
         
         from omni_drones.robots.assets import HUMMINGBIRD_CFG
         
@@ -303,7 +303,7 @@ import omni.isaac.core.utils.prims as prim_utils
 import omni.physx.scripts.utils as script_utils
 import omni.isaac.core.objects as objects
 import omni_drones.utils.kit as kit_utils
-from omni.isaac.orbit.sim.spawners.from_files.from_files_cfg import UsdFileCfg
+from omni.isaac.lab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
 from omni_drones.utils.orbit import _spawn_from_usd_file, clone, multi
 from pxr import Usd, UsdPhysics
 

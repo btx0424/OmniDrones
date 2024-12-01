@@ -1,7 +1,7 @@
 import torch
 
 from omni_drones.robots.multirotor import Multirotor, Rotor
-import omni.isaac.orbit.utils.string as string_utils
+import omni.isaac.lab.utils.string as string_utils
 
 from typing import Dict, Tuple
 from .mdp_term import MDPTerm

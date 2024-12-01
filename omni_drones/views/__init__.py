@@ -74,7 +74,6 @@ class ArticulationView(_ArticulationView):
             scales,
             visibilities,
             reset_xform_properties,
-            enable_dof_force_sensors,
         )
     
     @require_sim_initialized
@@ -246,7 +245,7 @@ class ArticulationView(_ArticulationView):
             return None
 
     def get_world_poses(
-        self, env_indices: Optional[torch.Tensor] = None, clone: bool = True
+        self, env_indices: Optional[torch.Tensor] = None, clone: bool = True, usd: bool = False
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         indices = self._resolve_env_indices(env_indices)
         if self._physics_view is not None:
@@ -257,7 +256,7 @@ class ArticulationView(_ArticulationView):
                 poses = poses.clone()
             return poses[..., :3], poses[..., [6, 3, 4, 5]]
         else:
-            pos, rot = super().get_world_poses(indices, clone)
+            pos, rot = super().get_world_poses(indices, clone, usd)
             return pos.unflatten(0, self.shape), rot.unflatten(0, self.shape)
 
     def set_world_poses(

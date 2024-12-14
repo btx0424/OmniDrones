@@ -22,22 +22,20 @@
 
 
 import abc
-
-from typing import Dict, List, Optional, Tuple, Type, Union, Callable
-
 import omni.usd
 import torch
 import logging
 import numpy as np
 import hydra
 import builtins
+import inspect
 
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import (
     Composite, 
     TensorSpec, 
-    UnboundedContinuousTensorSpec, 
-    BinaryDiscreteTensorSpec
+    UnboundedContinuous, 
+    Binary
 )
 from torchrl.envs import EnvBase
 
@@ -51,6 +49,7 @@ from omni.isaac.lab.utils.timer import Timer
 
 import omni.isaac.lab.sim as sim_utils
 from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple, Type, Union, Callable
 
 class DebugDraw:
     def __init__(self):
@@ -108,9 +107,9 @@ class IsaacEnv(EnvBase):
             run_type_checks=False
         )
         self.cfg = cfg
-        task_cfg: TaskCfg = hydra.utils.instantiate(self.cfg.task)
+        self.task_cfg: TaskCfg = hydra.utils.instantiate(self.cfg.task)
 
-        self.max_episode_length = task_cfg.max_episode_length
+        self.max_episode_length = self.task_cfg.max_episode_length
         self.substeps = 1
 
         if SimulationContext.instance() is None:
@@ -160,6 +159,7 @@ class IsaacEnv(EnvBase):
 
         # add flag for checking closing status
         self._is_closed = False
+        self._specs_initialized = False
 
         try:
             self.debug_draw = DebugDraw()
@@ -173,19 +173,10 @@ class IsaacEnv(EnvBase):
             self.batch_size,
         )
         self.progress_buf = self._tensordict["progress"]
-        self.done_spec = (
-            Composite(
-                {
-                    "done": BinaryDiscreteTensorSpec(1, dtype=bool),
-                    "terminated": BinaryDiscreteTensorSpec(1, dtype=bool),
-                    "truncated": BinaryDiscreteTensorSpec(1, dtype=bool),
-                }
-            )
-            .expand(self.num_envs)
-            .to(self.device)
-        )
 
-        import inspect
+    def resolve_specs(self):
+        self._update_common()
+
         import omni_drones.envs.mdp as mdp
         members = dict(inspect.getmembers(self.__class__, inspect.isclass))
 
@@ -200,16 +191,16 @@ class IsaacEnv(EnvBase):
         RAND_FUNCS = mdp.RAND_FUNCS
         RAND_FUNCS.update({k: v for k, v in members.items() if issubclass(v, mdp.Randomization)})
 
-        self._update_callbacks = [self.update]
+        self._update_callbacks = []
         self._debug_vis_callbacks = [self.debug_vis]
         self._reset_callbacks = []
 
         reward_spec = Composite({
-            "reward": UnboundedContinuousTensorSpec(1),
+            "reward": UnboundedContinuous(1),
             "stats": {
-                "return": UnboundedContinuousTensorSpec(1),
-                "episode_len": UnboundedContinuousTensorSpec(1),
-                "success": UnboundedContinuousTensorSpec(1),
+                "return": UnboundedContinuous(1),
+                "episode_len": UnboundedContinuous(1),
+                "success": UnboundedContinuous(1),
             }
         })
 
@@ -218,12 +209,12 @@ class IsaacEnv(EnvBase):
                 return key
             return tuple(key)
 
-        for key, params in task_cfg.randomizations.items():
+        for key, params in self.task_cfg.randomizations.items():
             randomization = RAND_FUNCS[key](self, **params)
             self._reset_callbacks.append(randomization.reset)
 
         self.observation_funcs = OrderedDict()
-        for group in task_cfg.observations:
+        for group in self.task_cfg.observations:
             observation_group = OrderedDict()
             key = get_key(group["key"])
             for obs_name, params in group["items"].items():
@@ -233,12 +224,12 @@ class IsaacEnv(EnvBase):
         obs = self._compute_observation()
         observation_spec = Composite({}, shape=[self.num_envs])
         for k, v in obs.items(True, True):
-            observation_spec[k] = UnboundedContinuousTensorSpec(v.shape)
+            observation_spec[k] = UnboundedContinuous(v.shape)
         self.observation_spec = observation_spec.to(self.device)
 
         self.action_funcs = OrderedDict()
         action_spec = Composite({}, shape=[self.num_envs])
-        for group in task_cfg.actions:
+        for group in self.task_cfg.actions:
             key = get_key(group["key"])
             action_group = OrderedDict()
             for act_name, params in group["items"].items():
@@ -247,29 +238,40 @@ class IsaacEnv(EnvBase):
                 action_group[act_name] = act_func
             action_group = mdp.ActionGroup(action_group)
             self.action_funcs[key] = action_group
-            action_spec[key] = UnboundedContinuousTensorSpec(action_group.action_shape)
+            action_spec[key] = UnboundedContinuous(action_group.action_shape)
         self.action_spec = action_spec.to(self.device)
         
         self.reward_funcs = OrderedDict()
-        for key, params in task_cfg.rewards.items():
+        for key, params in self.task_cfg.rewards.items():
             self.reward_funcs[key] = REW_FUNCS[key](self, **params)
-            reward_spec["stats", key] = UnboundedContinuousTensorSpec(1, device=self.device)
+            reward_spec["stats", key] = UnboundedContinuous(1, device=self.device)
         if not len(self.reward_funcs):
             logging.warning("No reward functions specified. Using a default reward function of 1.0.")
             self.reward_funcs["_"] = lambda: torch.ones(self.num_envs, 1, device=self.device)
-            reward_spec["stats", "_"] = UnboundedContinuousTensorSpec(1, device=self.device)
+            reward_spec["stats", "_"] = UnboundedContinuous(1, device=self.device)
         self.reward_spec = reward_spec.expand(self.num_envs).to(self.device)
         self.stats = self.reward_spec["stats"].zero()
 
         self.termination_funcs = OrderedDict()
-        for key, params in task_cfg.termination.items():
+        for key, params in self.task_cfg.termination.items():
             self.termination_funcs[key] = TERM_FUNCS[key](self, **params)
         if not len(self.termination_funcs):
             logging.warning("No termination functions specified. Using a default termination function of False")
             self.termination_funcs["_"] = lambda: torch.zeros(self.num_envs, 1, dtype=bool, device=self.device)
 
-        import pprint
-        pprint.pprint(self.fake_tensordict().shapes)
+        self.done_spec = (
+            Composite(
+                {
+                    "done": Binary(1, dtype=bool),
+                    "terminated": Binary(1, dtype=bool),
+                    "truncated": Binary(1, dtype=bool),
+                }
+            )
+            .expand(self.num_envs)
+            .to(self.device)
+        )
+
+        self._specs_initialized = True
 
     @property
     def num_envs(self) -> int:
@@ -334,14 +336,14 @@ class IsaacEnv(EnvBase):
         self.progress_buf[env_ids] = 0.
         self.stats[env_ids] = 0.
         tensordict = TensorDict({}, self.batch_size, device=self.device)
-        tensordict.update(self._compute_observation())
+        tensordict.update(self.observation_spec.zero())
         return tensordict
 
     @abc.abstractmethod
     def _reset_idx(self, env_ids: torch.Tensor):
         raise NotImplementedError
 
-    def update(self):
+    def _update_common(self):
         pass
 
     def _step(self, tensordict: TensorDictBase) -> TensorDictBase:
@@ -350,9 +352,10 @@ class IsaacEnv(EnvBase):
                 action_group.apply_action(tensordict[group_name])
             self.scene.write_data_to_sim()
             self.sim.step(False)
-        self.scene.update(self.step_dt)
+            self.scene.update(self.physics_dt)
         for callback in self._update_callbacks:
             callback()
+        self._update_common()
 
         # perform rendering if gui is enabled
         if self.sim.has_gui():

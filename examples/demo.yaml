@@ -44,11 +44,6 @@ task:
   _target_: omni_drones.envs.isaac_env.TaskCfg
   max_episode_length: 500
   
-  observations:
-    - key: [agents, observation]
-      items:
-        DynamicState: {asset_name: drone}
-  
   actions:
     - key: [agents, action]
       items:

@@ -112,7 +112,7 @@ class PPOPolicy(TensorDictModuleBase):
         ).to(self.device)
 
         self.critic = TensorDictModule(
-            nn.Sequential(make_mlp([256, 256, 256]), nn.LazyLinear(1)),
+            nn.Sequential(make_mlp([512, 256, 256]), nn.LazyLinear(1)),
             [("agents", "observation")], ["state_value"]
         ).to(self.device)
 
@@ -147,6 +147,7 @@ class PPOPolicy(TensorDictModuleBase):
         
         infos = {k: v.mean().item() for k, v in torch.stack(infos).items()}
         infos["critic/value_mean"] = tensordict["ret"].mean().item()
+        infos["critic/value_var"] = tensordict["ret"].var().item()
         return infos
 
     def _update(self, tensordict: TensorDict):
@@ -177,11 +178,11 @@ class PPOPolicy(TensorDictModuleBase):
         explained_var = 1 - F.mse_loss(values, b_returns) / b_returns.var()
         return TensorDict({
             "policy_loss": policy_loss,
-            "value_loss": value_loss,
             "entropy": entropy,
             "actor_grad_norm": actor_grad_norm,
-            "critic_grad_norm": critic_grad_norm,
-            "explained_var": explained_var
+            "critic/value_loss": value_loss,
+            "critic/grad_norm": critic_grad_norm,
+            "critic/explained_var": explained_var
         }, [])
     
     @torch.no_grad()

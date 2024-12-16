@@ -44,6 +44,7 @@ def main(cfg):
             # self.target_pos[:, 2] += 1.0
             self.target_yaw = torch.zeros(self.drone.shape, device=self.device)
             self.target_yaw[:] = torch.pi / 2
+            self.resolve_specs()
 
         def _design_scene(self):
             # the scene is created from a SceneCfg object in a declarative way

@@ -23,7 +23,7 @@
 
 import omni.isaac.core.utils.torch as torch_utils
 import omni_drones.utils.kit as kit_utils
-from omni_drones.utils.torch import euler_to_quaternion, normalize, quat_rotate_inverse
+from omni_drones.utils.torch import euler_to_quaternion, normalize, quat_rotate_inverse, quat_rotate
 import omni.isaac.core.utils.prims as prim_utils
 import torch
 import torch.distributions as D
@@ -84,8 +84,18 @@ class Track(IsaacEnv):
 
 
     """
+    DEFAULT_REWARD_CONFIG = {
+        "PosTrackingErrorExp": {"scale": 1.6, "weight": 1.0},
+        "YawTrackingDot": {"weight": 0.5},
+    }
+
+    DEFAULT_TERMINATION_CONFIG = {
+        "PositionOutOfRange": {"z_range": (0.1, 4.0)},
+        "TrackingErrorExceeds": {"thres": 0.8}
+    }
+
     def __init__(self, cfg):
-        self.future_traj_steps = int(cfg.task.future_traj_steps)
+        self.future_traj_steps = int(cfg.task.get("future_traj_steps", 4))
         assert self.future_traj_steps > 0
 
         super().__init__(cfg)
@@ -123,6 +133,7 @@ class Track(IsaacEnv):
         self.waypoints = torch.zeros(self.num_envs, self.future_traj_steps, 3, device=self.device)
         self.target_pos = self.waypoints[:, 0]
         self.target_heading_vec = torch.zeros(self.num_envs, 3, device=self.device)
+        self.resolve_specs()
 
     def _design_scene(self):
         from omni.isaac.lab.scene import InteractiveSceneCfg
@@ -193,7 +204,7 @@ class Track(IsaacEnv):
                 + self.scene.env_origins[env_ids].unsqueeze(1)
             )
 
-    def update(self):
+    def _update_common(self):
         self.waypoints[:] = self.traj_manager.compute(
             self.progress_buf * self.step_dt, 
             dt=self.step_dt * 5,
@@ -202,18 +213,34 @@ class Track(IsaacEnv):
         self.target_heading_vec[:] = normalize(self.waypoints[:, 1] - self.waypoints[:, 0])
     
     def debug_vis(self):
-        for i in range(self.num_envs):
-            self.debug_draw.plot(self.traj_vis[i])
-            self.debug_draw.plot(
-                self.waypoints[i] + self.scene.env_origins[i].unsqueeze(0),
-                size=4, 
-                color=(0, 1, 0, 1)
-            )
-        self.debug_draw.vector(
-            self.drone.data.root_pos_w,
-            self.drone.data.heading_w_vec * 0.5,
-            color=(1, 0, 0, 1)
+        i = self.num_envs // 2
+        self.debug_draw.plot(self.traj_vis[i])
+        self.debug_draw.plot(
+            self.waypoints[i] + self.scene.env_origins[i].unsqueeze(0),
+            size=4, 
+            color=(0, 1, 0, 1)
         )
+        # self.debug_draw.vector(
+        #     self.drone.data.root_pos_w,
+        #     self.drone.data.heading_w_vec * 0.5,
+        #     color=(1, 0, 0, 1)
+        # )
+    
+    def _compute_observation(self):
+        obs = TensorDict({}, [self.num_envs])
+        waypoint_pos = - (
+            self.drone.data.root_pos_w.unsqueeze(1)
+            - self.scene.env_origins.unsqueeze(1)
+            - self.waypoints
+        )
+        obs[("agents", "observation")] = torch.cat([
+            self.drone.data.root_lin_vel_w,
+            self.drone.data.root_ang_vel_w,
+            self.drone.data.root_quat_w,
+            self.drone.data.root_pos_w[:, 2].unsqueeze(1),
+            waypoint_pos.reshape(self.num_envs, -1)
+        ], dim=-1)
+        return obs
     
     class Waypoints(mdp.ObservationFunc):
         
@@ -256,8 +283,12 @@ class Track(IsaacEnv):
             self.drone: Multirotor = self.env.scene["drone"]
         
         def compute(self) -> torch.Tensor:
+            heading_w_vec = quat_rotate(
+                self.drone.data.root_quat_w,
+                torch.tensor([1., 0., 0.], device=self.env.device).expand(self.num_envs, 3)
+            )
             dot = (
-                self.drone.data.heading_w_vec[:, :2]
+                heading_w_vec[:, :2]
                 * normalize(self.drone.data.root_lin_vel_w[:, :2])
             ).sum(-1, True)
             return dot

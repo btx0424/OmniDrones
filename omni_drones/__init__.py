@@ -39,11 +39,11 @@ def init_simulation_app(cfg=None):
         "anti_aliasing": 1,
         "offscreen_render": cfg.get("offscreen_render", False),
     }
-    if cfg.get("headless", False):
-        app_experience = f"{os.environ['EXP_PATH']}/omni.isaac.sim.python.gym.headless.kit"
-    else:
-        app_experience = f"{os.environ['EXP_PATH']}/omni.isaac.sim.python.kit"
-    app_launcher = AppLauncher(launcher_args, experience=app_experience)
+    # if cfg.get("headless", False):
+    #     app_experience = f"{os.environ['EXP_PATH']}/omni.isaac.sim.python.gym.headless.kit"
+    # else:
+    #     app_experience = f"{os.environ['EXP_PATH']}/omni.isaac.sim.python.kit"
+    app_launcher = AppLauncher(launcher_args)
     simulation_app = app_launcher.app
     return simulation_app
 

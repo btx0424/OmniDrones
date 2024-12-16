@@ -1,0 +1,37 @@
+# Cite from https://github.com/uzh-rpg/rpg_drones/blob/master/rpg_drones/config/track/UZH_track.yaml
+gates:
+  - id: 1
+    pos: [-1.0, 1.25, 2.0]        # [x, y, z]
+    ori: [0.0, 0.0, 0]         # [roll, pitch, yaw] 
+    visible: true
+
+  - id: 2
+    pos: [8.0, 6.25, 2.0]
+    ori: [0.0, 0.0, -15]      
+    visible: true
+
+  - id: 3 
+    pos: [8.0, -3.125, 2.0]
+    ori: [0.0, 0.0, 225]         
+    visible: true
+
+  - id: 4
+    pos: [-3.75, -6.0, 2.0]
+    ori: [0.0, 0.0, 180]     
+    visible: true
+  
+  - id: 5
+    pos: [-3.75, -6.0, 4.0]
+    ori: [0.0, 0.0, 0]     
+    visible: true
+
+  - id: 6
+    pos: [4.375, -0.625, 2.0]
+    ori: [0.0, 0.0, 85]       
+    visible: true
+
+  - id: 7
+    pos: [-2.5, 6.25, 2.0]
+    ori: [0.0, 0.0, 195]     
+    visible: true
+

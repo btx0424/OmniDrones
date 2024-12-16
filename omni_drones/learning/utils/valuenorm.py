@@ -160,3 +160,18 @@ class ValueNorm2(Normalizer):
             return input_vector * torch.sqrt(self.running_var) + self.running_mean
         else:
             return input_vector * torch.sqrt(self.running_var)
+
+
+class ValueNormFake(Normalizer):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__()
+    
+    def update(self, input_vector: torch.Tensor):
+        pass
+    
+    def normalize(self, input_vector: torch.Tensor):
+        return input_vector
+    
+    def denormalize(self, input_vector: torch.Tensor):
+        return input_vector
+

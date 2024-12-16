@@ -47,8 +47,7 @@ class RotorCommand(ActionFunc):
         return self.rotor.shape
     
     def apply_action(self, action: torch.Tensor):
-        action = action.clamp(-1., 1.)
-        self.rotor.throttle_target[:] = (action + 1.) / 2.
+        self.rotor.throttle_target[:] = ((action + 1.) / 2.).clamp(0., 1.).sqrt()
 
 
 from omni_drones.utils.torch import (

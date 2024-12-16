@@ -25,6 +25,12 @@ import torch
 import torch.nn as nn
 from typing import Sequence
 
+
+REWARD_KEY = ("next", "reward") 
+TERM_KEY = ("next", "terminated")
+DONE_KEY = ("next", "done")
+
+
 class GAE(nn.Module):
     def __init__(self, gamma, lmbda):
         super().__init__()
@@ -36,21 +42,20 @@ class GAE(nn.Module):
     def forward(
         self, 
         reward: torch.Tensor, 
-        terminated: torch.Tensor, 
+        terminated: torch.Tensor,
+        done: torch.Tensor, 
         value: torch.Tensor, 
         next_value: torch.Tensor
     ):
         num_steps = terminated.shape[1]
         advantages = torch.zeros_like(reward)
-        not_done = 1 - terminated.float()
+        nonterm = 1 - terminated.float() # whether to backup value
+        nondone = 1 - done.float()       # whether to backup reward
         gae = 0
         for step in reversed(range(num_steps)):
-            delta = (
-                reward[:, step] 
-                + self.gamma * next_value[:, step] * not_done[:, step] 
-                - value[:, step]
-            )
-            advantages[:, step] = gae = delta + (self.gamma * self.lmbda * not_done[:, step] * gae)
+            next_value_t = next_value[:, step] * nonterm[:, step]
+            delta = reward[:, step] + self.gamma * next_value_t - value[:, step]
+            advantages[:, step] = gae = delta + (self.gamma * self.lmbda * nondone[:, step] * gae)
         returns = advantages + value
         return advantages, returns
 

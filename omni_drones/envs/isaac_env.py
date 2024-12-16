@@ -221,13 +221,7 @@ class IsaacEnv(EnvBase):
                 observation_group[obs_name] = OBS_FUNCS[obs_name](self, **params)
             self.observation_funcs[key] = observation_group
         
-        obs = self._compute_observation()
-        observation_spec = Composite({}, shape=[self.num_envs])
-        for k, v in obs.items(True, True):
-            observation_spec[k] = UnboundedContinuous(v.shape)
-        self.observation_spec = observation_spec.to(self.device)
-
-        self.action_funcs = OrderedDict()
+        self.action_groups = OrderedDict()
         action_spec = Composite({}, shape=[self.num_envs])
         for group in self.task_cfg.actions:
             key = get_key(group["key"])
@@ -237,9 +231,15 @@ class IsaacEnv(EnvBase):
                 self._debug_vis_callbacks.append(act_func.debug_vis)
                 action_group[act_name] = act_func
             action_group = mdp.ActionGroup(action_group)
-            self.action_funcs[key] = action_group
+            self.action_groups[key] = action_group
             action_spec[key] = UnboundedContinuous(action_group.action_shape)
         self.action_spec = action_spec.to(self.device)
+        
+        obs = self._compute_observation()
+        observation_spec = Composite({}, shape=[self.num_envs])
+        for k, v in obs.items(True, True):
+            observation_spec[k] = UnboundedContinuous(v.shape)
+        self.observation_spec = observation_spec.to(self.device)
         
         self.reward_funcs = OrderedDict()
         for key, params in self.task_cfg.rewards.items():
@@ -348,7 +348,7 @@ class IsaacEnv(EnvBase):
 
     def _step(self, tensordict: TensorDictBase) -> TensorDictBase:
         for substep in range(self.substeps):
-            for group_name, action_group in self.action_funcs.items():
+            for group_name, action_group in self.action_groups.items():
                 action_group.apply_action(tensordict[group_name])
             self.scene.write_data_to_sim()
             self.sim.step(False)
@@ -385,7 +385,7 @@ class IsaacEnv(EnvBase):
     def _compute_reward(self):
         reward = []
         for key, func in self.reward_funcs.items():
-            r = func()
+            r = func() * self.step_dt
             self.stats[key].add_(r)
             reward.append(r)
         reward = sum(reward)

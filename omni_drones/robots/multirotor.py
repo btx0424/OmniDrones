@@ -23,6 +23,7 @@ class MultirotorData:
     heading_w_vec: torch.Tensor = None
 
     throttle: Mapping[str, torch.Tensor] = field(default_factory=dict)
+    throttle_change: Mapping[str, torch.Tensor] = field(default_factory=dict)
     drag_coef: torch.Tensor = None
 
     applied_thrusts: Mapping[str, torch.Tensor] = field(default_factory=dict)
@@ -86,6 +87,7 @@ class Multirotor(Articulation):
         for name, actuator in self.actuators.items():
             if isinstance(actuator, Rotor):
                 thrusts, momentum = actuator.rotor_compute()
+                self.multirotor_data.throttle_change[name][:] = actuator.throttle - self.multirotor_data.throttle[name]
                 self.multirotor_data.throttle[name][:] = actuator.throttle
                 self.multirotor_data.applied_thrusts[name][:] = thrusts
                 self.multirotor_data.applied_moments[name][:] = momentum
@@ -98,19 +100,19 @@ class Multirotor(Articulation):
                 # mannually aggregate the torques along the z-axis
                 torques_b[..., self.base_id, 2] += momentum.sum(dim=-1, keepdim=True)
         
-        drag_w = (
-            self.multirotor_data.drag_coef.unsqueeze(-1)
-            * -self.data.body_lin_vel_w
-        )
-        self.multirotor_data.applied_drag_b[:] = quat_rotate_inverse(
-            self.data.body_quat_w, # [*, body, 4]
-            drag_w # [*, body, 3]
-        )
+        # drag_w = (
+        #     self.multirotor_data.drag_coef.unsqueeze(-1)
+        #     * -self.data.body_lin_vel_w
+        # )
+        # self.multirotor_data.applied_drag_b[:] = quat_rotate_inverse(
+        #     self.data.body_quat_w, # [*, body, 4]
+        #     drag_w # [*, body, 3]
+        # )
 
-        if len(self.shape) > 1:
-            forces_b += self.multirotor_data.applied_drag_b.flatten(0, 1)
-        else:
-            forces_b += self.multirotor_data.applied_drag_b
+        # if len(self.shape) > 1:
+        #     forces_b += self.multirotor_data.applied_drag_b.flatten(0, 1)
+        # else:
+        #     forces_b += self.multirotor_data.applied_drag_b
 
         self.set_external_force_and_torque(forces=forces_b, torques=torques_b)
         super().write_data_to_sim()
@@ -134,6 +136,7 @@ class Multirotor(Articulation):
 
                 # create data for the actuator
                 self.multirotor_data.throttle[actuator_name] = torch.zeros(actuator.shape, device=self.device)
+                self.multirotor_data.throttle_change[actuator_name] = torch.zeros(actuator.shape, device=self.device)
                 self.multirotor_data.applied_thrusts[actuator_name] = torch.zeros(actuator.shape, device=self.device)
                 self.multirotor_data.applied_moments[actuator_name] = torch.zeros(actuator.shape, device=self.device)
                 
@@ -250,7 +253,7 @@ class Rotor(ActuatorBase):
         tau = torch.where(self.throttle_target > self.throttle, self.tau_up, self.tau_down)
         self.throttle.add_(tau * (self.throttle_target - self.throttle)).clamp_(0, 1)
 
-        mapped = self.throttle
+        mapped = self.throttle.square()
         thrusts = self.kf_normalized * mapped
         moments = self.km_normalized * mapped * -self.rotor_direction
 

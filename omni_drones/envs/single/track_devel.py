@@ -21,12 +21,12 @@
 # SOFTWARE.
 
 
-import omni.isaac.core.utils.prims as prim_utils
+import isaacsim.core.utils.prims as prim_utils
 
 import torch
 import torch.distributions as D
 from torch.func import vmap
-from omni.isaac.debug_draw import _debug_draw
+from isaacsim.util.debug_draw import _debug_draw
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import (
     BinaryDiscreteTensorSpec,

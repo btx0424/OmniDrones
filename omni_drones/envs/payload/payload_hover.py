@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import omni.isaac.core.utils.prims as prim_utils
+import isaacsim.core.utils.prims as prim_utils
 import omni.isaac.core.objects as objects
 import omni_drones.utils.kit as kit_utils
 
@@ -34,7 +34,7 @@ from omni_drones.utils.torch import euler_to_quaternion
 
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec, DiscreteTensorSpec
-from omni.isaac.debug_draw import _debug_draw
+from isaacsim.util.debug_draw import _debug_draw
 
 from .utils import attach_payload
 

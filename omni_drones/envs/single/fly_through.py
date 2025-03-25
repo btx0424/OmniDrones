@@ -31,11 +31,11 @@ from torchrl.data import (
     DiscreteTensorSpec
 )
 
-import omni.isaac.core.utils.torch as torch_utils
-import omni.isaac.core.utils.prims as prim_utils
+import isaacsim.core.utils.torch as torch_utils
+import isaacsim.core.utils.prims as prim_utils
 import omni.physx.scripts.utils as script_utils
 import omni.isaac.core.objects as objects
-from omni.isaac.debug_draw import _debug_draw
+from isaacsim.util.debug_draw import _debug_draw
 
 import omni_drones.utils.kit as kit_utils
 from omni_drones.utils.torch import euler_to_quaternion

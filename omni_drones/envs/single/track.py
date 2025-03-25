@@ -23,7 +23,7 @@
 
 import omni_drones.utils.kit as kit_utils
 from omni_drones.utils.torch import euler_to_quaternion, quat_rotate
-import omni.isaac.core.utils.prims as prim_utils
+import isaacsim.core.utils.prims as prim_utils
 import torch
 import torch.distributions as D
 from torch.func import vmap
@@ -32,7 +32,7 @@ from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.robots.drone import MultirotorBase
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec, DiscreteTensorSpec
-from omni.isaac.debug_draw import _debug_draw
+from isaacsim.util.debug_draw import _debug_draw
 
 from ..utils import lemniscate, scale_time
 

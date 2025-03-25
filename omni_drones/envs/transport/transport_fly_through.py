@@ -31,7 +31,7 @@ from torchrl.data import (
     DiscreteTensorSpec
 )
 
-import omni.isaac.core.utils.prims as prim_utils
+import isaacsim.core.utils.prims as prim_utils
 import omni.physx.scripts.utils as script_utils
 from omni.isaac.core.objects import DynamicCuboid
 

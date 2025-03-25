@@ -23,8 +23,8 @@
 
 import torch
 
-from omni.isaac.core.prims import RigidPrimView
-from omni.isaac.core.utils.nucleus import get_assets_root_path
+from isaacsim.core.prims import RigidPrim
+from isaacsim.core.utils.nucleus import get_assets_root_path
 from tensordict.nn import make_functional
 from torchrl.data import BoundedTensorSpec, UnboundedContinuousTensorSpec
 

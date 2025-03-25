@@ -23,9 +23,9 @@
 
 import omni_drones.utils.kit as kit_utils
 from omni_drones.utils.torch import euler_to_quaternion, normalize
-import omni.isaac.core.utils.prims as prim_utils
-import omni.isaac.core.objects as objects
-import omni.isaac.core.materials as materials
+import isaacsim.core.utils.prims as prim_utils
+import isaacsim.core.api.objects as objects
+import isaacsim.core.api.materials as materials
 import torch
 import torch.distributions as D
 
@@ -40,7 +40,7 @@ from torchrl.data import (
 )
 from pxr import UsdShade, PhysxSchema
 
-from omni.isaac.lab.sensors import ContactSensorCfg, ContactSensor
+from isaaclab.sensors import ContactSensorCfg, ContactSensor
 
 class Pinball(IsaacEnv):
     """

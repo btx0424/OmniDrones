@@ -30,11 +30,11 @@ import torch
 import logging
 import carb
 import numpy as np
-from omni.isaac.cloner import GridCloner
-from omni.isaac.core.simulation_context import SimulationContext
-from omni.isaac.core.utils import prims as prim_utils, stage as stage_utils
-from omni.isaac.core.utils.extensions import enable_extension
-from omni.isaac.core.utils.viewports import set_camera_view
+from isaacsim.core.cloner import GridCloner
+from isaacsim.core.api.simulation_context import SimulationContext
+from isaacsim.core.utils import prims as prim_utils, stage as stage_utils
+from isaacsim.core.utils.extensions import enable_extension
+from isaacsim.core.utils.viewports import set_camera_view
 
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import CompositeSpec, TensorSpec, DiscreteTensorSpec
@@ -43,7 +43,7 @@ from torchrl.envs import EnvBase
 from omni_drones.robots.robot import RobotBase
 from omni_drones.utils.torchrl import AgentSpec
 
-from omni.isaac.debug_draw import _debug_draw
+from isaacsim.util.debug_draw import _debug_draw
 
 class DebugDraw:
     def __init__(self):
@@ -103,12 +103,14 @@ class IsaacEnv(EnvBase):
                 "The stage has not been created. Did you run the simulator?"
             )
         # flatten out the simulation dictionary
+        print("isaacEnv:1")
         sim_params = self.cfg.sim
         if sim_params is not None:
             if "physx" in sim_params:
                 physx_params = sim_params.pop("physx")
                 sim_params.update(physx_params)
         # set flags for simulator
+        print("isaacEnv:2")
         self._configure_simulation_flags(sim_params)
         self.sim = SimulationContext(
             stage_units_in_meters=1.0,
@@ -119,6 +121,7 @@ class IsaacEnv(EnvBase):
             physics_prim_path="/physicsScene",
             device="cuda:0",
         )
+        print("isaacEnv:3")
         self._create_viewport_render_product()
         self.dt = self.sim.get_physics_dt()
         # add flag for checking closing status
@@ -132,6 +135,7 @@ class IsaacEnv(EnvBase):
             prim_utils.define_prim(self.template_env_ns)
         # setup single scene
         global_prim_paths = self._design_scene()
+        print("isaacEnv:4")
         # check if any global prim paths are defined
         if global_prim_paths is None:
             global_prim_paths = list()
@@ -145,6 +149,7 @@ class IsaacEnv(EnvBase):
             prim_paths=self.envs_prim_paths,
             replicate_physics=self.cfg.sim.replicate_physics,
         )
+        print("isaacEnv:5")
         # convert environment positions to torch tensor
         self.envs_positions = torch.tensor(
             self.envs_positions, dtype=torch.float, device=self.device
@@ -158,7 +163,7 @@ class IsaacEnv(EnvBase):
         )
 
         RobotBase._envs_positions = self.envs_positions.unsqueeze(1)
-
+        print("isaacEnv:6")
         # filter collisions within each environment instance
         physics_scene_path = self.sim.get_physics_context().prim_path
         cloner.filter_collisions(
@@ -169,7 +174,7 @@ class IsaacEnv(EnvBase):
         )
         self.sim.reset()
         self.debug_draw = DebugDraw()
-
+        print("isaacEnv:7")
         self._tensordict = TensorDict(
             {
                 "progress": torch.zeros(self.num_envs, device=self.device),
@@ -185,6 +190,7 @@ class IsaacEnv(EnvBase):
         self._set_specs()
         import pprint
         pprint.pprint(self.fake_tensordict().shapes)
+        print("isaacEnv:done")
 
 
     @classmethod

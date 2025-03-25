@@ -24,7 +24,7 @@
 import torch
 import torch.distributions as D
 
-import omni.isaac.core.utils.prims as prim_utils
+import isaacsim.core.utils.prims as prim_utils
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.robots.drone import MultirotorBase
@@ -167,7 +167,7 @@ class Hover(IsaacEnv):
 
     def _design_scene(self):
         import omni_drones.utils.kit as kit_utils
-        import omni.isaac.core.utils.prims as prim_utils
+        import isaacsim.core.utils.prims as prim_utils
 
         drone_model_cfg = self.cfg.task.drone_model
         self.drone, self.controller = MultirotorBase.make(

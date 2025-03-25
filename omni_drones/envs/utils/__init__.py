@@ -22,7 +22,7 @@
 
 
 from typing import Dict, Any, Sequence, Union
-import omni.isaac.core.utils.prims as prim_utils
+import isaacsim.core.utils.prims as prim_utils
 import omni.physx.scripts.utils as script_utils
 # import omni.kit.commands
 import omni.usd.commands

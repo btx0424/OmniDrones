@@ -8,11 +8,11 @@ import math
 from typing import Optional, Sequence
 
 import carb
-import omni.isaac.core.utils.nucleus as nucleus_utils
-import omni.isaac.core.utils.prims as prim_utils
+import isaacsim.core.utils.nucleus as nucleus_utils
+import isaacsim.core.utils.prims as prim_utils
 import omni.kit
-from omni.isaac.core.materials import PhysicsMaterial
-from omni.isaac.core.prims import GeometryPrim
+from isaacsim.core.api.materials import PhysicsMaterial
+from isaacsim.core.prims import SingleGeometryPrim
 from omni.isaac.version import get_version
 from pxr import Gf, PhysxSchema, UsdPhysics
 
@@ -86,7 +86,7 @@ def create_ground_plane(
             prim_path, predicate=lambda x: prim_utils.get_prim_type_name(x) == "Plane"
         )
     )
-    geom_prim = GeometryPrim(collision_prim_path, disable_stablization=False, collision=True)
+    geom_prim = SingleGeometryPrim(collision_prim_path, disable_stablization=False, collision=True)
     geom_prim.apply_physics_material(material)
     # Change the color of the plane
     # Warning: This is specific to the default grid plane asset.

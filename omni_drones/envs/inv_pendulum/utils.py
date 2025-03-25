@@ -23,7 +23,7 @@
 
 import torch
 
-import omni.isaac.core.utils.prims as prim_utils
+import isaacsim.core.utils.prims as prim_utils
 import omni.physx.scripts.utils as script_utils
 import omni.isaac.core.objects as objects
 from pxr import UsdPhysics

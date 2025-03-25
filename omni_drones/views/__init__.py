@@ -28,13 +28,13 @@ from contextlib import contextmanager
 from typing import List, Optional, Tuple, Union
 import numpy as np
 import carb
-from omni.isaac.core.utils.prims import get_prim_parent, get_prim_at_path, set_prim_property, get_prim_property
+from isaacsim.core.utils.prims import get_prim_parent, get_prim_at_path, set_prim_property, get_prim_property
 from pxr import Usd, UsdGeom, UsdPhysics, PhysxSchema
-from omni.isaac.core.utils.types import JointsState, ArticulationActions
-from omni.isaac.core.articulations import ArticulationView as _ArticulationView
-from omni.isaac.core.prims import RigidPrimView as _RigidPrimView
-from omni.isaac.core.prims import XFormPrimView
-from omni.isaac.core.simulation_context import SimulationContext
+from isaacsim.core.utils.types import JointsState, ArticulationActions
+from omni.isaac.core.articulations import Articulation as _ArticulationView
+from isaacsim.core.prims import RigidPrim as _RigidPrimView
+from isaacsim.core.prims import XFormPrim
+from isaacsim.core.api.simulation_context import SimulationContext
 import omni
 import functools
 
@@ -43,7 +43,7 @@ def require_sim_initialized(func):
 
     @functools.wraps(func)
     def _func(*args, **kwargs):
-        if SimulationContext.instance()._physics_sim_view is None:
+        if SimulationContext.instance().physics_sim_view is None:
             raise RuntimeError("SimulationContext not initialzed.")
         return func(*args, **kwargs)
 
@@ -195,14 +195,14 @@ class ArticulationView(_ArticulationView):
                         kps[articulation_write_idx][dof_write_idx] = drive.GetStiffnessAttr().Get()
                     else:
                         kps[articulation_write_idx][dof_write_idx] = self._backend_utils.convert(
-                            1.0 / omni.isaac.core.utils.numpy.deg2rad(float(1.0 / drive.GetStiffnessAttr().Get())),
+                            1.0 / isaacsim.core.utils.numpy.deg2rad(float(1.0 / drive.GetStiffnessAttr().Get())),
                             device=self._device,
                         )
                     if drive.GetDampingAttr().Get() == 0.0 or drive_type == "linear":
                         kds[articulation_write_idx][dof_write_idx] = drive.GetDampingAttr().Get()
                     else:
                         kds[articulation_write_idx][dof_write_idx] = self._backend_utils.convert(
-                            1.0 / omni.isaac.core.utils.numpy.deg2rad(float(1.0 / drive.GetDampingAttr().Get())),
+                            1.0 / isaacsim.core.utils.numpy.deg2rad(float(1.0 / drive.GetDampingAttr().Get())),
                             device=self._device,
                         )
                     dof_write_idx += 1

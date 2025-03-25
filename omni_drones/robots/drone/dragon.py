@@ -28,7 +28,7 @@ from dataclasses import dataclass, field, MISSING, fields, asdict
 from torchrl.data import BoundedTensorSpec, UnboundedContinuousTensorSpec, CompositeSpec
 from tensordict.nn import make_functional
 
-import omni.isaac.core.utils.prims as prim_utils
+import isaacsim.core.utils.prims as prim_utils
 import omni.physx.scripts.utils as script_utils
 from pxr import PhysxSchema, UsdPhysics
 from omni.usd.commands import MovePrimCommand

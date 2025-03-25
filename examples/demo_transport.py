@@ -15,7 +15,7 @@ def main(cfg):
     simulation_app = init_simulation_app(cfg)
     print(OmegaConf.to_yaml(cfg))
 
-    import omni.isaac.core.objects as objects
+    import isaacsim.core.api.objects as objects
     import isaacsim.core.utils.prims as prim_utils
     import omni_drones.utils.scene as scene_utils
     from isaacsim.core.api.simulation_context import SimulationContext

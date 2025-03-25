@@ -89,15 +89,20 @@ class MultirotorBase(RobotBase):
         prim_paths_expr: str = None,
         track_contact_forces: bool = False
     ):
+        print("Drone Initialization 1")
         if self.is_articulation:
+            print("Drone Initialization: is_articulation")
             super().initialize(prim_paths_expr=prim_paths_expr)
+            print("Drone Initialization 1-1.1")
             self.base_link = RigidPrimView(
                 prim_paths_expr=f"{self.prim_paths_expr}/base_link",
                 name="base_link",
                 track_contact_forces=track_contact_forces,
                 shape=self.shape,
             )
+            print("Drone Initialization 1-1.2")
             self.base_link.initialize()
+            print("Drone Initialization 1-1.3")
             print(self._view.dof_names)
             print(self._view._dof_indices)
             rotor_joint_indices = [
@@ -111,10 +116,13 @@ class MultirotorBase(RobotBase):
                 )
             else:
                 self.rotor_joint_indices = None
+            print("Drone Initialization 1-1")
         else:
+            print("Drone Initialization: not articulation")
             super().initialize(prim_paths_expr=f"{prim_paths_expr}/base_link")
             self.base_link = self._view
             self.prim_paths_expr = prim_paths_expr
+            print("Drone Initialization 1-2")
 
         self.rotors_view = RigidPrimView(
             # prim_paths_expr=f"{self.prim_paths_expr}/rotor_[0-{self.num_rotors-1}]",
@@ -123,9 +131,11 @@ class MultirotorBase(RobotBase):
             shape=(*self.shape, self.num_rotors)
         )
         self.rotors_view.initialize()
+        print("Drone Initialization 2")
 
         rotor_config = self.params["rotor_configuration"]
         self.rotors = RotorGroup(rotor_config, dt=self.dt).to(self.device)
+        print("Drone Initialization 3")
 
         rotor_params = make_functional(self.rotors)
         self.KF_0 = rotor_params["KF"].clone()
@@ -136,6 +146,7 @@ class MultirotorBase(RobotBase):
             .to(self.device)
         )
         self.rotor_params = rotor_params.expand(self.shape).clone()
+        print("Drone Initialization 4")
 
         self.tau_up = self.rotor_params["tau_up"]
         self.tau_down = self.rotor_params["tau_down"]
@@ -143,10 +154,12 @@ class MultirotorBase(RobotBase):
         self.KM = self.rotor_params["KM"]
         self.throttle = self.rotor_params["throttle"]
         self.directions = self.rotor_params["directions"]
+        print("Drone Initialization 5")
 
         self.thrusts = torch.zeros(*self.shape, self.num_rotors, 3, device=self.device)
         self.torques = torch.zeros(*self.shape, 3, device=self.device)
         self.forces = torch.zeros(*self.shape, 3, device=self.device)
+        print("Drone Initialization 6")
 
         self.pos, self.rot = self.get_world_poses(True)
         self.throttle_difference = torch.zeros(self.throttle.shape[:-1], device=self.device)
@@ -156,6 +169,7 @@ class MultirotorBase(RobotBase):
         self.vel_b = torch.zeros_like(self.vel_w)
         self.acc = self.acc_w = torch.zeros(*self.shape, 6, device=self.device)
         self.acc_b = torch.zeros_like(self.acc_w)
+        print("Drone Initialization 7")
 
         # self.jerk = torch.zeros(*self.shape, 6, device=self.device)
         self.alpha = 0.9
@@ -179,6 +193,7 @@ class MultirotorBase(RobotBase):
 
         self.drag_coef = torch.zeros(*self.shape, 1, device=self.device) * self.params["drag_coef"]
         self.intrinsics = self.intrinsics_spec.expand(self.shape).zero()
+        print("Drone Initialization Done")
 
     def setup_randomization(self, cfg):
         if not self.initialized:

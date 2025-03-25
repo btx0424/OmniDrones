@@ -41,10 +41,11 @@ def main(cfg):
     run = init_wandb(cfg)
     setproctitle(run.name)
     print(OmegaConf.to_yaml(cfg))
-
+        
     from omni_drones.envs.isaac_env import IsaacEnv
     env_class = IsaacEnv.REGISTRY[cfg.task.name]
     print(1)
+
     base_env = env_class(cfg, headless=cfg.headless)
     print(2)
 
@@ -58,7 +59,7 @@ def main(cfg):
     if cfg.task.get("ravel_obs_central", False):
         transform = ravel_composite(base_env.observation_spec, ("agents", "observation_central"))
         transforms.append(transform)
-    print(2)
+    print(3)
 
     # optionally discretize the action space or use a controller
     action_transform: str = cfg.task.get("action_transform", None)
@@ -77,7 +78,7 @@ def main(cfg):
     env = TransformedEnv(base_env, Compose(*transforms)).train()
     env.set_seed(cfg.seed)
 
-    print(3)
+    print(4)
 
     try:
         policy = ALGOS[cfg.algo.name.lower()](
@@ -109,7 +110,7 @@ def main(cfg):
         device=cfg.sim.device,
         return_same_td=True,
     )
-    print(4)
+    print(5)
 
     @torch.no_grad()
     def evaluate(

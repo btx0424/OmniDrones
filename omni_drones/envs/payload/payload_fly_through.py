@@ -31,7 +31,7 @@ from torchrl.data import (
     DiscreteTensorSpec
 )
 
-import omni.isaac.core.objects as objects
+import isaacsim.core.api.objects as objects
 from isaacsim.util.debug_draw import _debug_draw
 
 import omni_drones.utils.kit as kit_utils

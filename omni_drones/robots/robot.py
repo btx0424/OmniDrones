@@ -160,6 +160,7 @@ class RobotBase(abc.ABC):
         self,
         prim_paths_expr: str = None,
     ):
+        print("Robot Initialization 1")
         if SimulationContext.instance().physics_sim_view is None:
             raise RuntimeError(
                 f"Cannot initialize {self.__class__.__name__} before the simulation context resets."
@@ -172,13 +173,16 @@ class RobotBase(abc.ABC):
         # create handles
         # -- robot articulation
         if self.is_articulation:
+            print("Robot Initialization 1: is_articulation")
             self._view = ArticulationView(
                 self.prim_paths_expr,
                 reset_xform_properties=False,
                 shape=(-1, self.n)
             )
+            print("Robot Initialization 1: is_articulation Done")
             self.articulation = self
         else:
+            print("Robot Initialization 1: not_articulation")
             self._view = RigidPrimView(
                 self.prim_paths_expr,
                 reset_xform_properties=False,
@@ -187,14 +191,19 @@ class RobotBase(abc.ABC):
             )
             self.articulation = None
             self.articulation_indices = None
-
+            print("Robot Initialization 1: not_articulation Done")
+        print("Robot Initialization 2")
         self._view.initialize()
+        print("Robot Initialization 3")
         # set the default state
         self._view.post_reset()
+        print("Robot Initialization 4")
         self.shape = torch.arange(self._view.count).reshape(-1, self.n).shape
+        print("Robot Initialization 5")
 
         self.prim_paths = self._view.prim_paths
         self.initialized = True
+        print("Robot Initialization Done")
 
     @abc.abstractmethod
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:

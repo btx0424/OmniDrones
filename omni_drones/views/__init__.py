@@ -31,7 +31,7 @@ import carb
 from isaacsim.core.utils.prims import get_prim_parent, get_prim_at_path, set_prim_property, get_prim_property
 from pxr import Usd, UsdGeom, UsdPhysics, PhysxSchema
 from isaacsim.core.utils.types import JointsState, ArticulationActions
-from omni.isaac.core.articulations import Articulation as _ArticulationView
+from isaacsim.core.prims import Articulation as _ArticulationView
 from isaacsim.core.prims import RigidPrim as _RigidPrimView
 from isaacsim.core.prims import XFormPrim
 from isaacsim.core.api.simulation_context import SimulationContext
@@ -64,6 +64,7 @@ class ArticulationView(_ArticulationView):
         shape: Tuple[int, ...] = (-1,),
     ) -> None:
         self.shape = shape
+        print("ArticulationView Init")
         super().__init__(
             prim_paths_expr,
             name,
@@ -74,6 +75,7 @@ class ArticulationView(_ArticulationView):
             visibilities,
             reset_xform_properties,
         )
+        print("ArticulationView Init Done")
 
     @require_sim_initialized
     def initialize(self, physics_sim_view: omni.physics.tensors.SimulationView = None) -> None:

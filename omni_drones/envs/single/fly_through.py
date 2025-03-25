@@ -34,7 +34,7 @@ from torchrl.data import (
 import isaacsim.core.utils.torch as torch_utils
 import isaacsim.core.utils.prims as prim_utils
 import omni.physx.scripts.utils as script_utils
-import omni.isaac.core.objects as objects
+import isaacsim.core.api.objects as objects
 from isaacsim.util.debug_draw import _debug_draw
 
 import omni_drones.utils.kit as kit_utils

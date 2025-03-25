@@ -37,7 +37,7 @@ from isaacsim.core.utils.extensions import enable_extension
 from isaacsim.core.utils.viewports import set_camera_view
 
 from tensordict.tensordict import TensorDict, TensorDictBase
-from torchrl.data import CompositeSpec, TensorSpec, DiscreteTensorSpec
+from torchrl.data import CompositeSpec, TensorSpec, Categorical
 from torchrl.envs import EnvBase
 
 from omni_drones.robots.robot import RobotBase
@@ -166,14 +166,17 @@ class IsaacEnv(EnvBase):
         print("isaacEnv:6")
         # filter collisions within each environment instance
         physics_scene_path = self.sim.get_physics_context().prim_path
+        print("isaacEnv:6.1")
         cloner.filter_collisions(
             physics_scene_path,
             "/World/collisions",
             prim_paths=self.envs_prim_paths,
             global_paths=global_prim_paths,
         )
+        print("isaacEnv:6.2")
         self.sim.reset()
-        self.debug_draw = DebugDraw()
+        print("isaacEnv:6.3")
+        self.debug_draw = DebugDraw()        
         print("isaacEnv:7")
         self._tensordict = TensorDict(
             {
@@ -183,14 +186,15 @@ class IsaacEnv(EnvBase):
         )
         self.progress_buf = self._tensordict["progress"]
         self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-            "terminated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-            "truncated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
+            "done": Categorical(2, (1,), dtype=torch.bool),
+            "terminated": Categorical(2, (1,), dtype=torch.bool),
+            "truncated": Categorical(2, (1,), dtype=torch.bool),
         }).expand(self.num_envs).to(self.device)
         self._set_specs()
         import pprint
         pprint.pprint(self.fake_tensordict().shapes)
         print("isaacEnv:done")
+        return
 
 
     @classmethod

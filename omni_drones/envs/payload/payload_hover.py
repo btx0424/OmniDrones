@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 import isaacsim.core.utils.prims as prim_utils
-import omni.isaac.core.objects as objects
+import isaacsim.core.api.objects as objects
 import omni_drones.utils.kit as kit_utils
 
 import torch

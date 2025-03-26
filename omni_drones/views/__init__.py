@@ -64,7 +64,6 @@ class ArticulationView(_ArticulationView):
         shape: Tuple[int, ...] = (-1,),
     ) -> None:
         self.shape = shape
-        print("ArticulationView Init")
         super().__init__(
             prim_paths_expr,
             name,
@@ -75,7 +74,6 @@ class ArticulationView(_ArticulationView):
             visibilities,
             reset_xform_properties,
         )
-        print("ArticulationView Init Done")
 
     @require_sim_initialized
     def initialize(self, physics_sim_view: omni.physics.tensors.SimulationView = None) -> None:
@@ -226,14 +224,14 @@ class ArticulationView(_ArticulationView):
         if not omni.timeline.get_timeline_interface().is_stopped() and self._physics_view is not None:
             if self.num_dof == 0:
                 return None
-            self._physics_sim_view.enable_warnings(False)
+            # self._physics_sim_view.enable_warnings(False)
             joint_positions = self._physics_view.get_dof_position_targets()
             if clone:
                 joint_positions = self._backend_utils.clone_tensor(joint_positions, device=self._device)
             joint_velocities = self._physics_view.get_dof_velocity_targets()
             if clone:
                 joint_velocities = self._backend_utils.clone_tensor(joint_velocities, device=self._device)
-            self._physics_sim_view.enable_warnings(True)
+            # self._physics_sim_view.enable_warnings(True)
             # TODO: implement the effort part
             return ArticulationActions(
                 joint_positions=joint_positions,
@@ -250,9 +248,9 @@ class ArticulationView(_ArticulationView):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         indices = self._resolve_env_indices(env_indices)
         if self._physics_view is not None:
-            with disable_warnings(self._physics_sim_view):
-                poses = self._physics_view.get_root_transforms()[indices]
-                poses = torch.unflatten(poses, 0, self.shape)
+            # with disable_warnings(self._physics_sim_view):
+            poses = self._physics_view.get_root_transforms()[indices]
+            poses = torch.unflatten(poses, 0, self.shape)
             if clone:
                 poses = poses.clone()
             return poses[..., :3], poses[..., [6, 3, 4, 5]]

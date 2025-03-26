@@ -103,14 +103,12 @@ class IsaacEnv(EnvBase):
                 "The stage has not been created. Did you run the simulator?"
             )
         # flatten out the simulation dictionary
-        print("isaacEnv:1")
         sim_params = self.cfg.sim
         if sim_params is not None:
             if "physx" in sim_params:
                 physx_params = sim_params.pop("physx")
                 sim_params.update(physx_params)
         # set flags for simulator
-        print("isaacEnv:2")
         self._configure_simulation_flags(sim_params)
         self.sim = SimulationContext(
             stage_units_in_meters=1.0,
@@ -121,7 +119,6 @@ class IsaacEnv(EnvBase):
             physics_prim_path="/physicsScene",
             device="cuda:0",
         )
-        print("isaacEnv:3")
         self._create_viewport_render_product()
         self.dt = self.sim.get_physics_dt()
         # add flag for checking closing status
@@ -135,7 +132,6 @@ class IsaacEnv(EnvBase):
             prim_utils.define_prim(self.template_env_ns)
         # setup single scene
         global_prim_paths = self._design_scene()
-        print("isaacEnv:4")
         # check if any global prim paths are defined
         if global_prim_paths is None:
             global_prim_paths = list()
@@ -149,7 +145,6 @@ class IsaacEnv(EnvBase):
             prim_paths=self.envs_prim_paths,
             replicate_physics=self.cfg.sim.replicate_physics,
         )
-        print("isaacEnv:5")
         # convert environment positions to torch tensor
         self.envs_positions = torch.tensor(
             self.envs_positions, dtype=torch.float, device=self.device
@@ -163,21 +158,16 @@ class IsaacEnv(EnvBase):
         )
 
         RobotBase._envs_positions = self.envs_positions.unsqueeze(1)
-        print("isaacEnv:6")
         # filter collisions within each environment instance
         physics_scene_path = self.sim.get_physics_context().prim_path
-        print("isaacEnv:6.1")
         cloner.filter_collisions(
             physics_scene_path,
             "/World/collisions",
             prim_paths=self.envs_prim_paths,
             global_paths=global_prim_paths,
         )
-        print("isaacEnv:6.2")
         self.sim.reset()
-        print("isaacEnv:6.3")
         self.debug_draw = DebugDraw()        
-        print("isaacEnv:7")
         self._tensordict = TensorDict(
             {
                 "progress": torch.zeros(self.num_envs, device=self.device),
@@ -193,7 +183,6 @@ class IsaacEnv(EnvBase):
         self._set_specs()
         import pprint
         pprint.pprint(self.fake_tensordict().shapes)
-        print("isaacEnv:done")
         return
 
 

@@ -23,8 +23,8 @@
 
 from typing import Sequence, Union, Optional
 
-import omni.isaac.core.utils.prims as prim_utils
-import omni.isaac.core.utils.stage as stage_utils
+import isaacsim.core.utils.prims as prim_utils
+import isaacsim.core.utils.stage as stage_utils
 import omni.physx.scripts.utils as script_utils
 import torch
 

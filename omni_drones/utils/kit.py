@@ -8,13 +8,12 @@ import math
 from typing import Optional, Sequence
 
 import carb
-import omni.isaac.core.utils.nucleus as nucleus_utils
-import omni.isaac.core.utils.prims as prim_utils
+import isaacsim.core.utils.nucleus as nucleus_utils
+import isaacsim.core.utils.prims as prim_utils
 import omni.kit
-from omni.isaac.core.materials import PhysicsMaterial
-from omni.isaac.core.prims import GeometryPrim
-from omni.isaac.version import get_version
-from pxr import Gf, PhysxSchema, UsdPhysics
+from isaacsim.core.api.materials.physics_material import PhysicsMaterial
+from isaacsim.core.version import get_version
+from pxr import Gf, PhysxSchema, UsdPhysics, UsdShade
 
 
 def create_ground_plane(
@@ -43,9 +42,8 @@ def create_ground_plane(
     Keyword Args:
         usd_path: The USD path to the ground plane. Defaults to the asset path
             `Isaac/Environments/Grid/default_environment.usd` on the Isaac Sim Nucleus server.
-        improve_patch_friction: Whether to enable patch friction. Defaults to False.
-        combine_mode: Determines the way physics materials will be combined during collisions.
-            Available options are `average`, `min`, `multiply`, `multiply`, and `max`. Defaults to `average`.
+        friction_combine_mode: Determines the way physics materials will be combined during collisions.
+            Available options are `average`, `min`, `multiply`, and `max`. Defaults to `multiply`.
         light_intensity: The power intensity of the light source. Defaults to 1e7.
         light_radius: The radius of the light source. Defaults to 50.0.
     """
@@ -73,21 +71,22 @@ def create_ground_plane(
     )
     # Apply PhysX Rigid Material schema
     physx_material_api = PhysxSchema.PhysxMaterialAPI.Apply(material.prim)
-    # Set patch friction property
-    improve_patch_friction = kwargs.get("improve_patch_friction", False)
-    physx_material_api.CreateImprovePatchFrictionAttr().Set(improve_patch_friction)
     # Set combination mode for coefficients
-    combine_mode = kwargs.get("friciton_combine_mode", "multiply")
+    combine_mode = kwargs.get("friction_combine_mode", "multiply")
     physx_material_api.CreateFrictionCombineModeAttr().Set(combine_mode)
     physx_material_api.CreateRestitutionCombineModeAttr().Set(combine_mode)
     # Apply physics material to ground plane
-    collision_prim_path = prim_utils.get_prim_path(
-        prim_utils.get_first_matching_child_prim(
-            prim_path, predicate=lambda x: prim_utils.get_prim_type_name(x) == "Plane"
-        )
+    collision_prim = prim_utils.get_first_matching_child_prim(
+        prim_path, predicate=lambda x: prim_utils.get_prim_type_name(x) == "Plane"
     )
-    geom_prim = GeometryPrim(collision_prim_path, disable_stablization=False, collision=True)
-    geom_prim.apply_physics_material(material)
+    if collision_prim is not None:
+        # Ensure collision API is present
+        UsdPhysics.CollisionAPI.Apply(collision_prim)
+        # Bind the physics material to the plane as a 'physics' binding
+        mat = UsdShade.Material(material.prim)
+        UsdShade.MaterialBindingAPI(collision_prim).Bind(
+            mat, UsdShade.Tokens.weakerThanDescendants, "physics"
+        )
     # Change the color of the plane
     # Warning: This is specific to the default grid plane asset.
     if color is not None:

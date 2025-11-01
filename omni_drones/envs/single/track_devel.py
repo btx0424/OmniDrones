@@ -21,17 +21,18 @@
 # SOFTWARE.
 
 
-import omni.isaac.core.utils.prims as prim_utils
+import isaacsim.core.utils.prims as prim_utils
 
 import torch
 import torch.distributions as D
 from torch.func import vmap
-from omni.isaac.debug_draw import _debug_draw
+from isaacsim.util.debug_draw import _debug_draw
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import (
     BinaryDiscreteTensorSpec,
-    CompositeSpec,
-    UnboundedContinuousTensorSpec,
+    Composite,
+    Unbounded,
+    DiscreteTensorSpec,
 )
 
 import omni_drones.utils.kit as kit_utils
@@ -46,7 +47,7 @@ from ..utils import lemniscate, scale_time
 
 def attach_payload(parent_path):
     import omni.physx.scripts.utils as script_utils
-    from omni.isaac.core import objects
+    from isaacsim.core.api import objects
     from pxr import UsdPhysics
 
     payload_prim = objects.DynamicCuboid(
@@ -208,21 +209,21 @@ class Track(IsaacEnv):
         )
 
         intrinsics_spec = self.drone.intrinsics_spec.to(self.device)
-        intrinsics_spec["payload_mass"] = UnboundedContinuousTensorSpec(
+        intrinsics_spec["payload_mass"] = Unbounded(
             1, device=self.device
         )
-        intrinsics_spec["payload_z"] = UnboundedContinuousTensorSpec(
+        intrinsics_spec["payload_z"] = Unbounded(
             1, device=self.device
         )
         # TODO@btx0424: observe history through a Transform
-        self.observation_spec = CompositeSpec(
+        self.observation_spec = Composite(
             {
-                "agents": CompositeSpec(
+                "agents": Composite(
                     {
-                        "observation": UnboundedContinuousTensorSpec(
+                        "observation": Unbounded(
                             (1, drone_obs_dim), device=self.device
                         ),
-                        "observation_h": UnboundedContinuousTensorSpec(
+                        "observation_h": Unbounded(
                             (1, drone_obs_dim, 32), device=self.device
                         ),
                         "intrinsics": intrinsics_spec.unsqueeze(0),
@@ -231,7 +232,7 @@ class Track(IsaacEnv):
             }
         ).expand(self.num_envs)
         self.action_spec = (
-            CompositeSpec(
+            Composite(
                 {
                     "agents": {
                         "action": self.drone.action_spec.unsqueeze(0),
@@ -242,7 +243,7 @@ class Track(IsaacEnv):
             .to(self.device)
         )
         self.reward_spec = (
-            CompositeSpec({"agents": {"reward": UnboundedContinuousTensorSpec((1, 1))}})
+            Composite({"agents": {"reward": Unbounded((1, 1))}})
             .expand(self.num_envs)
             .to(self.device)
         )
@@ -255,12 +256,12 @@ class Track(IsaacEnv):
             state_key=("agents", "intrinsics"),
         )
 
-        stats_spec = CompositeSpec({
-            "return": UnboundedContinuousTensorSpec(1),
-            "episode_len": UnboundedContinuousTensorSpec(1),
-            "tracking_error": UnboundedContinuousTensorSpec(1),
-            "heading_alignment": UnboundedContinuousTensorSpec(1),
-            "success": UnboundedContinuousTensorSpec(1),
+        stats_spec = Composite({
+            "return": Unbounded(1),
+            "episode_len": Unbounded(1),
+            "tracking_error": Unbounded(1),
+            "heading_alignment": Unbounded(1),
+            "success": Unbounded(1),
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
         self.stats = stats_spec.zero()
@@ -328,7 +329,7 @@ class Track(IsaacEnv):
         self.observation_h[env_ids] = 0.0
         self.prev_action[env_ids] = 0.0
 
-        if self._should_render(0) and (env_ids == self.central_env_idx).any():
+        if self.draw is not None and self._should_render(0) and (env_ids == self.central_env_idx).any():
             # visualize the trajectory
             self.draw.clear_lines()
 

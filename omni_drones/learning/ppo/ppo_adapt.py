@@ -26,7 +26,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.distributions as D
 
-from torchrl.data import CompositeSpec, TensorSpec
+from torchrl.data import Composite, TensorSpec
 from torchrl.envs.transforms import CatTensors
 from torchrl.modules import ProbabilisticActor
 from torchrl.objectives.utils import hold_out_net
@@ -126,8 +126,8 @@ class PPOAdaptivePolicy(TensorDictModuleBase):
 
     def __init__(self,
         cfg: PPOConfig,
-        observation_spec: CompositeSpec,
-        action_spec: CompositeSpec,
+        observation_spec: Composite,
+        action_spec: Composite,
         reward_spec: TensorSpec,
         device
     ):

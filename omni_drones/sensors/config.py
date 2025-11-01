@@ -80,7 +80,7 @@ class PinholeCameraCfg:
     """
     projection_type: str = "pinhole"
     """Type of projection to use for the camera. Defaults to "pinhole"."""
-    usd_params: UsdCameraCfg = UsdCameraCfg()
+    usd_params: UsdCameraCfg = field(default_factory=UsdCameraCfg)
     """Parameters for setting USD camera settings."""
 
 

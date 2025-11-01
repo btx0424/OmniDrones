@@ -36,13 +36,13 @@ import typing
 
 import omni.kit
 import omni.usd
-from omni.isaac.core.utils.semantics import add_update_semantics
+from isaacsim.core.utils.semantics import add_update_semantics
+from isaacsim.core.utils.stage import add_reference_to_stage, get_current_stage
+from isaacsim.core.utils.string import find_root_prim_path_from_regex
 
-# isaacsim
-from omni.isaac.core.utils.stage import add_reference_to_stage, get_current_stage
-from omni.isaac.core.utils.string import find_root_prim_path_from_regex
-from omni.isaac.dynamic_control import _dynamic_control
 from omni.usd.commands import DeletePrimsCommand, MovePrimCommand
+
+# Note: omni.isaac.dynamic_control is deprecated in Isaac Sim 5.x
 
 # omniverse
 from pxr import Usd, UsdGeom, UsdPhysics
@@ -398,7 +398,7 @@ def create_prim(
         Usd.Prim: The created USD prim.
     """
     # Note: Imported here to prevent cyclic dependency in the module.
-    from omni.isaac.core.prims import XFormPrim
+    from isaacsim.core.prims import XFormPrim
 
     # create prim in stage
     prim = define_prim(prim_path=prim_path, prim_type=prim_type)
@@ -461,47 +461,6 @@ def set_prim_property(
     """
     prim = get_prim_at_path(prim_path=prim_path)
     prim.GetAttribute(property_name).Set(property_value)
-
-
-def get_prim_object_type(prim_path: str) -> typing.Union[str, None]:
-    """Get the dynamic control Ooject type of the USD Prim at the given path.
-
-    If the prim at the path is of Dynamic Control type--i.e. rigid_body, joint, dof, articulation, attractor, d6joint,
-    then the correspodning string returned. If is an Xformable prim, then "xform" is returned. Otherwise None
-    is returned.
-
-    Args:
-        prim_path (str): path of the prim in the stage
-
-    Raises:
-        Exception: If the USD Prim is not a suppored type.
-
-    Returns:
-        str: String corresponding to the object type.
-    """
-    dc_interface = _dynamic_control.acquire_dynamic_control_interface()
-    object_type = dc_interface.peek_object_type(prim_path)
-    if object_type == _dynamic_control.OBJECT_NONE:
-        prim = get_prim_at_path(prim_path)
-        if prim.IsA(UsdGeom.Xformable):
-            return "xform"
-        else:
-            return None
-    elif object_type == _dynamic_control.OBJECT_RIGIDBODY:
-        return "rigid_body"
-    elif object_type == _dynamic_control.OBJECT_JOINT:
-        return "joint"
-    elif object_type == _dynamic_control.OBJECT_DOF:
-        return "dof"
-    elif object_type == _dynamic_control.OBJECT_ARTICULATION:
-        return "articulation"
-    elif object_type == _dynamic_control.OBJECT_ATTRACTOR:
-        return "attractor"
-    elif object_type == _dynamic_control.OBJECT_D6JOINT:
-        return "d6joint"
-    else:
-        raise Exception("the object type is not support here yet")
-
 
 def is_prim_non_root_articulation_link(prim_path: str) -> bool:
     """Used to query if the prim_path corresponds to a link in an articulation which is a non root link.

@@ -24,8 +24,8 @@
 from typing import Sequence, Union, Optional
 from dataclasses import dataclass
 
-import omni.isaac.core.utils.prims as prim_utils
-import omni.isaac.core.utils.stage as stage_utils
+import isaacsim.core.utils.prims as prim_utils
+import isaacsim.core.utils.stage as stage_utils
 import omni_drones.utils.kit as kit_utils
 import omni.physx.scripts.utils as script_utils
 from omni.kit.commands import execute

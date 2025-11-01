@@ -30,7 +30,7 @@ import torch.nn.functional as F
 from tensordict import TensorDict
 
 from torch import Tensor
-from torchrl.data import CompositeSpec, TensorSpec
+from torchrl.data import Composite, TensorSpec
 
 
 def register(_map: Dict, name=None):
@@ -125,13 +125,13 @@ class LFF(nn.Module):
 class SplitEmbedding(nn.Module):
     def __init__(
         self,
-        input_spec: CompositeSpec,
+        input_spec: Composite,
         embed_dim: int = 72,
         layer_norm=True,
         embed_type="linear",
     ) -> None:
         super().__init__()
-        if any(isinstance(spec, CompositeSpec) for spec in input_spec.values()):
+        if any(isinstance(spec, Composite) for spec in input_spec.values()):
             raise ValueError("Nesting is not supported.")
         self.input_spec = input_spec
         self.embed_dim = embed_dim
@@ -174,7 +174,7 @@ class RelationEncoder(nn.Module):
 
     def __init__(
         self,
-        input_spec: CompositeSpec,
+        input_spec: Composite,
         *,
         embed_dim: int = 72,
         embed_type: str = "linear",
@@ -213,7 +213,7 @@ class PartialRelationEncoder(nn.Module):
 
     def __init__(
         self,
-        input_spec: CompositeSpec,
+        input_spec: Composite,
         *,
         embed_dim: int = 72,
         embed_type: str = "linear",
@@ -249,7 +249,7 @@ class PartialRelationEncoder(nn.Module):
 class PartialAttentionEncoder(nn.Module):
     def __init__(
         self,
-        input_spec: CompositeSpec,
+        input_spec: Composite,
         *,
         query_index=0,
         embed_dim: int = 128,

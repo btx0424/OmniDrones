@@ -28,7 +28,7 @@ from typing import Optional, Sequence
 
 from dataclasses import dataclass
 from torchrl.envs import EnvBase
-from torchrl.data import TensorSpec, CompositeSpec
+from torchrl.data import TensorSpec, Composite
 from tensordict import TensorDictBase
 
 
@@ -54,7 +54,7 @@ class AgentSpec:
             return self._env.action_spec
         try:
             return self._env.input_spec["full_action_spec"][self.action_key]
-        except:
+        except KeyError:
             return self._env.action_spec[self.action_key]
 
     @property
@@ -69,7 +69,7 @@ class AgentSpec:
             return self._env.reward_spec
         try:
             return self._env.output_spec["full_reward_spec"][self.reward_key]
-        except:
+        except KeyError:
             return self._env.reward_spec[self.reward_key]
 
     @property
@@ -78,7 +78,7 @@ class AgentSpec:
             return self._env.done_spec
         try:
             return self._env.output_spec["full_done_spec"][self.done_key]
-        except:
+        except KeyError:
             return self._env.done_spec[self.done_key]
 
 

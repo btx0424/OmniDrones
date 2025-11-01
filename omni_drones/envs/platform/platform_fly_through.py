@@ -25,10 +25,10 @@ import torch
 import torch.distributions as D
 from torch.func import vmap
 
-import omni.isaac.core.utils.torch as torch_utils
-import omni.isaac.core.utils.prims as prim_utils
+import isaacsim.core.utils.torch as torch_utils
+import isaacsim.core.utils.prims as prim_utils
 from tensordict.tensordict import TensorDict, TensorDictBase
-from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec, DiscreteTensorSpec
+from torchrl.data import Unbounded, Composite, DiscreteTensorSpec
 
 import omni_drones.utils.kit as kit_utils
 
@@ -53,7 +53,7 @@ class PlatformFlyThrough(IsaacEnv):
 
     ## Observation
 
-    The observation is a `CompositeSpec` containing the following items:
+    The observation is a `Composite` containing the following items:
 
     - `obs_self` (1, \*): The state of each UAV observed by itself, containing its kinematic
       information with the position being relative to the frame center, and an one-hot
@@ -205,29 +205,29 @@ class PlatformFlyThrough(IsaacEnv):
             self.time_encoding_dim = 4
             frame_state_dim += self.time_encoding_dim
 
-        observation_spec = CompositeSpec({
-            "obs_self": UnboundedContinuousTensorSpec((1, drone_state_dim + self.drone.n)),
-            "obs_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13)),
-            "state_frame": UnboundedContinuousTensorSpec((1, frame_state_dim)),
+        observation_spec = Composite({
+            "obs_self": Unbounded((1, drone_state_dim + self.drone.n)),
+            "obs_others": Unbounded((self.drone.n-1, 13)),
+            "state_frame": Unbounded((1, frame_state_dim)),
         }).to(self.device)
-        observation_central_spec = CompositeSpec({
-            "state_drones": UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim + self.drone.n)),
-            "state_frame": UnboundedContinuousTensorSpec((1, frame_state_dim)),
+        observation_central_spec = Composite({
+            "state_drones": Unbounded((self.drone.n, drone_state_dim + self.drone.n)),
+            "state_frame": Unbounded((1, frame_state_dim)),
         }).to(self.device)
-        self.observation_spec = CompositeSpec({
+        self.observation_spec = Composite({
             "agents": {
                 "observation": observation_spec.expand(self.drone.n),
                 "observation_central": observation_central_spec,
             },
         }).expand(self.num_envs).to(self.device)
-        self.action_spec = CompositeSpec({
+        self.action_spec = Composite({
             "agents": {
                 "action": torch.stack([self.drone.action_spec] * self.drone.n, dim=0),
             }
         }).expand(self.num_envs).to(self.device)
-        self.reward_spec = CompositeSpec({
+        self.reward_spec = Composite({
             "agents": {
-                "reward": UnboundedContinuousTensorSpec((self.drone.n, 1))
+                "reward": Unbounded((self.drone.n, 1))
             }
         }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
@@ -238,13 +238,13 @@ class PlatformFlyThrough(IsaacEnv):
             state_key=("agents", "observation_central")
         )
 
-        stats_spec = CompositeSpec({
-            "return": UnboundedContinuousTensorSpec(self.drone.n),
-            "episode_len": UnboundedContinuousTensorSpec(1),
-            "pos_error": UnboundedContinuousTensorSpec(1),
-            "heading_alignment": UnboundedContinuousTensorSpec(1),
-            "effort": UnboundedContinuousTensorSpec(1),
-            "action_smoothness": UnboundedContinuousTensorSpec(1),
+        stats_spec = Composite({
+            "return": Unbounded(self.drone.n),
+            "episode_len": Unbounded(1),
+            "pos_error": Unbounded(1),
+            "heading_alignment": Unbounded(1),
+            "effort": Unbounded(1),
+            "action_smoothness": Unbounded(1),
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
         self.stats = stats_spec.zero()

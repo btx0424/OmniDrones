@@ -23,7 +23,7 @@
 
 import omni_drones.utils.kit as kit_utils
 from omni_drones.utils.torch import euler_to_quaternion, quat_rotate
-import omni.isaac.core.utils.prims as prim_utils
+import isaacsim.core.utils.prims as prim_utils
 import torch
 import torch.distributions as D
 from torch.func import vmap
@@ -33,8 +33,8 @@ from omni_drones.robots.drone import MultirotorBase
 from omni_drones.views import RigidPrimView
 
 from tensordict.tensordict import TensorDict, TensorDictBase
-from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec, DiscreteTensorSpec
-from omni.isaac.debug_draw import _debug_draw
+from torchrl.data import Unbounded, Composite, DiscreteTensorSpec
+from isaacsim.util.debug_draw import _debug_draw
 
 from ..utils import lemniscate, scale_time
 from .utils import attach_payload
@@ -176,20 +176,20 @@ class PayloadTrack(IsaacEnv):
         if self.time_encoding:
             self.time_encoding_dim = 4
             obs_dim += self.time_encoding_dim
-        self.observation_spec = CompositeSpec({
+        self.observation_spec = Composite({
             "agents": {
-                "observation": UnboundedContinuousTensorSpec((1, obs_dim)),
+                "observation": Unbounded((1, obs_dim)),
                 # "intrinsics": self.drone.intrinsics_spec.unsqueeze(0).to(self.device)
             }
         }).expand(self.num_envs).to(self.device)
-        self.action_spec = CompositeSpec({
+        self.action_spec = Composite({
             "agents": {
                 "action": self.drone.action_spec.unsqueeze(0),
             }
         }).expand(self.num_envs).to(self.device)
-        self.reward_spec = CompositeSpec({
+        self.reward_spec = Composite({
             "agents": {
-                "reward": UnboundedContinuousTensorSpec((1, 1))
+                "reward": Unbounded((1, 1))
             }
         }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
@@ -199,11 +199,11 @@ class PayloadTrack(IsaacEnv):
             reward_key=("agents", "reward"),
         )
 
-        stats_spec = CompositeSpec({
-            "return": UnboundedContinuousTensorSpec(1),
-            "episode_len": UnboundedContinuousTensorSpec(1),
-            "tracking_error": UnboundedContinuousTensorSpec(1),
-            "action_smoothness": UnboundedContinuousTensorSpec(1),
+        stats_spec = Composite({
+            "return": Unbounded(1),
+            "episode_len": Unbounded(1),
+            "tracking_error": Unbounded(1),
+            "action_smoothness": Unbounded(1),
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
         self.stats = stats_spec.zero()
@@ -235,7 +235,7 @@ class PayloadTrack(IsaacEnv):
 
         self.stats[env_ids] = 0.
 
-        if self._should_render(0) and (env_ids == self.central_env_idx).any():
+        if self.draw is not None and self._should_render(0) and (env_ids == self.central_env_idx).any():
             # visualize the trajectory
             self.draw.clear_lines()
 

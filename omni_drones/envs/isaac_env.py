@@ -143,11 +143,10 @@ class IsaacEnv(EnvBase):
             self.env_ns + "/env", self.num_envs
         )
         assert len(self.envs_prim_paths) == self.num_envs
-        replicate_physics_flag = getattr(self.cfg.sim, "replicate_physics", True)
         self.envs_positions = cloner.clone(
             source_prim_path=self.template_env_ns,
             prim_paths=self.envs_prim_paths,
-            replicate_physics=replicate_physics_flag,
+            replicate_physics=self.cfg.sim.replicate_physics,
         )
         # convert environment positions to torch tensor
         self.envs_positions = torch.tensor(

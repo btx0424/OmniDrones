@@ -31,6 +31,5 @@ from omni_drones.robots.robot import ASSET_PATH
 
 
 class Hummingbird(MultirotorBase):
-
     usd_path: str = ASSET_PATH + "/usd/hummingbird.usd"
     param_path: str = ASSET_PATH + "/usd/hummingbird.yaml"

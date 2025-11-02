@@ -172,7 +172,7 @@ class Pinball(IsaacEnv):
         }).expand(self.num_envs).to(self.device)
         self.reward_spec = Composite({
             "agents": Composite({
-                "reward": Unbounded((1, 1))
+                "reward": Unbounded((1,1))
             })
         }).expand(self.num_envs).to(self.device)
 
@@ -271,7 +271,7 @@ class Pinball(IsaacEnv):
         return TensorDict(
             {
                 "agents": {
-                    "reward": reward.unsqueeze(-1),
+                    "reward": reward.unsqueeze(-1)
                 },
                 "done": terminated | truncated,
                 "terminated": terminated,

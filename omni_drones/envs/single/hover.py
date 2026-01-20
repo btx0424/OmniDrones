@@ -24,7 +24,7 @@
 import torch
 import torch.distributions as D
 
-import omni.isaac.core.utils.prims as prim_utils
+import isaacsim.core.utils.prims as prim_utils
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.robots.drone import MultirotorBase
@@ -32,11 +32,11 @@ from omni_drones.views import ArticulationView, RigidPrimView
 from omni_drones.utils.torch import euler_to_quaternion, quat_axis
 
 from tensordict.tensordict import TensorDict, TensorDictBase
-from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec, DiscreteTensorSpec
+from torchrl.data import Unbounded, Composite, DiscreteTensorSpec
 
 
 def attach_payload(parent_path):
-    from omni.isaac.core import objects
+    from isaacsim.core.api import objects
     import omni.physx.scripts.utils as script_utils
     from pxr import UsdPhysics
 
@@ -167,7 +167,7 @@ class Hover(IsaacEnv):
 
     def _design_scene(self):
         import omni_drones.utils.kit as kit_utils
-        import omni.isaac.core.utils.prims as prim_utils
+        import isaacsim.core.utils.prims as prim_utils
 
         drone_model_cfg = self.cfg.task.drone_model
         self.drone, self.controller = MultirotorBase.make(
@@ -208,20 +208,20 @@ class Hover(IsaacEnv):
             self.time_encoding_dim = 4
             observation_dim += self.time_encoding_dim
 
-        self.observation_spec = CompositeSpec({
-            "agents": CompositeSpec({
-                "observation": UnboundedContinuousTensorSpec((1, observation_dim), device=self.device),
+        self.observation_spec = Composite({
+            "agents": Composite({
+                "observation": Unbounded((1, observation_dim), device=self.device),
                 "intrinsics": self.drone.intrinsics_spec.unsqueeze(0).to(self.device)
             })
         }).expand(self.num_envs).to(self.device)
-        self.action_spec = CompositeSpec({
-            "agents": CompositeSpec({
+        self.action_spec = Composite({
+            "agents": Composite({
                 "action": self.drone.action_spec.unsqueeze(0),
             })
         }).expand(self.num_envs).to(self.device)
-        self.reward_spec = CompositeSpec({
-            "agents": CompositeSpec({
-                "reward": UnboundedContinuousTensorSpec((1, 1))
+        self.reward_spec = Composite({
+            "agents": Composite({
+                "reward": Unbounded((1, 1))
             })
         }).expand(self.num_envs).to(self.device)
 
@@ -233,13 +233,13 @@ class Hover(IsaacEnv):
             state_key=("agents", "intrinsics")
         )
 
-        stats_spec = CompositeSpec({
-            "return": UnboundedContinuousTensorSpec(1),
-            "episode_len": UnboundedContinuousTensorSpec(1),
-            "pos_error": UnboundedContinuousTensorSpec(1),
-            "heading_alignment": UnboundedContinuousTensorSpec(1),
-            "uprightness": UnboundedContinuousTensorSpec(1),
-            "action_smoothness": UnboundedContinuousTensorSpec(1),
+        stats_spec = Composite({
+            "return": Unbounded(1),
+            "episode_len": Unbounded(1),
+            "pos_error": Unbounded(1),
+            "heading_alignment": Unbounded(1),
+            "uprightness": Unbounded(1),
+            "action_smoothness": Unbounded(1),
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
         self.stats = stats_spec.zero()

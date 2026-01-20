@@ -29,9 +29,9 @@ import numpy as np
 
 from torchrl.data import (
     TensorSpec,
-    BoundedTensorSpec,
-    UnboundedContinuousTensorSpec as UnboundedTensorSpec,
-    CompositeSpec,
+    Bounded,
+    Composite,
+    Unbounded,
     TensorDictReplayBuffer
 )
 from torchrl.data.replay_buffers.storages import LazyTensorStorage
@@ -219,7 +219,7 @@ class Actor(nn.Module):
     def __init__(self,
         cfg,
         observation_spec: TensorSpec,
-        action_spec: BoundedTensorSpec,
+        action_spec: Bounded,
     ) -> None:
         super().__init__()
         self.cfg = cfg
@@ -248,7 +248,7 @@ class Critic(nn.Module):
         cfg,
         num_agents: int,
         state_spec: TensorSpec,
-        action_spec: BoundedTensorSpec,
+        action_spec: Bounded,
         num_critics: int = 2,
     ) -> None:
         super().__init__()
@@ -263,7 +263,7 @@ class Critic(nn.Module):
         ])
 
     def _make_critic(self):
-        if isinstance(self.state_space, (BoundedTensorSpec, UnboundedTensorSpec)):
+        if isinstance(self.state_space, (Bounded, Unbounded)):
             action_dim = self.act_space.shape[-1]
             state_dim = self.state_space.shape[-1]
             num_units = [

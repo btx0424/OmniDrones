@@ -28,13 +28,18 @@ from contextlib import contextmanager
 from typing import List, Optional, Tuple, Union
 import numpy as np
 import carb
-from omni.isaac.core.utils.prims import get_prim_parent, get_prim_at_path, set_prim_property, get_prim_property
+from isaacsim.core.utils.prims import (
+    get_prim_parent,
+    get_prim_at_path,
+    set_prim_property,
+    get_prim_property,
+)
 from pxr import Usd, UsdGeom, UsdPhysics, PhysxSchema
-from omni.isaac.core.utils.types import JointsState, ArticulationActions
-from omni.isaac.core.articulations import ArticulationView as _ArticulationView
-from omni.isaac.core.prims import RigidPrimView as _RigidPrimView
-from omni.isaac.core.prims import XFormPrimView
-from omni.isaac.core.simulation_context import SimulationContext
+from isaacsim.core.utils.types import JointsState, ArticulationActions
+from isaacsim.core.prims import Articulation as _ArticulationView
+from isaacsim.core.prims import RigidPrim as _RigidPrimView
+from isaacsim.core.prims import XFormPrim as XFormPrimView
+from isaacsim.core.api.simulation_context import SimulationContext
 import omni
 import functools
 
@@ -43,8 +48,12 @@ def require_sim_initialized(func):
 
     @functools.wraps(func)
     def _func(*args, **kwargs):
-        if SimulationContext.instance()._physics_sim_view is None:
-            raise RuntimeError("SimulationContext not initialzed.")
+        try:
+            sim = SimulationContext.instance()
+        except Exception:
+            raise RuntimeError("SimulationContext not initialized.")
+        if hasattr(sim, "_physics_sim_view") and sim._physics_sim_view is None:
+            raise RuntimeError("SimulationContext not initialized.")
         return func(*args, **kwargs)
 
     return _func
@@ -195,14 +204,14 @@ class ArticulationView(_ArticulationView):
                         kps[articulation_write_idx][dof_write_idx] = drive.GetStiffnessAttr().Get()
                     else:
                         kps[articulation_write_idx][dof_write_idx] = self._backend_utils.convert(
-                            1.0 / omni.isaac.core.utils.numpy.deg2rad(float(1.0 / drive.GetStiffnessAttr().Get())),
+                            1.0 / np.deg2rad(float(1.0 / drive.GetStiffnessAttr().Get())),
                             device=self._device,
                         )
                     if drive.GetDampingAttr().Get() == 0.0 or drive_type == "linear":
                         kds[articulation_write_idx][dof_write_idx] = drive.GetDampingAttr().Get()
                     else:
                         kds[articulation_write_idx][dof_write_idx] = self._backend_utils.convert(
-                            1.0 / omni.isaac.core.utils.numpy.deg2rad(float(1.0 / drive.GetDampingAttr().Get())),
+                            1.0 / np.deg2rad(float(1.0 / drive.GetDampingAttr().Get())),
                             device=self._device,
                         )
                     dof_write_idx += 1
@@ -224,14 +233,13 @@ class ArticulationView(_ArticulationView):
         if not omni.timeline.get_timeline_interface().is_stopped() and self._physics_view is not None:
             if self.num_dof == 0:
                 return None
-            self._physics_sim_view.enable_warnings(False)
-            joint_positions = self._physics_view.get_dof_position_targets()
-            if clone:
-                joint_positions = self._backend_utils.clone_tensor(joint_positions, device=self._device)
-            joint_velocities = self._physics_view.get_dof_velocity_targets()
-            if clone:
-                joint_velocities = self._backend_utils.clone_tensor(joint_velocities, device=self._device)
-            self._physics_sim_view.enable_warnings(True)
+            with disable_warnings(getattr(self, "_physics_sim_view", None)):
+                joint_positions = self._physics_view.get_dof_position_targets()
+                if clone:
+                    joint_positions = self._backend_utils.clone_tensor(joint_positions, device=self._device)
+                joint_velocities = self._physics_view.get_dof_velocity_targets()
+                if clone:
+                    joint_velocities = self._backend_utils.clone_tensor(joint_velocities, device=self._device)
             # TODO: implement the effort part
             return ArticulationActions(
                 joint_positions=joint_positions,
@@ -244,18 +252,18 @@ class ArticulationView(_ArticulationView):
             return None
 
     def get_world_poses(
-        self, env_indices: Optional[torch.Tensor] = None, clone: bool = True
+        self, env_indices: Optional[torch.Tensor] = None, clone: bool = True, usd: bool = False
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         indices = self._resolve_env_indices(env_indices)
-        if self._physics_view is not None:
-            with disable_warnings(self._physics_sim_view):
+        if self._physics_view is not None and not usd:
+            with disable_warnings(getattr(self, "_physics_sim_view", None)):
                 poses = self._physics_view.get_root_transforms()[indices]
                 poses = torch.unflatten(poses, 0, self.shape)
             if clone:
                 poses = poses.clone()
             return poses[..., :3], poses[..., [6, 3, 4, 5]]
         else:
-            pos, rot = super().get_world_poses(indices, clone)
+            pos, rot = super().get_world_poses(indices, clone, usd)
             return pos.unflatten(0, self.shape), rot.unflatten(0, self.shape)
 
     def set_world_poses(
@@ -264,7 +272,7 @@ class ArticulationView(_ArticulationView):
         orientations: Optional[torch.Tensor] = None,
         env_indices: Optional[torch.Tensor] = None,
     ) -> None:
-        with disable_warnings(self._physics_sim_view):
+        with disable_warnings(getattr(self, "_physics_sim_view", None)):
             indices = self._resolve_env_indices(env_indices)
             poses = self._physics_view.get_root_transforms()
             if positions is not None:
@@ -388,7 +396,7 @@ class ArticulationView(_ArticulationView):
         return super().set_body_masses(values.reshape(-1, self.num_bodies), indices)
 
     def get_force_sensor_forces(self, env_indices: Optional[torch.Tensor] = None, clone: bool = False) -> torch.Tensor:
-        with disable_warnings(self._physics_sim_view):
+        with disable_warnings(getattr(self, "_physics_sim_view", None)):
             forces = torch.unflatten(self._physics_view.get_force_sensor_forces(), 0, self.shape)
         if clone:
             forces = forces.clone()
@@ -459,10 +467,10 @@ class RigidPrimView(_RigidPrimView):
         return self
 
     def get_world_poses(
-        self, env_indices: Optional[torch.Tensor] = None, clone: bool = True
+        self, env_indices: Optional[torch.Tensor] = None, clone: bool = True, usd: bool = False
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         indices = self._resolve_env_indices(env_indices)
-        pos, rot = super().get_world_poses(indices, clone)
+        pos, rot = super().get_world_poses(indices, clone, usd)
         return pos.unflatten(0, self.shape), rot.unflatten(0, self.shape)
 
     def set_world_poses(
@@ -471,7 +479,7 @@ class RigidPrimView(_RigidPrimView):
         orientations: Optional[torch.Tensor] = None,
         env_indices: Optional[torch.Tensor] = None,
     ) -> None:
-        with disable_warnings(self._physics_sim_view):
+        with disable_warnings(getattr(self, "_physics_sim_view", None)):
             indices = self._resolve_env_indices(env_indices)
             poses = self._physics_view.get_transforms()
             if positions is not None:
@@ -615,7 +623,9 @@ class RigidPrimView(_RigidPrimView):
 @contextmanager
 def disable_warnings(physics_sim_view):
     try:
-        physics_sim_view.enable_warnings(False)
+        if physics_sim_view is not None and hasattr(physics_sim_view, "enable_warnings"):
+            physics_sim_view.enable_warnings(False)
         yield
     finally:
-        physics_sim_view.enable_warnings(True)
+        if physics_sim_view is not None and hasattr(physics_sim_view, "enable_warnings"):
+            physics_sim_view.enable_warnings(True)

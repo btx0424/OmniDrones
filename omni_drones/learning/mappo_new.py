@@ -40,7 +40,7 @@ from tensordict.nn import (
     TensorDictParams
 )
 from torchrl.modules import ProbabilisticActor
-from torchrl.data import TensorSpec, CompositeSpec
+from torchrl.data import TensorSpec, Composite
 from torchrl.envs.transforms import CatTensors
 from einops.layers.torch import Rearrange, Reduce
 
@@ -49,7 +49,7 @@ from .modules.distributions import IndependentNormal
 from .utils.valuenorm import ValueNorm1
 
 def make_transformer(
-    obs_spec: CompositeSpec,
+    obs_spec: Composite,
     embed_dim: int=128,
     nhead: int=1,
     num_layers: int=1
@@ -129,7 +129,7 @@ class MAPPO:
     def __init__(
         self,
         cfg,
-        observation_spec: CompositeSpec,
+        observation_spec: Composite,
         action_spec: TensorSpec,
         reward_spec: TensorSpec,
         device

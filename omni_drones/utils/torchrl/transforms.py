@@ -25,7 +25,6 @@ from typing import Any, Dict, Optional, Sequence, Union, Tuple
 
 import torch
 from tensordict.tensordict import TensorDictBase, TensorDict
-from torchrl.data.tensor_specs import TensorSpec
 from torchrl.envs.common import EnvBase
 from torchrl.envs.transforms import (
     TransformedEnv,
@@ -36,11 +35,11 @@ from torchrl.envs.transforms import (
 )
 from torchrl.data import (
     TensorSpec,
-    BoundedTensorSpec,
-    UnboundedContinuousTensorSpec,
+    Bounded,
+    Unbounded,
     DiscreteTensorSpec,
     MultiDiscreteTensorSpec,
-    CompositeSpec,
+    Composite,
 )
 from .env import AgentSpec
 from dataclasses import replace
@@ -78,9 +77,9 @@ class FromDiscreteAction(Transform):
         self.nbins = nbins
         self.action_key = action_key
 
-    def transform_input_spec(self, input_spec: CompositeSpec) -> CompositeSpec:
+    def transform_input_spec(self, input_spec: Composite) -> Composite:
         action_spec = input_spec[("full_action_spec", *self.action_key)]
-        if isinstance(action_spec, BoundedTensorSpec):
+        if isinstance(action_spec, Bounded):
             if isinstance(self.nbins, int):
                 nbins = [self.nbins] * action_spec.shape[-1]
             elif len(self.nbins) == action_spec.shape[-1]:
@@ -99,7 +98,7 @@ class FromDiscreteAction(Transform):
                 n, shape=[*action_spec.shape[:-1], 1], device=action_spec.device
             )
         else:
-            NotImplementedError("Only BoundedTensorSpec is supported.")
+            NotImplementedError("Only Bounded is supported.")
         input_spec[("full_action_spec", *self.action_key)] = spec
         return input_spec
 
@@ -124,9 +123,9 @@ class FromMultiDiscreteAction(Transform):
         self.nbins = nbins
         self.action_key = action_key
 
-    def transform_input_spec(self, input_spec: CompositeSpec) -> CompositeSpec:
+    def transform_input_spec(self, input_spec: Composite) -> Composite:
         action_spec = input_spec[("full_action_spec", *self.action_key)]
-        if isinstance(action_spec, BoundedTensorSpec):
+        if isinstance(action_spec, Bounded):
             if isinstance(self.nbins, int):
                 nbins = [self.nbins] * action_spec.shape[-1]
             elif len(self.nbins) == action_spec.shape[-1]:
@@ -142,7 +141,7 @@ class FromMultiDiscreteAction(Transform):
             self.minimum = action_spec.space.minimum
             self.maximum = action_spec.space.maximum
         else:
-            NotImplementedError("Only BoundedTensorSpec is supported.")
+            NotImplementedError("Only Bounded is supported.")
         input_spec[("full_action_spec", *self.action_key)] = spec
         return input_spec
 
@@ -178,16 +177,16 @@ class DepthImageNorm(Transform):
 
 
 def ravel_composite(
-    spec: CompositeSpec, key: str, start_dim: int=-2, end_dim: int=-1
+    spec: Composite, key: str, start_dim: int=-2, end_dim: int=-1
 ):
     r"""
 
     Examples:
-    >>> obs_spec = CompositeSpec({
-    ...     "obs_self": UnboundedContinuousTensorSpec((1, 19)),
-    ...     "obs_others": UnboundedContinuousTensorSpec((3, 13)),
+    >>> obs_spec = Composite({
+    ...     "obs_self": Unbounded((1, 19)),
+    ...     "obs_others": Unbounded((3, 13)),
     ... })
-    >>> spec = CompositeSpec({
+    >>> spec = Composite({
             "agents": {
                 "observation": obs_spec
             }
@@ -198,7 +197,7 @@ def ravel_composite(
     composite_spec = spec[key]
     if not isinstance(key, tuple):
         key = (key,)
-    if isinstance(composite_spec, CompositeSpec):
+    if isinstance(composite_spec, Composite):
         in_keys = [k for k in spec.keys(True, True) if k[:len(key)] == key]
         return Compose(
             FlattenObservation(start_dim, end_dim, in_keys),
@@ -221,7 +220,7 @@ class RateController(Transform):
 
     def transform_input_spec(self, input_spec: TensorSpec) -> TensorSpec:
         action_spec = input_spec[("full_action_spec", *self.action_key)]
-        spec = UnboundedContinuousTensorSpec(action_spec.shape[:-1]+(4,), device=action_spec.device)
+        spec = Unbounded(action_spec.shape[:-1]+(4,), device=action_spec.device)
         input_spec[("full_action_spec", *self.action_key)] = spec
         return input_spec
 
@@ -253,7 +252,7 @@ class AttitudeController(Transform):
 
     def transform_input_spec(self, input_spec: TensorSpec) -> TensorSpec:
         action_spec = input_spec[("full_action_spec", *self.action_key)]
-        spec = UnboundedContinuousTensorSpec(action_spec.shape[:-1]+(4,), device=action_spec.device)
+        spec = Unbounded(action_spec.shape[:-1]+(4,), device=action_spec.device)
         input_spec[("full_action_spec", *self.action_key)] = spec
         return input_spec
 

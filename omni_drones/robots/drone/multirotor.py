@@ -28,17 +28,14 @@ import torch
 import torch.distributions as D
 import yaml
 from torch.func import vmap
-from tensordict.nn import make_functional
-from torchrl.data import BoundedTensorSpec, CompositeSpec, UnboundedContinuousTensorSpec
+from torchrl.data import Bounded, Composite, Unbounded
 from tensordict import TensorDict
 
 from omni_drones.views import RigidPrimView
 from omni_drones.actuators.rotor_group import RotorGroup
 from omni_drones.controllers import ControllerBase
 from omni_drones.robots import RobotBase, RobotCfg
-from omni_drones.utils.torch import (
-    normalize, off_diag, quat_rotate, quat_rotate_inverse, quat_axis, symlog
-)
+from omni_drones.utils.torch import normalize, off_diag, quat_rotate, quat_rotate_inverse, quat_axis
 
 from dataclasses import dataclass
 from collections import defaultdict
@@ -63,25 +60,25 @@ class MultirotorBase(RobotBase):
             self.params = yaml.safe_load(f)
         self.num_rotors = self.params["rotor_configuration"]["num_rotors"]
 
-        self.intrinsics_spec = CompositeSpec({
-            "mass": UnboundedContinuousTensorSpec(1),
-            "inertia": UnboundedContinuousTensorSpec(3),
-            "com": UnboundedContinuousTensorSpec(3),
-            "KF": UnboundedContinuousTensorSpec(self.num_rotors),
-            "KM": UnboundedContinuousTensorSpec(self.num_rotors),
-            "tau_up": UnboundedContinuousTensorSpec(self.num_rotors),
-            "tau_down": UnboundedContinuousTensorSpec(self.num_rotors),
-            "drag_coef": UnboundedContinuousTensorSpec(1),
+        self.intrinsics_spec = Composite({
+            "mass": Unbounded(1),
+            "inertia": Unbounded(3),
+            "com": Unbounded(3),
+            "KF": Unbounded(self.num_rotors),
+            "KM": Unbounded(self.num_rotors),
+            "tau_up": Unbounded(self.num_rotors),
+            "tau_down": Unbounded(self.num_rotors),
+            "drag_coef": Unbounded(1),
         }).to(self.device)
 
         state_dim = 19 + self.num_rotors
-        self.state_spec = UnboundedContinuousTensorSpec(state_dim, device=self.device)
+        self.state_spec = Unbounded(state_dim, device=self.device)
         self.randomization = defaultdict(dict)
 
     @property
     def action_spec(self):
         if not hasattr(self, "_action_spec"):
-            self._action_spec = BoundedTensorSpec(-1, 1, self.num_rotors, device=self.device)
+            self._action_spec = Bounded(-1, 1, self.num_rotors, device=self.device)
         return self._action_spec
 
     def initialize(
@@ -125,24 +122,24 @@ class MultirotorBase(RobotBase):
         self.rotors_view.initialize()
 
         rotor_config = self.params["rotor_configuration"]
-        self.rotors = RotorGroup(rotor_config, dt=self.dt).to(self.device)
+        self.rotors = RotorGroup(rotor_config, dt=self.dt, batch_shape=self.shape).to(self.device)
 
-        rotor_params = make_functional(self.rotors)
-        self.KF_0 = rotor_params["KF"].clone()
-        self.KM_0 = rotor_params["KM"].clone()
+        # Get the base values (all envs have the same initial values, take first and flatten)
+        self.KF_0 = self.rotors.KF.data[0].flatten().clone()
+        self.KM_0 = self.rotors.KM.data[0].flatten().clone()
         self.MAX_ROT_VEL = (
             torch.as_tensor(rotor_config["max_rotation_velocities"])
             .float()
             .to(self.device)
         )
-        self.rotor_params = rotor_params.expand(self.shape).clone()
-
-        self.tau_up = self.rotor_params["tau_up"]
-        self.tau_down = self.rotor_params["tau_down"]
-        self.KF = self.rotor_params["KF"]
-        self.KM = self.rotor_params["KM"]
-        self.throttle = self.rotor_params["throttle"]
-        self.directions = self.rotor_params["directions"]
+        
+        # All rotor parameters are now batched inside RotorGroup
+        self.throttle = self.rotors.throttle
+        self.tau_up = self.rotors.tau_up
+        self.tau_down = self.rotors.tau_down
+        self.KF = self.rotors.KF
+        self.KM = self.rotors.KM
+        self.directions = self.rotors.directions
 
         self.thrusts = torch.zeros(*self.shape, self.num_rotors, 3, device=self.device)
         self.torques = torch.zeros(*self.shape, 3, device=self.device)
@@ -163,6 +160,7 @@ class MultirotorBase(RobotBase):
         self.masses = self.base_link.get_masses().clone()
         self.gravity = self.masses * 9.81
         self.inertias = self.base_link.get_inertias().reshape(*self.shape, 3, 3).diagonal(0, -2, -1)
+        
         # default/initial parameters
         self.MASS_0 = self.masses[0].clone()
         self.INERTIA_0 = (
@@ -243,15 +241,15 @@ class MultirotorBase(RobotBase):
     def apply_action(self, actions: torch.Tensor) -> torch.Tensor:
         rotor_cmds = actions.expand(*self.shape, self.num_rotors)
         last_throttle = self.throttle.clone()
-        thrusts, moments = vmap(vmap(self.rotors, randomness="different"), randomness="same")(
-            rotor_cmds, self.rotor_params
-        )
+
+        thrusts, moments = self.rotors(rotor_cmds)
 
         rotor_pos, rotor_rot = self.rotors_view.get_world_poses()
         torque_axis = quat_axis(rotor_rot.flatten(end_dim=-2), axis=2).unflatten(0, (*self.shape, self.num_rotors))
 
         self.thrusts[..., 2] = thrusts
         self.torques[:] = (moments.unsqueeze(-1) * torque_axis).sum(-2)
+
         # TODO@btx0424: general rotating rotor
         if self.is_articulation and self.rotor_joint_indices is not None:
             rot_vel = (self.throttle * self.directions * self.MAX_ROT_VEL)
@@ -260,6 +258,7 @@ class MultirotorBase(RobotBase):
                 joint_indices=self.rotor_joint_indices
             )
         self.forces.zero_()
+        
         # TODO: global downwash
         if self.n > 1:
             self.forces[:] += vmap(self.downwash)(
@@ -270,14 +269,16 @@ class MultirotorBase(RobotBase):
             ).sum(-2)
         self.forces[:] += (self.drag_coef * self.masses) * self.vel[..., :3]
 
-        self.rotors_view.apply_forces_and_torques_at_pos(
-            self.thrusts.reshape(-1, 3),
-            is_global=False
-        )
+        # IsaacSim 5.1.0 integration: applying a force to a rigid body seems to overwrite any existing forces on it,
+        # so we have to apply body forces before rotor forces so the articulation links can propagate forces from the rotors to the base.
         self.base_link.apply_forces_and_torques_at_pos(
             self.forces.reshape(-1, 3),
             self.torques.reshape(-1, 3),
             is_global=True
+        )
+        self.rotors_view.apply_forces_and_torques_at_pos(
+            self.thrusts.reshape(-1, 3),
+            is_global=False
         )
         self.throttle_difference[:] = torch.norm(self.throttle - last_throttle, dim=-1)
         return self.throttle.sum(-1)
@@ -309,18 +310,21 @@ class MultirotorBase(RobotBase):
     def _reset_idx(self, env_ids: torch.Tensor, train: bool=True):
         if env_ids is None:
             env_ids = torch.arange(self.shape[0], device=self.device)
+
         self.thrusts[env_ids] = 0.0
         self.torques[env_ids] = 0.0
         self.vel[env_ids] = 0.
         self.acc[env_ids] = 0.
         # self.jerk[env_ids] = 0.
+
         if train and "train" in self.randomization:
             self._randomize(env_ids, self.randomization["train"])
         elif "eval" in self.randomization:
             self._randomize(env_ids, self.randomization["eval"])
+
         init_throttle = self.gravity[env_ids] / self.KF[env_ids].sum(-1, keepdim=True)
-        self.throttle[env_ids] = self.rotors.f_inv(init_throttle)
-        self.throttle_difference[env_ids] = 0.0
+        self.throttle.data[env_ids] = self.rotors.f_inv(init_throttle)
+        self.throttle_difference[env_ids].fill_(0.0)
         return env_ids
 
     def _randomize(self, env_ids: torch.Tensor, distributions: Dict[str, D.Distribution]):

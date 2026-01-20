@@ -31,7 +31,7 @@ from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv, List, Optional
 from omni_drones.utils.torch import cpos, off_diag, others, make_cells, euler_to_quaternion
 from omni_drones.robots.drone import MultirotorBase
 from tensordict.tensordict import TensorDict, TensorDictBase
-from torchrl.data import CompositeSpec, UnboundedContinuousTensorSpec, DiscreteTensorSpec
+from torchrl.data import Composite, Unbounded, DiscreteTensorSpec
 
 REGULAR_HEXAGON = [
     [0, 0, 0],
@@ -95,6 +95,14 @@ class Formation(IsaacEnv):
 
         self.drone.initialize()
         self.init_poses = self.drone.get_world_poses(clone=True)
+        
+        # Create stats buffer
+        self.stats = TensorDict({
+            "return": torch.zeros(self.num_envs, self.drone.n, 1, device=self.device),
+            "episode_len": torch.zeros(self.num_envs, 1, device=self.device),
+            "cost_hausdorff": torch.zeros(self.num_envs, 1, device=self.device),
+            "pos_error": torch.zeros(self.num_envs, 1, device=self.device)
+        }, batch_size=[self.num_envs])
 
         # initial state distribution
         self.cells = (
@@ -111,8 +119,6 @@ class Formation(IsaacEnv):
         self.target_heading[..., 0] = -1
 
         self.alpha = 0.8
-
-        # self.last_cost_l = torch.zeros(self.num_envs, 1, device=self.device)
         self.last_cost_h = torch.zeros(self.num_envs, 1, device=self.device)
         self.last_cost_pos = torch.zeros(self.num_envs, 1, device=self.device)
 
@@ -150,28 +156,28 @@ class Formation(IsaacEnv):
         if self.time_encoding:
             self.time_encoding_dim = 4
             obs_self_dim += self.time_encoding_dim
-
-        observation_spec = CompositeSpec({
-            "obs_self": UnboundedContinuousTensorSpec((1, obs_self_dim)),
-            "obs_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13+1)),
+            
+        observation_central_spec = Composite({
+            "drones": Unbounded((self.drone.n, drone_state_dim)),
         }).to(self.device)
-        observation_central_spec = CompositeSpec({
-            "drones": UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim)),
-        }).to(self.device)
-        self.observation_spec = CompositeSpec({
+        
+        self.observation_spec = Composite({
             "agents": {
-                "observation": observation_spec.expand(self.drone.n),
+                "observation": Composite({
+                    "obs_self": Unbounded((self.drone.n, 1, obs_self_dim)),
+                    "obs_others": Unbounded((self.drone.n, self.drone.n-1, 13+1)),
+                }).to(self.device),
                 "observation_central": observation_central_spec,
             }
         }).expand(self.num_envs).to(self.device)
-        self.action_spec = CompositeSpec({
+        self.action_spec = Composite({
             "agents": {
                 "action": torch.stack([self.drone.action_spec] * self.drone.n, dim=0),
             }
         }).expand(self.num_envs).to(self.device)
-        self.reward_spec = CompositeSpec({
+        self.reward_spec = Composite({
             "agents": {
-                "reward": UnboundedContinuousTensorSpec((self.drone.n, 1))
+                "reward": Unbounded((self.drone.n, 1))
             }
         }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
@@ -182,16 +188,6 @@ class Formation(IsaacEnv):
             reward_key=("agents", "reward"),
             state_key=("agents", "observation_central")
         )
-         # additional infos & buffers
-        stats_spec = CompositeSpec({
-            "return": UnboundedContinuousTensorSpec(self.drone.n),
-            "episode_len": UnboundedContinuousTensorSpec(1),
-            # "cost_laplacian": UnboundedContinuousTensorSpec((self.num_envs, 1)),
-            "cost_hausdorff": UnboundedContinuousTensorSpec(1),
-            "pos_error": UnboundedContinuousTensorSpec(1)
-        }).expand(self.num_envs).to(self.device)
-        self.observation_spec["stats"] = stats_spec
-        self.stats = stats_spec.zero()
 
     def _reset_idx(self, env_ids: torch.Tensor):
         self.drone._reset_idx(env_ids)
@@ -265,7 +261,7 @@ class Formation(IsaacEnv):
         # cost_l = vmap(cost_formation_laplacian)(pos, desired_L=self.formation_L)
         pos = self.drone.pos
 
-        cost_h = cost_formation_hausdorff(pos, desired_p=self.formation)
+        cost_h = vmap(cost_formation_hausdorff)(pos, desired_p=self.formation)
 
         distance = torch.norm(pos.mean(-2, keepdim=True) - self.target_pos, dim=-1)
 
@@ -296,7 +292,7 @@ class Formation(IsaacEnv):
         terminated = misbehave | hasnan.any(-1, keepdim=True)
         truncated = (self.progress_buf >= self.max_episode_length).unsqueeze(-1)
 
-        self.stats["return"].add_(reward)
+        self.stats["return"].add_(reward.unsqueeze(1).expand(-1, self.drone.n, 1))
         self.stats["episode_len"][:] = self.progress_buf.unsqueeze(-1)
         # self.stats["cost_laplacian"] -= cost_l
         self.stats["cost_hausdorff"].lerp_(cost_h, (1-self.alpha))
@@ -346,7 +342,6 @@ def laplacian(p: torch.Tensor, normalize=False):
         L = D - A
     return L
 
-@vmap
 def cost_formation_hausdorff(p: torch.Tensor, desired_p: torch.Tensor) -> torch.Tensor:
     p = p - p.mean(-2, keepdim=True)
     desired_p = desired_p - desired_p.mean(-2, keepdim=True)

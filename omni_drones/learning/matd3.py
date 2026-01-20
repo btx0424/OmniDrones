@@ -30,9 +30,9 @@ from tensordict import TensorDict
 
 from torchrl.data import (
     TensorSpec,
-    BoundedTensorSpec,
-    UnboundedContinuousTensorSpec as UnboundedTensorSpec,
-    CompositeSpec,
+    Bounded,
+    Unbounded,
+    Composite,
     TensorDictReplayBuffer
 )
 from torchrl.data.replay_buffers.storages import LazyTensorStorage
@@ -259,7 +259,7 @@ class Critic(nn.Module):
         cfg,
         num_agents: int,
         state_spec: TensorSpec,
-        action_spec: BoundedTensorSpec,
+        action_spec: Bounded,
         num_critics: int = 2,
     ) -> None:
         super().__init__()
@@ -274,7 +274,7 @@ class Critic(nn.Module):
         ])
 
     def _make_critic(self):
-        if isinstance(self.state_spec, (BoundedTensorSpec, UnboundedTensorSpec)):
+        if isinstance(self.state_spec, (Bounded, Unbounded)):
             action_dim = self.act_space.shape[-1]
             state_dim = self.state_spec.shape[-1]
             num_units = [
@@ -282,9 +282,9 @@ class Critic(nn.Module):
                 *self.cfg["hidden_units"]
             ]
             base = MLP(num_units)
-        elif isinstance(self.state_spec, CompositeSpec):
+        elif isinstance(self.state_spec, Composite):
             encoder_cls = ENCODERS_MAP[self.cfg.attn_encoder]
-            base = encoder_cls(CompositeSpec(self.state_spec))
+            base = encoder_cls(Composite(self.state_spec))
         else:
             raise NotImplementedError
 

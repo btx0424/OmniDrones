@@ -24,19 +24,11 @@
 import torch
 import torch.distributions as D
 from tensordict.tensordict import TensorDict, TensorDictBase
-from torchrl.data import (
-    UnboundedContinuousTensorSpec,
-    CompositeSpec,
-    BinaryDiscreteTensorSpec,
-    DiscreteTensorSpec
-)
+from torchrl.data import Unbounded, Composite, DiscreteTensorSpec, BinaryDiscreteTensorSpec
 
-import omni.isaac.core.utils.torch as torch_utils
-import omni.isaac.core.utils.prims as prim_utils
-import omni.physx.scripts.utils as script_utils
-import omni.isaac.core.objects as objects
-from omni.isaac.debug_draw import _debug_draw
-
+import isaacsim.core.utils.torch as torch_utils
+import isaacsim.core.utils.prims as prim_utils
+import isaacsim.core.api.objects as objects
 import omni_drones.utils.kit as kit_utils
 from omni_drones.utils.torch import euler_to_quaternion
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
@@ -175,7 +167,7 @@ class FlyThrough(IsaacEnv):
         self.drone.spawn(translations=[(-2., 0.0, 2.0)])
 
         target = objects.DynamicSphere(
-            "/World/envs/env_0/target",
+            prim_path="/World/envs/env_0/target",
             translation=(1.5, 0., 2.),
             radius=0.05,
             color=torch.tensor([1., 0., 0.])
@@ -190,19 +182,19 @@ class FlyThrough(IsaacEnv):
         if self.time_encoding:
             self.time_encoding_dim = 4
             observation_dim += self.time_encoding_dim
-        self.observation_spec = CompositeSpec({
+        self.observation_spec = Composite({
             "agents": {
-                "observation": UnboundedContinuousTensorSpec((1, observation_dim))
+                "observation": Unbounded((1, observation_dim))
             }
         }).expand(self.num_envs).to(self.device)
-        self.action_spec = CompositeSpec({
+        self.action_spec = Composite({
             "agents": {
                 "action": self.drone.action_spec.unsqueeze(0),
             }
         }).expand(self.num_envs).to(self.device)
-        self.reward_spec = CompositeSpec({
+        self.reward_spec = Composite({
             "agents": {
-                "reward": UnboundedContinuousTensorSpec((1, 1))
+                "reward": Unbounded((1, 1))
             }
         }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
@@ -211,12 +203,12 @@ class FlyThrough(IsaacEnv):
             action_key=("agents", "action"),
             reward_key=("agents", "reward"),
         )
-        stats_spec = CompositeSpec({
-            "return": UnboundedContinuousTensorSpec(1),
-            "episode_len": UnboundedContinuousTensorSpec(1),
-            "pos_error": UnboundedContinuousTensorSpec(1),
-            "drone_uprightness": UnboundedContinuousTensorSpec(1),
-            "collision": UnboundedContinuousTensorSpec(1),
+        stats_spec = Composite({
+            "return": Unbounded(1),
+            "episode_len": Unbounded(1),
+            "pos_error": Unbounded(1),
+            "drone_uprightness": Unbounded(1),
+            "collision": Unbounded(1),
             "success": BinaryDiscreteTensorSpec(1, dtype=bool),
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec

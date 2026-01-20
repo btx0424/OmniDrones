@@ -24,9 +24,9 @@
 import torch
 import torch.distributions as D
 from torch.func import vmap
-from omni.isaac.core.objects import DynamicCuboid
+from isaacsim.core.api.objects import DynamicCuboid
 from tensordict.tensordict import TensorDict, TensorDictBase
-from torchrl.data import CompositeSpec, UnboundedContinuousTensorSpec, DiscreteTensorSpec
+from torchrl.data import Composite, Unbounded, DiscreteTensorSpec
 
 import omni_drones.utils.kit as kit_utils
 import omni_drones.utils.scene as scene_utils
@@ -47,7 +47,7 @@ class TransportHover(IsaacEnv):
 
     ## Observation
 
-    The observation space is specified a py:class:`CompositeSpec` containing the following items:
+    The observation space is specified a py:class:`Composite` containing the following items:
 
     - `obs_self` (1, \*): The state of each UAV observed by itself, containing its kinematic
       information with the position being relative to the payload. It also includes a one-hot
@@ -167,31 +167,31 @@ class TransportHover(IsaacEnv):
             self.time_encoding_dim = 4
             payload_state_dim += self.time_encoding_dim
 
-        observation_spec = CompositeSpec({
-            "obs_self": UnboundedContinuousTensorSpec((1, drone_state_dim)),
-            "obs_others": UnboundedContinuousTensorSpec((self.drone.n-1, 13+1)),
-            "obs_payload": UnboundedContinuousTensorSpec((1, payload_state_dim)),
+        observation_spec = Composite({
+            "obs_self": Unbounded((1, drone_state_dim)),
+            "obs_others": Unbounded((self.drone.n-1, 13+1)),
+            "obs_payload": Unbounded((1, payload_state_dim)),
         }).to(self.device)
 
-        observation_central_spec = CompositeSpec({
-            "state_drones": UnboundedContinuousTensorSpec((self.drone.n, drone_state_dim)),
-            "state_payload": UnboundedContinuousTensorSpec((1, payload_state_dim)),
+        observation_central_spec = Composite({
+            "state_drones": Unbounded((self.drone.n, drone_state_dim)),
+            "state_payload": Unbounded((1, payload_state_dim)),
         }).to(self.device)
 
-        self.observation_spec = CompositeSpec({
+        self.observation_spec = Composite({
             "agents": {
                 "observation": observation_spec.expand(self.drone.n),
                 "observation_central": observation_central_spec,
             }
         }).expand(self.num_envs).to(self.device)
-        self.action_spec = CompositeSpec({
+        self.action_spec = Composite({
             "agents": {
                 "action": torch.stack([self.drone.action_spec] * self.drone.n, dim=0),
             }
         }).expand(self.num_envs).to(self.device)
-        self.reward_spec = CompositeSpec({
+        self.reward_spec = Composite({
             "agents": {
-                "reward": UnboundedContinuousTensorSpec((self.drone.n, 1))
+                "reward": Unbounded((self.drone.n, 1))
             }
         }).expand(self.num_envs).to(self.device)
         self.agent_spec["drone"] = AgentSpec(
@@ -202,13 +202,13 @@ class TransportHover(IsaacEnv):
             state_key=("agents", "state")
         )
 
-        stats_spec = CompositeSpec({
-            "return": UnboundedContinuousTensorSpec(self.drone.n),
-            "episode_len": UnboundedContinuousTensorSpec(1),
-            "pos_error": UnboundedContinuousTensorSpec(1),
-            "heading_alignment": UnboundedContinuousTensorSpec(1),
-            "uprightness": UnboundedContinuousTensorSpec(1),
-            "action_smoothness": UnboundedContinuousTensorSpec(self.drone.n),
+        stats_spec = Composite({
+            "return": Unbounded(self.drone.n),
+            "episode_len": Unbounded(1),
+            "pos_error": Unbounded(1),
+            "heading_alignment": Unbounded(1),
+            "uprightness": Unbounded(1),
+            "action_smoothness": Unbounded(self.drone.n),
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
         self.stats = stats_spec.zero()

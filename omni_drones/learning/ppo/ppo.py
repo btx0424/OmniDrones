@@ -26,7 +26,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.distributions as D
 
-from torchrl.data import CompositeSpec, TensorSpec
+from torchrl.data import Composite, TensorSpec
 from torchrl.modules import ProbabilisticActor
 from torchrl.envs.transforms import CatTensors
 from tensordict import TensorDict
@@ -86,11 +86,10 @@ class PPOPolicy(TensorDictModuleBase):
     def __init__(
         self,
         cfg: PPOConfig,
-        observation_spec: CompositeSpec,
-        action_spec: CompositeSpec,
+        observation_spec: Composite,
+        action_spec: Composite,
         reward_spec: TensorSpec,
-        device
-    ):
+        device):
         super().__init__()
         self.cfg = cfg
         self.device = device
@@ -98,7 +97,7 @@ class PPOPolicy(TensorDictModuleBase):
         self.entropy_coef = 0.001
         self.clip_param = 0.1
         self.critic_loss_fn = nn.HuberLoss(delta=10)
-        self.n_agents, self.action_dim = action_spec.shape[-2:]
+        self.n_agents, self.action_dim = action_spec[("agents", "action")].shape[-2:]
         self.gae = GAE(0.99, 0.95)
 
         fake_input = observation_spec.zero()
@@ -127,7 +126,8 @@ class PPOPolicy(TensorDictModuleBase):
             in_keys=["loc", "scale"],
             out_keys=[("agents", "action")],
             distribution_class=IndependentNormal,
-            return_log_prob=True
+            return_log_prob=True,
+            log_prob_key="sample_log_prob"
         ).to(self.device)
 
         if self.cfg.priv_critic:
@@ -167,7 +167,7 @@ class PPOPolicy(TensorDictModuleBase):
 
         self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=5e-4)
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=5e-4)
-        self.value_norm = ValueNorm1(reward_spec.shape[-2:]).to(self.device)
+        self.value_norm = ValueNorm1(reward_spec[("agents", "reward")].shape[-2:]).to(self.device)
 
     def __call__(self, tensordict: TensorDict):
         self.actor(tensordict)

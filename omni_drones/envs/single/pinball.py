@@ -23,9 +23,9 @@
 
 import omni_drones.utils.kit as kit_utils
 from omni_drones.utils.torch import euler_to_quaternion, normalize
-import omni.isaac.core.utils.prims as prim_utils
-import omni.isaac.core.objects as objects
-import omni.isaac.core.materials as materials
+import isaacsim.core.utils.prims as prim_utils
+import isaacsim.core.api.objects as objects
+import isaacsim.core.api.materials.physics_material as materials
 import torch
 import torch.distributions as D
 
@@ -34,13 +34,12 @@ from omni_drones.robots.drone import MultirotorBase
 from omni_drones.views import RigidPrimView
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import (
-    UnboundedContinuousTensorSpec,
-    CompositeSpec,
+    Unbounded,
+    Composite,
     DiscreteTensorSpec
 )
 from pxr import UsdShade, PhysxSchema
-
-from omni.isaac.lab.sensors import ContactSensorCfg, ContactSensor
+from isaaclab.sensors import ContactSensorCfg, ContactSensor
 
 class Pinball(IsaacEnv):
     """
@@ -161,19 +160,19 @@ class Pinball(IsaacEnv):
             self.time_encoding_dim = 4
             observation_dim += self.time_encoding_dim
 
-        self.observation_spec = CompositeSpec({
-            "agents": CompositeSpec({
-                "observation": UnboundedContinuousTensorSpec((1, observation_dim)),
+        self.observation_spec = Composite({
+            "agents": Composite({
+                "observation": Unbounded((1, observation_dim)),
             })
         }).expand(self.num_envs).to(self.device)
-        self.action_spec = CompositeSpec({
-            "agents": CompositeSpec({
+        self.action_spec = Composite({
+            "agents": Composite({
                 "action": self.drone.action_spec.unsqueeze(0),
             })
         }).expand(self.num_envs).to(self.device)
-        self.reward_spec = CompositeSpec({
-            "agents": CompositeSpec({
-                "reward": UnboundedContinuousTensorSpec((1, 1))
+        self.reward_spec = Composite({
+            "agents": Composite({
+                "reward": Unbounded((1,1))
             })
         }).expand(self.num_envs).to(self.device)
 
@@ -184,11 +183,11 @@ class Pinball(IsaacEnv):
             reward_key="drone.reward",
         )
 
-        stats_spec = CompositeSpec({
-            "return": UnboundedContinuousTensorSpec(1),
-            "episode_len": UnboundedContinuousTensorSpec(1),
-            "score": UnboundedContinuousTensorSpec(1),
-            "action_smoothness": UnboundedContinuousTensorSpec(1),
+        stats_spec = Composite({
+            "return": Unbounded(1),
+            "episode_len": Unbounded(1),
+            "score": Unbounded(1),
+            "action_smoothness": Unbounded(1),
         }).expand(self.num_envs).to(self.device)
         self.observation_spec["stats"] = stats_spec
         self.stats = stats_spec.zero()
@@ -246,9 +245,6 @@ class Pinball(IsaacEnv):
         )
 
     def _compute_reward_and_done(self):
-
-        # score = self.ball.get_net_contact_forces().any(-1).float()
-        # self.drone.base_link.get_net_contact_forces().any(-1).float()
         score = self.contact_sensor.data.net_forces_w.any(-1).float()
 
         reward_pos = 1 / (1 + torch.norm(self.rpos[..., :2], dim=-1))
@@ -275,7 +271,7 @@ class Pinball(IsaacEnv):
         return TensorDict(
             {
                 "agents": {
-                    "reward": reward.unsqueeze(-1),
+                    "reward": reward.unsqueeze(-1)
                 },
                 "done": terminated | truncated,
                 "terminated": terminated,

@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 
@@ -59,5 +59,5 @@ class ArticulationRootPropertiesCfg:
 
 @dataclass
 class RobotCfg:
-    rigid_props: RigidBodyPropertiesCfg = RigidBodyPropertiesCfg()
-    articulation_props: ArticulationRootPropertiesCfg = ArticulationRootPropertiesCfg()
+    rigid_props: RigidBodyPropertiesCfg = field(default_factory=RigidBodyPropertiesCfg)
+    articulation_props: ArticulationRootPropertiesCfg = field(default_factory=ArticulationRootPropertiesCfg)

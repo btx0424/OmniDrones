@@ -34,12 +34,12 @@ from tensordict.nn import make_functional, TensorDictModule, TensorDictParams
 from torch.optim import lr_scheduler
 
 from torchrl.data import (
-    BoundedTensorSpec,
-    CompositeSpec,
+    Bounded,
+    Composite,
     MultiDiscreteTensorSpec,
     DiscreteTensorSpec,
     TensorSpec,
-    UnboundedContinuousTensorSpec as UnboundedTensorSpec,
+    Unbounded,
 )
 
 from omni_drones.utils.torchrl.env import AgentSpec
@@ -349,7 +349,7 @@ class MAPPOPolicy(object):
         train_info = {k: v.mean().item() for k, v in torch.stack(train_info).items()}
         train_info["advantages_mean"] = advantages_mean.item()
         train_info["advantages_std"] = advantages_std.item()
-        if isinstance(self.agent_spec.action_spec, (BoundedTensorSpec, UnboundedTensorSpec)):
+        if isinstance(self.agent_spec.action_spec, (Bounded, Unbounded)):
             train_info["action_norm"] = tensordict[self.act_name].norm(dim=-1).mean().item()
         if hasattr(self, "value_normalizer"):
             train_info["value_running_mean"] = self.value_normalizer.running_mean.mean().item()
@@ -412,7 +412,7 @@ def make_ppo_actor(cfg, observation_spec: TensorSpec, action_spec: TensorSpec):
         )
     elif isinstance(action_spec, DiscreteTensorSpec):
         act_dist = MultiCategoricalModule(encoder.output_shape.numel(), [action_spec.space.n])
-    elif isinstance(action_spec, (UnboundedTensorSpec, BoundedTensorSpec)):
+    elif isinstance(action_spec, (Unbounded, Bounded)):
         action_dim = action_spec.shape[-1]
         act_dist = DiagGaussian(encoder.output_shape.numel(), action_dim, False, 0.01)
         # act_dist = IndependentNormalModule(encoder.output_shape.numel(), action_dim, False)
@@ -423,7 +423,7 @@ def make_ppo_actor(cfg, observation_spec: TensorSpec, action_spec: TensorSpec):
 
 
 def make_critic(cfg, state_spec: TensorSpec, reward_spec: TensorSpec, centralized=False):
-    assert isinstance(reward_spec, (UnboundedTensorSpec, BoundedTensorSpec))
+    assert isinstance(reward_spec, (Unbounded, Bounded))
     encoder = make_encoder(cfg, state_spec)
 
     if centralized:

@@ -81,12 +81,12 @@ def sample_sub_traj(traj, seq_len):
     return traj[t]
 
 
-from torchrl.data import BoundedTensorSpec, UnboundedContinuousTensorSpec, CompositeSpec, TensorSpec
+from torchrl.data import Bounded, Unbounded, Composite, TensorSpec
 from .modules.networks import MLP, ENCODERS_MAP, VISION_ENCODER_MAP, MixedEncoder
 from functools import partial
 
 def make_encoder(cfg, input_spec: TensorSpec) -> nn.Module:
-    if isinstance(input_spec, (BoundedTensorSpec, UnboundedContinuousTensorSpec)):
+    if isinstance(input_spec, (Bounded, Unbounded)):
         input_dim = input_spec.shape[-1]
         encoder = nn.Sequential(
             nn.LayerNorm(input_dim),
@@ -100,7 +100,7 @@ def make_encoder(cfg, input_spec: TensorSpec) -> nn.Module:
             init = getattr(nn.init, cfg.init.type)
             init = partial(init, **cfg.init.get("kwargs", {}))
             encoder.apply(lambda m: init_linear(m, init))
-    elif isinstance(input_spec, CompositeSpec): # FIXME: add logic for composite spec with visual input and other inputs
+    elif isinstance(input_spec, Composite): # FIXME: add logic for composite spec with visual input and other inputs
         state_spec_dict = {}
         vision_spec_dict = {}
         for spec_name in input_spec.keys():
@@ -114,7 +114,7 @@ def make_encoder(cfg, input_spec: TensorSpec) -> nn.Module:
         # create state encoder
         if len(state_spec_dict) > 0:
             encoder_cls = ENCODERS_MAP[cfg.attn_encoder]
-            state_encoder = encoder_cls(CompositeSpec(state_spec_dict))
+            state_encoder = encoder_cls(Composite(state_spec_dict))
         else:
             state_encoder = None
             print("No state encoder requried.")

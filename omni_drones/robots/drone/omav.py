@@ -22,7 +22,7 @@
 
 
 import torch
-from torchrl.data import BoundedTensorSpec, UnboundedContinuousTensorSpec
+from torchrl.data import Bounded, Unbounded
 
 from omni_drones.robots.drone import MultirotorBase
 from omni_drones.robots.robot import ASSET_PATH
@@ -34,13 +34,13 @@ class Omav(MultirotorBase):
 
     def __init__(self, name: str = "Omav", cfg=None) -> None:
         super().__init__(name, cfg)
-        self.action_spec = BoundedTensorSpec(-1, 1, 12 + 6, device=self.device)
+        self.action_spec = Bounded(-1, 1, 12 + 6, device=self.device)
         self.tilt_dof_indices = torch.arange(0, 6, device=self.device)
         self.rotor_dof_indices = torch.arange(6, 18, device=self.device)
         self.max_tilt_velocity = 10
 
-        self.action_spec = BoundedTensorSpec(-1, 1, self.num_rotors + 6, device=self.device)
-        self.state_spec = UnboundedContinuousTensorSpec(
+        self.action_spec = Bounded(-1, 1, self.num_rotors + 6, device=self.device)
+        self.state_spec = Unbounded(
             19 + self.num_rotors + 12, device=self.device
         )
 

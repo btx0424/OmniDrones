@@ -30,20 +30,23 @@ import torch
 import logging
 import carb
 import numpy as np
-from omni.isaac.cloner import GridCloner
-from omni.isaac.core.simulation_context import SimulationContext
-from omni.isaac.core.utils import prims as prim_utils, stage as stage_utils
-from omni.isaac.core.utils.extensions import enable_extension
-from omni.isaac.core.utils.viewports import set_camera_view
+from isaacsim.core.cloner import GridCloner
+from isaacsim.core.api.simulation_context import SimulationContext
+import isaacsim.core.utils.prims as prim_utils
+import isaacsim.core.utils.stage as stage_utils
+import isaacsim.core.utils.extensions as _ext_mod
+from isaacsim.core.utils.viewports import set_camera_view
+from isaacsim.util.debug_draw import _debug_draw
+
+def enable_extension(name):
+    return _ext_mod.enable_extension(name)
 
 from tensordict.tensordict import TensorDict, TensorDictBase
-from torchrl.data import CompositeSpec, TensorSpec, DiscreteTensorSpec
+from torchrl.data import Composite, TensorSpec, DiscreteTensorSpec
 from torchrl.envs import EnvBase
 
 from omni_drones.robots.robot import RobotBase
 from omni_drones.utils.torchrl import AgentSpec
-
-from omni.isaac.debug_draw import _debug_draw
 
 class DebugDraw:
     def __init__(self):
@@ -88,7 +91,7 @@ class IsaacEnv(EnvBase):
         # store inputs to class
         self.cfg = cfg
         self.enable_render(not headless)
-        self.enable_viewport = True
+        self.enable_viewport = not headless
         # extract commonly used parameters
         self.num_envs = self.cfg.env.num_envs
         self.max_episode_length = self.cfg.env.max_episode_length
@@ -117,7 +120,7 @@ class IsaacEnv(EnvBase):
             backend="torch",
             sim_params=sim_params,
             physics_prim_path="/physicsScene",
-            device="cuda:0",
+            device=cfg.sim.device,
         )
         self._create_viewport_render_product()
         self.dt = self.sim.get_physics_dt()
@@ -152,10 +155,11 @@ class IsaacEnv(EnvBase):
         # find the environment closest to the origin for visualization
         self.central_env_idx = self.envs_positions.norm(dim=-1).argmin()
         central_env_pos = self.envs_positions[self.central_env_idx].cpu().numpy()
-        set_camera_view(
-            eye=central_env_pos + np.asarray(self.cfg.viewer.eye),
-            target=central_env_pos + np.asarray(self.cfg.viewer.lookat)
-        )
+        if self.enable_viewport:
+            set_camera_view(
+                eye=central_env_pos + np.asarray(self.cfg.viewer.eye),
+                target=central_env_pos + np.asarray(self.cfg.viewer.lookat)
+            )
 
         RobotBase._envs_positions = self.envs_positions.unsqueeze(1)
 
@@ -177,7 +181,7 @@ class IsaacEnv(EnvBase):
             self.batch_size,
         )
         self.progress_buf = self._tensordict["progress"]
-        self.done_spec = CompositeSpec({
+        self.done_spec = Composite({
             "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
             "terminated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
             "truncated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
@@ -230,16 +234,25 @@ class IsaacEnv(EnvBase):
         raise NotImplementedError
 
     def close(self):
-        return # TODO: fix this
         if not self._is_closed:
-            # stop physics simulation (precautionary)
-            self.sim.stop()
-            # cleanup the scene and callbacks
-            self.sim.clear_all_callbacks()
-            self.sim.clear()
-            # fix warnings at stage close
-            omni.usd.get_context().get_stage().GetRootLayer().Clear()
-            # update closing status
+            try:
+                import omni.timeline
+                timeline = omni.timeline.get_timeline_interface()
+                if timeline:
+                    timeline.stop()
+            except Exception as e:
+                logging.warning(f"Failed to stop timeline: {e}")
+            
+            try:
+                if hasattr(self, 'sim') and self.sim is not None:
+                    self.sim.stop()
+                    if hasattr(self.sim, 'clear_all_callbacks'):
+                        self.sim.clear_all_callbacks()
+                    if hasattr(self.sim, 'clear'):
+                        self.sim.clear()
+            except Exception as e:
+                logging.warning(f"Failed to stop/clear simulation: {e}")
+            
             self._is_closed = True
             logging.info("IsaacEnv closed.")
 
@@ -249,8 +262,9 @@ class IsaacEnv(EnvBase):
         else:
             env_mask = torch.ones(self.num_envs, dtype=bool, device=self.device)
         env_ids = env_mask.nonzero().squeeze(-1)
+        
         self._reset_idx(env_ids)
-        # self.sim.step(render=False)
+        
         self.progress_buf[env_ids] = 0.
         tensordict = TensorDict({}, self.batch_size, device=self.device)
         tensordict.update(self._compute_state_and_obs())
@@ -265,8 +279,10 @@ class IsaacEnv(EnvBase):
         for substep in range(self.substeps):
             self._pre_sim_step(tensordict)
             self.sim.step(self._should_render(substep))
+
         self._post_sim_step(tensordict)
         self.progress_buf += 1
+
         tensordict = TensorDict({}, self.batch_size, device=self.device)
         tensordict.update(self._compute_state_and_obs())
         tensordict.update(self._compute_reward_and_done())
@@ -287,8 +303,13 @@ class IsaacEnv(EnvBase):
         raise NotImplementedError
 
     def _set_seed(self, seed: Optional[int] = -1):
-        import omni.replicator.core as rep
-        rep.set_global_seed(seed)
+        # Only set replicator global seed if replicator stack is enabled
+        if getattr(self.cfg.sim, "enable_replicator", False):
+            try:
+                import omni.replicator.core as rep
+                rep.set_global_seed(seed)
+            except ImportError:
+                pass
         torch.manual_seed(seed)
 
     def _configure_simulation_flags(self, sim_params: dict = None):
@@ -312,23 +333,23 @@ class IsaacEnv(EnvBase):
             # enable scene querying if rendering is enabled
             # this is needed for some GUI features
             sim_params["enable_scene_query_support"] = True
-            # load extra viewport extensions if requested
-            if self.enable_viewport:
-                # extension to enable UI buttons (otherwise we get attribute errors)
-                enable_extension("omni.kit.window.toolbar")
-                # extension to make RTX realtime and path-traced renderers
-                enable_extension("omni.kit.viewport.rtx")
-                # extension to make HydraDelegate renderers
-                enable_extension("omni.kit.viewport.pxr")
-            # enable viewport extension if not running in headless mode
+            # extension to enable UI buttons (otherwise we get attribute errors)
+            enable_extension("omni.kit.window.toolbar")
+            # viewport utility helpers (required by some viewport APIs)
+            enable_extension("omni.kit.viewport.utility")
+            # extension to make RTX realtime and path-traced renderers
+            enable_extension("omni.kit.viewport.rtx")
+            # extension to make HydraDelegate renderers
+            enable_extension("omni.kit.viewport.pxr")
+            # enable viewport bundle when not in headless mode
             enable_extension("omni.kit.viewport.bundle")
-            # load extra render extensions if requested
-            if self.enable_viewport:
-                # extension for window status bar
-                enable_extension("omni.kit.window.status_bar")
-        # enable isaac replicator extension
-        # note: moved here since it requires to have the viewport extension to be enabled first.
-        enable_extension("omni.replicator.isaac")
+            # extension for window status bar
+            enable_extension("omni.kit.window.status_bar")
+            # enable replicator extensions only if requested
+            if getattr(self.cfg.sim, "enable_replicator", False):
+                enable_extension("isaacsim.replicator.domain_randomization")
+                enable_extension("isaacsim.replicator.examples")
+                enable_extension("isaacsim.replicator.writers")
 
     def to(self, device) -> EnvBase:
         if torch.device(device) != self.device:
@@ -369,6 +390,11 @@ class IsaacEnv(EnvBase):
                     f"Cannot render '{mode}' when enable viewport is False. Please check the provided"
                     "arguments to the environment class at initialization."
                 )
+            # require replicator to be enabled to fetch rgb arrays
+            if not getattr(self.cfg.sim, "enable_replicator", False) or not hasattr(self, "_rgb_annotator") or self._rgb_annotator is None:
+                raise RuntimeError(
+                    "RGB rendering requires Replicator. Set cfg.sim.enable_replicator=True to enable it."
+                )
             # obtain the rgb data
             rgb_data = self._rgb_annotator.get_data()
             # convert to numpy array
@@ -383,7 +409,8 @@ class IsaacEnv(EnvBase):
     def _create_viewport_render_product(self):
         """Create a render product of the viewport for rendering."""
         # set camera view for "/OmniverseKit_Persp" camera
-        set_camera_view(eye=self.cfg.viewer.eye, target=self.cfg.viewer.lookat)
+        if self.enable_viewport:
+            set_camera_view(eye=self.cfg.viewer.eye, target=self.cfg.viewer.lookat)
 
         # check if flatcache is enabled
         # this is needed to flush the flatcache data into Hydra manually when calling `env.render()`
@@ -396,15 +423,19 @@ class IsaacEnv(EnvBase):
 
         # check if viewport is enabled before creating render product
         if self.enable_viewport:
-            import omni.replicator.core as rep
-
-            # create render product
-            self._render_product = rep.create.render_product(
-                "/OmniverseKit_Persp", tuple(self.cfg.viewer.resolution)
-            )
-            # create rgb annotator -- used to read data from the render product
-            self._rgb_annotator = rep.AnnotatorRegistry.get_annotator("rgb", device="cpu")
-            self._rgb_annotator.attach([self._render_product])
+            if getattr(self.cfg.sim, "enable_replicator", False):
+                import omni.replicator.core as rep
+                # create render product
+                self._render_product = rep.create.render_product(
+                    "/OmniverseKit_Persp", tuple(self.cfg.viewer.resolution)
+                )
+                # create rgb annotator -- used to read data from the render product
+                self._rgb_annotator = rep.AnnotatorRegistry.get_annotator("rgb", device="cpu")
+                self._rgb_annotator.attach([self._render_product])
+            else:
+                # leave render product uninitialized to avoid loading synthetic-data stack
+                self._render_product = None
+                self._rgb_annotator = None
         else:
             carb.log_info("Viewport is disabled. Skipping creation of render product.")
 
@@ -417,4 +448,3 @@ class _AgentSpecView(Dict[str, AgentSpec]):
     def __setitem__(self, k: str, v: AgentSpec) -> None:
         v._env = self.env
         return self.env._agent_spec.__setitem__(k, v)
-

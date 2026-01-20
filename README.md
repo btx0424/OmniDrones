@@ -2,6 +2,10 @@
 
 ---
 
+# Future of this Project
+
+I greatly appreciate the interest by the community in this project. However, due to several difficulties, this version of the project is hard to maintain and update anymore. I sincerely apologize for the inconvenience. There may or may not be a clearner refactored version in the future. If you believe it is highly helpful to your research, you are welcomed to contact me by emailing to btx0424@outlook.com.
+
 # OmniDrones
 
 [![IsaacSim](https://img.shields.io/badge/Isaac%20Sim-4.1.0-orange.svg)](https://docs.omniverse.nvidia.com/app_isaacsim/app_isaacsim/overview.html)

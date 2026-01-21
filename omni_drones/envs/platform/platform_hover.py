@@ -25,8 +25,8 @@ import torch
 import torch.distributions as D
 from torch.func import vmap
 
-import omni.isaac.core.utils.torch as torch_utils
-import omni.isaac.core.utils.prims as prim_utils
+import isaacsim.core.utils.torch as torch_utils
+import isaacsim.core.utils.prims as prim_utils
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec, DiscreteTensorSpec
 

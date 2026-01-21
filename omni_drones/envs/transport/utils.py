@@ -23,12 +23,12 @@
 
 from typing import Sequence, Union
 
-import omni.isaac.core.objects as objects
-import omni.isaac.core.utils.prims as prim_utils
+import isaacsim.core.api.objects as objects
+import isaacsim.core.utils.prims as prim_utils
 import omni.physx.scripts.utils as script_utils
 import torch
 
-from omni.isaac.core.prims import RigidPrimView
+from isaacsim.core.prims import RigidPrim
 from omni.kit.commands import execute
 from pxr import Gf, PhysxSchema, UsdGeom, UsdPhysics
 

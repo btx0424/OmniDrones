@@ -30,8 +30,8 @@ from torchrl.data import (
     DiscreteTensorSpec
 )
 
-import omni.isaac.core.objects as objects
-from omni.isaac.debug_draw import _debug_draw
+import isaacsim.core.api.objects as objects
+from isaacsim.util.debug_draw import _debug_draw
 
 import omni_drones.utils.kit as kit_utils
 from omni_drones.utils.torch import euler_to_quaternion, normalize

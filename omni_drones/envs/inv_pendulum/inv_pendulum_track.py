@@ -27,9 +27,9 @@ from torch.func import vmap
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import UnboundedContinuousTensorSpec, CompositeSpec, DiscreteTensorSpec
 
-import omni.isaac.core.objects as objects
+import isaacsim.core.api.objects as objects
 import omni_drones.utils.kit as kit_utils
-from omni.isaac.debug_draw import _debug_draw
+from isaacsim.util.debug_draw import _debug_draw
 
 from omni_drones.utils.torch import euler_to_quaternion, normalize, quat_rotate
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv

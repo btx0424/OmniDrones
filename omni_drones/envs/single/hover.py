@@ -24,7 +24,7 @@
 import torch
 import torch.distributions as D
 
-import omni.isaac.core.utils.prims as prim_utils
+import isaacsim.core.utils.prims as prim_utils
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.robots.drone import MultirotorBase
@@ -139,7 +139,7 @@ class Hover(IsaacEnv):
                 shape=(-1, self.drone.n)
             )
             self.payload.initialize()
-
+    
         self.target_vis = ArticulationView(
             "/World/envs/env_*/target",
             reset_xform_properties=False
@@ -160,14 +160,13 @@ class Hover(IsaacEnv):
             torch.tensor([0., 0., 0.], device=self.device) * torch.pi,
             torch.tensor([0., 0., 2.], device=self.device) * torch.pi
         )
-
         self.target_pos = torch.tensor([[0.0, 0.0, 2.]], device=self.device)
         self.target_heading = torch.zeros(self.num_envs, 1, 3, device=self.device)
         self.alpha = 0.8
 
     def _design_scene(self):
         import omni_drones.utils.kit as kit_utils
-        import omni.isaac.core.utils.prims as prim_utils
+        import isaacsim.core.utils.prims as prim_utils
 
         drone_model_cfg = self.cfg.task.drone_model
         self.drone, self.controller = MultirotorBase.make(

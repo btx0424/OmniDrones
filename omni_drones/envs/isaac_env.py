@@ -30,20 +30,20 @@ import torch
 import logging
 import carb
 import numpy as np
-from omni.isaac.cloner import GridCloner
-from omni.isaac.core.simulation_context import SimulationContext
-from omni.isaac.core.utils import prims as prim_utils, stage as stage_utils
-from omni.isaac.core.utils.extensions import enable_extension
-from omni.isaac.core.utils.viewports import set_camera_view
+from isaacsim.core.cloner import GridCloner
+from isaacsim.core.api.simulation_context import SimulationContext
+from isaacsim.core.utils import prims as prim_utils, stage as stage_utils
+from isaacsim.core.utils.extensions import enable_extension
+from isaacsim.core.utils.viewports import set_camera_view
 
 from tensordict.tensordict import TensorDict, TensorDictBase
-from torchrl.data import CompositeSpec, TensorSpec, DiscreteTensorSpec
+from torchrl.data import CompositeSpec, TensorSpec, Categorical
 from torchrl.envs import EnvBase
 
 from omni_drones.robots.robot import RobotBase
 from omni_drones.utils.torchrl import AgentSpec
 
-from omni.isaac.debug_draw import _debug_draw
+from isaacsim.util.debug_draw import _debug_draw
 
 class DebugDraw:
     def __init__(self):
@@ -158,7 +158,6 @@ class IsaacEnv(EnvBase):
         )
 
         RobotBase._envs_positions = self.envs_positions.unsqueeze(1)
-
         # filter collisions within each environment instance
         physics_scene_path = self.sim.get_physics_context().prim_path
         cloner.filter_collisions(
@@ -168,8 +167,7 @@ class IsaacEnv(EnvBase):
             global_paths=global_prim_paths,
         )
         self.sim.reset()
-        self.debug_draw = DebugDraw()
-
+        self.debug_draw = DebugDraw()        
         self._tensordict = TensorDict(
             {
                 "progress": torch.zeros(self.num_envs, device=self.device),
@@ -178,13 +176,14 @@ class IsaacEnv(EnvBase):
         )
         self.progress_buf = self._tensordict["progress"]
         self.done_spec = CompositeSpec({
-            "done": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-            "terminated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
-            "truncated": DiscreteTensorSpec(2, (1,), dtype=torch.bool),
+            "done": Categorical(2, (1,), dtype=torch.bool),
+            "terminated": Categorical(2, (1,), dtype=torch.bool),
+            "truncated": Categorical(2, (1,), dtype=torch.bool),
         }).expand(self.num_envs).to(self.device)
         self._set_specs()
         import pprint
         pprint.pprint(self.fake_tensordict().shapes)
+        return
 
 
     @classmethod

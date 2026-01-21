@@ -23,7 +23,7 @@
 
 import torch
 
-from omni.isaac.core.prims import RigidPrimView
+from isaacsim.core.prims import RigidPrim
 from torchrl.data import BoundedTensorSpec, UnboundedContinuousTensorSpec
 
 from omni_drones.robots.drone.multirotor import MultirotorBase

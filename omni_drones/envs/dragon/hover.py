@@ -24,7 +24,7 @@
 import torch
 import torch.distributions as D
 
-import omni.isaac.core.utils.prims as prim_utils
+import isaacsim.core.utils.prims as prim_utils
 
 from omni_drones.envs.isaac_env import AgentSpec, IsaacEnv
 from omni_drones.robots.drone.dragon import Dragon, DragonCfg

@@ -12,7 +12,7 @@ def main(cfg):
     print(OmegaConf.to_yaml(cfg))
 
     import omni_drones.utils.scene as scene_utils
-    from omni.isaac.core.simulation_context import SimulationContext
+    from isaacsim.core.api.simulation_context import SimulationContext
     from omni_drones.sensors.camera import Camera, PinholeCameraCfg
     from omni_drones.robots.drone import Dragon
 

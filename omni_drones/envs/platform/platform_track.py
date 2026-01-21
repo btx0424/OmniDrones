@@ -25,8 +25,8 @@ import torch
 import torch.distributions as D
 from torch.func import vmap
 
-import omni.isaac.core.objects as objects
-from omni.isaac.debug_draw import _debug_draw
+import isaacsim.core.api.objects as objects
+from isaacsim.util.debug_draw import _debug_draw
 
 import omni_drones.utils.kit as kit_utils
 

@@ -39,7 +39,7 @@ import carb
 import omni.kit.app
 
 # isaacsim
-from omni.isaac.core.utils.constants import AXES_TOKEN
+from isaacsim.core.utils.constants import AXES_TOKEN
 from omni.usd.commands import DeletePrimsCommand
 from pxr import Sdf, Usd, UsdGeom
 
@@ -101,7 +101,7 @@ def clear_stage(
         [type]: [description]
     """
     # Note: Need to import this here to prevent circular dependencies.
-    from omni.isaac.core.utils.prims import (
+    from isaacsim.core.utils.prims import (
         get_all_matching_child_prims,
         get_prim_path,
         is_prim_ancestral,
@@ -141,7 +141,7 @@ def clear_stage(
 def print_stage_prim_paths() -> None:
     """Traverses the stage and prints all prim paths."""
     # Note: Need to import this here to prevent circular dependencies.
-    from omni.isaac.core.utils.prims import get_prim_path
+    from isaacsim.core.utils.prims import get_prim_path
 
     for prim in traverse_stage():
         prim_path = get_prim_path(prim)

@@ -24,7 +24,7 @@
 import torch
 import torch.distributions as D
 from torch.func import vmap
-from omni.isaac.core.objects import DynamicCuboid
+from isaacsim.core.api.objects import DynamicCuboid
 from tensordict.tensordict import TensorDict, TensorDictBase
 from torchrl.data import CompositeSpec, UnboundedContinuousTensorSpec, DiscreteTensorSpec
 
